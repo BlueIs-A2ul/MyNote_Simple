@@ -19,6 +19,7 @@ fun AppNavHost(container: AppContainer) {
             val vm: NotesViewModel = viewModel(factory = NotesViewModel.factory(container.noteRepository))
             NotesScreen(
                 viewModel = vm,
+                backupManager = container.backupManager,
                 onOpenNote = { id -> navController.navigate("edit/$id") },
                 onNewNote = { navController.navigate("edit/new") },
                 onManageCategories = { navController.navigate("categories") }
@@ -31,6 +32,7 @@ fun AppNavHost(container: AppContainer) {
                 noteId = id,
                 repository = container.noteRepository,
                 imageStore = container.imageStore,
+                backupManager = container.backupManager,
                 onBack = { navController.popBackStack() }
             )
         }

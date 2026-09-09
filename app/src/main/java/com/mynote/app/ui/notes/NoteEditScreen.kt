@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,6 +38,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,6 +53,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
+import com.mynote.app.data.backup.BackupManager
 import com.mynote.app.data.db.CategoryEntity
 import com.mynote.app.data.db.NoteEntity
 import com.mynote.app.data.image.ImageStore
@@ -60,7 +63,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-
 class NoteEditViewModel(
     private val repository: NoteRepository,
     private val imageStore: ImageStore,
@@ -120,6 +122,7 @@ fun NoteEditScreen(
     noteId: Long?,
     repository: NoteRepository,
     imageStore: ImageStore,
+    backupManager: BackupManager,
     onBack: () -> Unit
 ) {
     val vm: NoteEditViewModel = viewModel(
@@ -151,6 +154,16 @@ fun NoteEditScreen(
         uri?.let { vm.insertImage(it) { markup -> content += markup } }
     }
 
+    val scope = rememberCoroutineScope()
+    val exportTxtLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        uri?.let { u ->
+            val n = note
+            if (n != null) scope.launch { backupManager.exportNoteAsTxt(u, n) }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -173,6 +186,11 @@ fun NoteEditScreen(
                         vm.save(title, content, selectedCategoryId, pinned, note?.color, onBack)
                     }) {
                         Icon(Icons.Default.Save, contentDescription = "保存")
+                    }
+                    if (noteId != null) {
+                        IconButton(onClick = { exportTxtLauncher.launch((note?.title ?: "note") + ".txt") }) {
+                            Icon(Icons.Default.Share, contentDescription = "导出为 txt")
+                        }
                     }
                     if (noteId != null) {
                         IconButton(onClick = { showDeleteDialog = true }) {
