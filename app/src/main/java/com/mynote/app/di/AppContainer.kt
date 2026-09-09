@@ -2,6 +2,7 @@ package com.mynote.app.di
 
 import android.content.Context
 import androidx.room.Room
+import com.mynote.app.data.backup.BackupManager
 import com.mynote.app.data.db.AppDatabase
 import com.mynote.app.data.image.ImageStore
 import com.mynote.app.data.repository.NoteRepository
@@ -16,5 +17,9 @@ class AppContainer(context: Context) {
 
     val noteRepository: NoteRepository by lazy {
         NoteRepository(database.noteDao(), database.categoryDao(), imageStore)
+    }
+
+    val backupManager: BackupManager by lazy {
+        BackupManager(context, imageStore, database)
     }
 }
