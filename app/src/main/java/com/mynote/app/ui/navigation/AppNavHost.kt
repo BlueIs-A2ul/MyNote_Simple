@@ -7,6 +7,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.mynote.app.di.AppContainer
+import com.mynote.app.ui.notes.NoteEditScreen
 import com.mynote.app.ui.notes.NotesScreen
 import com.mynote.app.ui.notes.NotesViewModel
 
@@ -23,8 +24,15 @@ fun AppNavHost(container: AppContainer) {
                 onManageCategories = { navController.navigate("categories") }
             )
         }
-        composable("edit/{noteId}") {
-            Text("编辑页待实现")
+        composable("edit/{noteId}") { backStack ->
+            val idArg = backStack.arguments?.getString("noteId")
+            val id = idArg?.takeIf { it != "new" }?.toLongOrNull()
+            NoteEditScreen(
+                noteId = id,
+                repository = container.noteRepository,
+                imageStore = container.imageStore,
+                onBack = { navController.popBackStack() }
+            )
         }
         composable("categories") {
             Text("分类页待实现")
