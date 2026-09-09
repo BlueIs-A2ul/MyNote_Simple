@@ -1,12 +1,12 @@
 package com.mynote.app.ui.navigation
 
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.mynote.app.di.AppContainer
+import com.mynote.app.ui.categories.CategoriesScreen
 import com.mynote.app.ui.notes.NoteEditScreen
 import com.mynote.app.ui.notes.NotesScreen
 import com.mynote.app.ui.notes.NotesViewModel
@@ -35,7 +35,10 @@ fun AppNavHost(container: AppContainer) {
             )
         }
         composable("categories") {
-            Text("分类页待实现")
+            CategoriesScreen(
+                repository = container.noteRepository,
+                onBack = { navController.popBackStack() }
+            )
         }
     }
 }
