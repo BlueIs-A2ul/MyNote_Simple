@@ -1,7 +1,7 @@
 # 主题颜色管理 — 设计文档
 
 - 日期：2026-09-10
-- 状态：已确认（待实现）
+- 状态：已实现（2026-09-10，38 个单测全绿 + debug/release 构建通过；真机 UI 手工验证待做）
 - 关联：`docs/superpowers/specs/2026-08-13-mynote-design.md`（§3 主题、§12 里程碑 4）
 
 ## 1. 背景与问题
@@ -113,7 +113,7 @@ setContent {
 ### 6.3 入口与导航
 
 - `NotesScreen` 更多菜单（⋮ DropdownMenu）新增「设置」项，新增 `onOpenSettings: () -> Unit` 参数。
-- `AppNavHost` 新增 `composable("settings")`，构造 `SettingsViewModel` 并渲染 `SettingsScreen`，onBack 走 `popBackStack()`。
+- `AppNavHost` 新增 `composable("settings")`，注入 `container.themeSettingsStore` 渲染 `SettingsScreen`（ViewModel 在 Screen 内构造），onBack 走 `popBackStack()`。
 - 主页 `composable("notes")` 传入 `onOpenSettings = { navController.navigate("settings") }`。
 
 ## 7. 边界与错误处理
