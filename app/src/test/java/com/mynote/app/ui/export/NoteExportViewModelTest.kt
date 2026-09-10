@@ -22,26 +22,30 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class NoteExportViewModelTest {
 
     private val dispatcher = StandardTestDispatcher()
     private lateinit var vm: NoteExportViewModel
+    private lateinit var measurer: TextMeasurer
 
     @Before
     fun setup() {
         Dispatchers.setMain(dispatcher)
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val measurer = TextMeasurer(
+        measurer = TextMeasurer(
             defaultFontFamilyResolver = createFontFamilyResolver(context),
             defaultDensity = Density(1f, 1f),
             defaultLayoutDirection = LayoutDirection.Ltr,
@@ -67,6 +71,7 @@ class NoteExportViewModelTest {
         assertEquals(PageMode.PAGED, state.mode)
         assertTrue(state.pageCount >= 1)
         assertTrue(state.pages.isNotEmpty())
+        state.pages.forEach { page -> assertEquals(360, page.bitmap.width) }
     }
 
     @Test
@@ -89,10 +94,27 @@ class NoteExportViewModelTest {
         )
         val files = result.await()
         assertTrue(files.isNotEmpty())
+        assertFalse(vm.exporting.value)
         files.forEach { file ->
             assertTrue(file.exists())
             val header = file.readBytes().take(4).map { it.toInt() and 0xFF }
             assertEquals(listOf(0x89, 0x50, 0x4E, 0x47), header)
         }
+    }
+
+    @Test
+    fun longSingleModeShowsWarning() = runTest(dispatcher) {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val longVm = NoteExportViewModel(
+            renderer = NoteImageRenderer(ImageStore(context)),
+            exportManager = ImageExportManager(context),
+            measurer = measurer,
+            note = NoteImageRenderer.NoteData("标题", "长文本。".repeat(1000), "2026-09-10")
+        )
+        longVm.setMode(PageMode.SINGLE)
+        val state = longVm.state.filterIsInstance<NoteExportViewModel.State.Ready>()
+            .first { it.mode == PageMode.SINGLE }
+        assertTrue(state.longWarning)
+        longVm.viewModelScope.cancel()
     }
 }

@@ -1,6 +1,7 @@
 package com.mynote.app.ui.export
 
 import android.content.Intent
+import android.util.Log
 import androidx.compose.ui.text.TextMeasurer
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -13,6 +14,7 @@ import com.mynote.app.data.export.PageMode
 import com.mynote.app.data.export.RenderedPage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -46,13 +48,14 @@ class NoteExportViewModel(
     val exporting: StateFlow<Boolean> = _exporting
 
     private var mode = PageMode.PAGED
+    private var previewJob: Job? = null
 
     init {
         refreshPreview()
     }
 
     fun setMode(newMode: PageMode) {
-        if (newMode == mode) return
+        if (_exporting.value || newMode == mode) return
         mode = newMode
         refreshPreview()
     }
@@ -66,32 +69,41 @@ class NoteExportViewModel(
      * [onReady] 收到按页序排列的缓存文件。失败时 [onError] 给出可展示提示。
      */
     fun renderToCache(onReady: (List<File>) -> Unit, onError: (String) -> Unit) {
-        if (_exporting.value) return
+        if (!_exporting.compareAndSet(false, true)) return
+        val exportMode = mode
         viewModelScope.launch {
-            _exporting.value = true
+            var ready: List<File>? = null
             try {
-                exportManager.prepareCache()
+                withContext(Dispatchers.IO) { exportManager.prepareCache() }
                 val base = exportManager.baseName(note.title)
                 val files = mutableListOf<File>()
-                renderer.renderPages(note, mode, NoteImageRenderer.EXPORT_SCALE, measurer) { page, total ->
+                renderer.renderPages(note, exportMode, NoteImageRenderer.EXPORT_SCALE, measurer) { page, total ->
                     val file = exportManager.cacheFile(base, page.index, total)
-                    withContext(Dispatchers.IO) { exportManager.writePageFile(file, page) }
-                    page.bitmap.recycle()
+                    try {
+                        withContext(Dispatchers.IO) { exportManager.writePageFile(file, page) }
+                    } finally {
+                        page.bitmap.recycle()
+                    }
                     files += file
                 }
-                onReady(files)
+                ready = files
             } catch (e: CancellationException) {
                 throw e
             } catch (t: Throwable) {
-                if (mode == PageMode.SINGLE) {
+                Log.w(TAG, "导出图片失败", t)
+                if (exportMode == PageMode.SINGLE && (t is OutOfMemoryError || t is IllegalArgumentException)) {
                     mode = PageMode.PAGED
                     refreshPreview()
                     onError("内容太长，已切换为分页模式，请重试")
                 } else {
-                    onError(t.message ?: "生成图片失败")
+                    onError("生成图片失败")
                 }
             } finally {
                 _exporting.value = false
+            }
+            ready?.let { files ->
+                runCatching { onReady(files) }
+                    .onFailure { Log.w(TAG, "导出完成回调异常", it) }
             }
         }
     }
@@ -110,25 +122,37 @@ class NoteExportViewModel(
         }
 
     private fun refreshPreview() {
-        viewModelScope.launch {
+        previewJob?.cancel()
+        val targetMode = mode
+        previewJob = viewModelScope.launch {
             _state.value = State.Loading
             try {
-                val measurement = renderer.measure(note, NoteImageRenderer.PREVIEW_SCALE, measurer)
-                val previewScale = previewScaleFor(mode, measurement)
-                val pages = renderer.render(note, mode, previewScale, measurer)
-                val exportHeight = measurement.totalHeightPx.toFloat() *
-                    NoteImageRenderer.EXPORT_SCALE / NoteImageRenderer.PREVIEW_SCALE
+                val measurement = if (targetMode == PageMode.SINGLE) {
+                    renderer.measure(note, NoteImageRenderer.PREVIEW_SCALE, measurer)
+                } else {
+                    null
+                }
+                val previewScale = if (targetMode == PageMode.SINGLE && measurement != null) {
+                    previewScaleFor(measurement)
+                } else {
+                    NoteImageRenderer.PREVIEW_SCALE
+                }
+                val pages = renderer.render(note, targetMode, previewScale, measurer)
+                val exportHeight = measurement?.let {
+                    it.totalHeightPx.toFloat() * NoteImageRenderer.EXPORT_SCALE / NoteImageRenderer.PREVIEW_SCALE
+                } ?: 0f
                 _state.value = State.Ready(
                     pages = pages,
-                    pageCount = if (mode == PageMode.PAGED) pages.size else measurement.pageCount,
-                    mode = mode,
-                    longWarning = mode == PageMode.SINGLE &&
+                    pageCount = if (targetMode == PageMode.PAGED) pages.size else measurement!!.pageCount,
+                    mode = targetMode,
+                    longWarning = targetMode == PageMode.SINGLE &&
                         exportHeight >= NoteImageRenderer.SINGLE_WARN_HEIGHT_PX
                 )
             } catch (e: CancellationException) {
                 throw e
             } catch (t: Throwable) {
-                if (mode == PageMode.SINGLE) {
+                Log.w(TAG, "预览生成失败", t)
+                if (targetMode == PageMode.SINGLE) {
                     mode = PageMode.PAGED
                     refreshPreview()
                 } else {
@@ -138,11 +162,7 @@ class NoteExportViewModel(
         }
     }
 
-    private fun previewScaleFor(
-        mode: PageMode,
-        measurement: NoteImageRenderer.Measurement
-    ): Float {
-        if (mode != PageMode.SINGLE) return NoteImageRenderer.PREVIEW_SCALE
+    private fun previewScaleFor(measurement: NoteImageRenderer.Measurement): Float {
         if (measurement.totalHeightPx <= NoteImageRenderer.PREVIEW_MAX_HEIGHT_PX) {
             return NoteImageRenderer.PREVIEW_SCALE
         }
@@ -151,6 +171,8 @@ class NoteExportViewModel(
     }
 
     companion object {
+        private const val TAG = "NoteExport"
+
         fun factory(
             renderer: NoteImageRenderer,
             exportManager: ImageExportManager,
