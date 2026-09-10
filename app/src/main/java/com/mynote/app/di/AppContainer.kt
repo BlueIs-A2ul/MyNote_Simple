@@ -6,6 +6,7 @@ import com.mynote.app.data.backup.BackupManager
 import com.mynote.app.data.db.AppDatabase
 import com.mynote.app.data.image.ImageStore
 import com.mynote.app.data.repository.NoteRepository
+import com.mynote.app.data.settings.ThemeSettingsStore
 
 class AppContainer(context: Context) {
 
@@ -14,6 +15,8 @@ class AppContainer(context: Context) {
     }
 
     val imageStore: ImageStore by lazy { ImageStore(context) }
+
+    val themeSettingsStore: ThemeSettingsStore by lazy { ThemeSettingsStore(context) }
 
     val noteRepository: NoteRepository by lazy {
         NoteRepository(database.noteDao(), database.categoryDao(), imageStore)
