@@ -34,7 +34,7 @@ Kotlin · Jetpack Compose + Material 3 · MVVM + 单向数据流（UDF） · Roo
 
 ```bat
 .\gradlew :app:assembleDebug          rem debug APK
-.\gradlew :app:testDebugUnitTest      rem 69 个单元测试
+.\gradlew :app:testDebugUnitTest      rem 70 个单元测试
 .\gradlew :app:assembleRelease        rem release（R8 + 资源压缩 + 签名）
 ```
 
@@ -73,5 +73,7 @@ app/src/main/java/com/mynote/app/
 
 - 设计文档：[`docs/superpowers/specs/2026-08-13-mynote-design.md`](docs/superpowers/specs/2026-08-13-mynote-design.md)
 - 主题设置设计：[`docs/superpowers/specs/2026-09-10-theme-settings-design.md`](docs/superpowers/specs/2026-09-10-theme-settings-design.md)
+- 图片导出设计：[`docs/superpowers/specs/2026-09-10-note-image-export-design.md`](docs/superpowers/specs/2026-09-10-note-image-export-design.md)
+- 图片导出计划（含修订记录）：[`docs/superpowers/plans/2026-09-10-note-image-export.md`](docs/superpowers/plans/2026-09-10-note-image-export.md)
 - 实现计划（含修订记录）：[`docs/superpowers/plans/2026-08-13-mynote.md`](docs/superpowers/plans/2026-08-13-mynote.md)
 - 构建指南（问题记录 + 环境说明）：[`docs/build-guide.md`](docs/build-guide.md)
