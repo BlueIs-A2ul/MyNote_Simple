@@ -68,7 +68,7 @@ data class NoteRevisionEntity(
 | `countByNote(noteId): Int` | 计数、40/50 阈值判断 |
 | `insert(revision): Long` | 写快照 |
 | `trimTo(noteId, keep): Int` | 删除超出 keep 的最旧记录，返回删除行数 |
-| `getAllContents(): List<String>` | 图片 GC 引用集 |
+| `getContentsWithImageMarkup(): List<String>` | 图片 GC 引用集（SQL 层只取含 `![](img/` 的正文，避免全量载入内存） |
 
 ## 4. 写入策略（基线 / 去重 / 裁剪）
 
@@ -137,7 +137,7 @@ UI 配色（固定值，深浅主题都可读）：删除行背景 `#33EF5350`�
 
 ## 8. 图片 GC 与一致性
 
-- `NoteRepository.collectImageGarbage` 引用集：`noteDao.getAll()` ∪ `noteRevisionDao.getAllContents()`，经 `NoteContentParser.extractImageNames` 提取后交给 `ImageStore.collectGarbage`。
+- `NoteRepository.collectImageGarbage` 引用集：`noteDao.getAll()` ∪ `noteRevisionDao.getContentsWithImageMarkup()`，经 `NoteContentParser.extractImageNames` 提取后交给 `ImageStore.collectGarbage`。
 - 效果：正文里删掉的图片只要还被历史引用就不会被回收；版本被裁剪出 50 条后，其专属图片随 GC 回收。
 - GC 触发点：删除笔记后（现有）+ 保存发生历史裁剪后（新增）。
 
