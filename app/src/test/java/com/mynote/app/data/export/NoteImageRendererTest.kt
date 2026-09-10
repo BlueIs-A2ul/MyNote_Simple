@@ -200,6 +200,19 @@ class NoteImageRendererTest {
         assertEquals(android.graphics.Color.WHITE, bitmap.getPixel(minX, minY))
     }
 
+    @Test
+    fun renderPagesStreamsAllPagesInOrderWithTotal() = runTest {
+        val note = note(content = "分页文字。".repeat(300))
+        val seen = mutableListOf<Pair<Int, Int>>()
+        val count = renderer.renderPages(note, PageMode.PAGED, 1f, measurer) { page, total ->
+            seen += page.index to total
+            page.bitmap.recycle()
+        }
+        assertEquals(count, seen.size)
+        assertEquals(seen.indices.toList(), seen.map { it.first })
+        assertTrue(seen.all { it.second == count })
+    }
+
     private fun writeImage(name: String, width: Int, height: Int) {
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val bytes = ByteArrayOutputStream().use { out ->

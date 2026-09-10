@@ -147,13 +147,14 @@ class NoteImageRenderer(private val imageStore: ImageStore) {
     ): List<RenderedPage> = withContext(Dispatchers.Default) {
         val render = planRender(note, mode, scale, measurer)
         render.plans.mapIndexed { index, page ->
+            coroutineContext.ensureActive()
             onProgress(index, render.plans.size)
             drawPage(render, page, index, mode, scale)
         }
     }
 
     /**
-     * 逐页渲染并交给 [onPage]；渲染器不保留页面引用，
+     * 逐页渲染并交给 [onPage]（携带当前页与总页数）；渲染器不保留页面引用，
      * 调用方可在回调中写盘并立即回收位图，峰值内存 ≈ 一页。返回总页数。
      */
     suspend fun renderPages(
@@ -161,12 +162,12 @@ class NoteImageRenderer(private val imageStore: ImageStore) {
         mode: PageMode,
         scale: Float,
         measurer: TextMeasurer,
-        onPage: suspend (RenderedPage) -> Unit
+        onPage: suspend (page: RenderedPage, total: Int) -> Unit
     ): Int = withContext(Dispatchers.Default) {
         val render = planRender(note, mode, scale, measurer)
         render.plans.forEachIndexed { index, page ->
             coroutineContext.ensureActive()
-            onPage(drawPage(render, page, index, mode, scale))
+            onPage(drawPage(render, page, index, mode, scale), render.plans.size)
         }
         render.plans.size
     }
