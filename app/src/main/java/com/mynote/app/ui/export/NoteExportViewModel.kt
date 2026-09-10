@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlin.math.sqrt
 
 class NoteExportViewModel(
     private val renderer: NoteImageRenderer,
@@ -127,23 +128,14 @@ class NoteExportViewModel(
         previewJob = viewModelScope.launch {
             _state.value = State.Loading
             try {
-                val measurement = if (targetMode == PageMode.SINGLE) {
-                    renderer.measure(note, NoteImageRenderer.PREVIEW_SCALE, measurer)
-                } else {
-                    null
-                }
-                val previewScale = if (targetMode == PageMode.SINGLE && measurement != null) {
-                    previewScaleFor(measurement)
-                } else {
-                    NoteImageRenderer.PREVIEW_SCALE
-                }
+                val measurement = renderer.measure(note, NoteImageRenderer.PREVIEW_SCALE, measurer)
+                val previewScale = previewScaleFor(targetMode, measurement)
                 val pages = renderer.render(note, targetMode, previewScale, measurer)
-                val exportHeight = measurement?.let {
-                    it.totalHeightPx.toFloat() * NoteImageRenderer.EXPORT_SCALE / NoteImageRenderer.PREVIEW_SCALE
-                } ?: 0f
+                val exportHeight = measurement.totalHeightPx.toFloat() *
+                    NoteImageRenderer.EXPORT_SCALE / NoteImageRenderer.PREVIEW_SCALE
                 _state.value = State.Ready(
                     pages = pages,
-                    pageCount = if (targetMode == PageMode.PAGED) pages.size else measurement!!.pageCount,
+                    pageCount = measurement.pageCount,
                     mode = targetMode,
                     longWarning = targetMode == PageMode.SINGLE &&
                         exportHeight >= NoteImageRenderer.SINGLE_WARN_HEIGHT_PX
@@ -162,13 +154,26 @@ class NoteExportViewModel(
         }
     }
 
-    private fun previewScaleFor(measurement: NoteImageRenderer.Measurement): Float {
-        if (measurement.totalHeightPx <= NoteImageRenderer.PREVIEW_MAX_HEIGHT_PX) {
-            return NoteImageRenderer.PREVIEW_SCALE
+    private fun previewScaleFor(mode: PageMode, measurement: NoteImageRenderer.Measurement): Float =
+        when (mode) {
+            PageMode.SINGLE -> {
+                if (measurement.totalHeightPx <= NoteImageRenderer.PREVIEW_MAX_HEIGHT_PX) {
+                    NoteImageRenderer.PREVIEW_SCALE
+                } else {
+                    NoteImageRenderer.PREVIEW_SCALE * NoteImageRenderer.PREVIEW_MAX_HEIGHT_PX /
+                        measurement.totalHeightPx
+                }
+            }
+
+            PageMode.PAGED -> {
+                if (measurement.pageCount <= NoteImageRenderer.PREVIEW_MAX_PAGES) {
+                    NoteImageRenderer.PREVIEW_SCALE
+                } else {
+                    NoteImageRenderer.PREVIEW_SCALE *
+                        sqrt(NoteImageRenderer.PREVIEW_MAX_PAGES.toFloat() / measurement.pageCount)
+                }
+            }
         }
-        return NoteImageRenderer.PREVIEW_SCALE * NoteImageRenderer.PREVIEW_MAX_HEIGHT_PX /
-            measurement.totalHeightPx
-    }
 
     companion object {
         private const val TAG = "NoteExport"

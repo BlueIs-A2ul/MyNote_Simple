@@ -69,6 +69,9 @@ class NoteImageRenderer(private val imageStore: ImageStore) {
         /** 预览长图总高上限（预览像素），超出则继续缩小预览比例。 */
         const val PREVIEW_MAX_HEIGHT_PX = 8000
 
+        /** 分页预览页数上限；超过则按比例缩小预览比例（控制预览峰值内存）。 */
+        const val PREVIEW_MAX_PAGES = 16
+
         private val COLOR_BACKGROUND = Color.White
         private val COLOR_TITLE = Color(0xFF111111)
         private val COLOR_BODY = Color(0xFF333333)

@@ -117,4 +117,19 @@ class NoteExportViewModelTest {
         assertTrue(state.longWarning)
         longVm.viewModelScope.cancel()
     }
+
+    @Test
+    fun longPagedPreviewShrinksScale() = runTest(dispatcher) {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val longVm = NoteExportViewModel(
+            renderer = NoteImageRenderer(ImageStore(context)),
+            exportManager = ImageExportManager(context),
+            measurer = measurer,
+            note = NoteImageRenderer.NoteData("标题", "长文本。".repeat(7000), "2026-09-10")
+        )
+        val state = longVm.state.filterIsInstance<NoteExportViewModel.State.Ready>().first()
+        assertTrue(state.pageCount > 16)
+        assertTrue(state.pages.first().bitmap.width < 360)
+        longVm.viewModelScope.cancel()
+    }
 }
