@@ -58,7 +58,8 @@ fun NotesScreen(
     backupManager: BackupManager,
     onOpenNote: (Long) -> Unit,
     onNewNote: () -> Unit,
-    onManageCategories: () -> Unit
+    onManageCategories: () -> Unit,
+    onOpenSettings: () -> Unit
 ) {
     val notes by viewModel.notes.collectAsState()
     val categories by viewModel.categories.collectAsState()
@@ -97,6 +98,10 @@ fun NotesScreen(
                         DropdownMenuItem(
                             text = { Text("导入备份") },
                             onClick = { menuOpen = false; importLauncher.launch(arrayOf("application/zip")) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("设置") },
+                            onClick = { menuOpen = false; onOpenSettings() }
                         )
                     }
                 }

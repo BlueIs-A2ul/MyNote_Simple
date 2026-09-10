@@ -10,6 +10,7 @@ import com.mynote.app.ui.categories.CategoriesScreen
 import com.mynote.app.ui.notes.NoteEditScreen
 import com.mynote.app.ui.notes.NotesScreen
 import com.mynote.app.ui.notes.NotesViewModel
+import com.mynote.app.ui.settings.SettingsScreen
 
 @Composable
 fun AppNavHost(container: AppContainer) {
@@ -22,7 +23,8 @@ fun AppNavHost(container: AppContainer) {
                 backupManager = container.backupManager,
                 onOpenNote = { id -> navController.navigate("edit/$id") },
                 onNewNote = { navController.navigate("edit/new") },
-                onManageCategories = { navController.navigate("categories") }
+                onManageCategories = { navController.navigate("categories") },
+                onOpenSettings = { navController.navigate("settings") }
             )
         }
         composable("edit/{noteId}") { backStack ->
@@ -39,6 +41,12 @@ fun AppNavHost(container: AppContainer) {
         composable("categories") {
             CategoriesScreen(
                 repository = container.noteRepository,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable("settings") {
+            SettingsScreen(
+                store = container.themeSettingsStore,
                 onBack = { navController.popBackStack() }
             )
         }
