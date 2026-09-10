@@ -3,7 +3,6 @@ package com.mynote.app.ui.settings
 import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,7 +11,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -31,6 +34,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -58,7 +63,11 @@ fun SettingsScreen(store: ThemeSettingsStore, onBack: () -> Unit) {
         }
     ) { padding ->
         Column(
-            modifier = Modifier.padding(padding).fillMaxSize().padding(16.dp),
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text("深色模式", style = MaterialTheme.typography.titleMedium)
@@ -78,7 +87,13 @@ fun SettingsScreen(store: ThemeSettingsStore, onBack: () -> Unit) {
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .toggleable(
+                            value = settings.dynamicColor,
+                            onValueChange = { vm.setDynamicColor(it) },
+                            role = Role.Switch
+                        ),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
@@ -91,7 +106,7 @@ fun SettingsScreen(store: ThemeSettingsStore, onBack: () -> Unit) {
                     }
                     Switch(
                         checked = settings.dynamicColor,
-                        onCheckedChange = { vm.setDynamicColor(it) }
+                        onCheckedChange = null
                     )
                 }
             }
@@ -113,8 +128,13 @@ fun SettingsScreen(store: ThemeSettingsStore, onBack: () -> Unit) {
                                 else MaterialTheme.colorScheme.outlineVariant,
                                 shape = CircleShape
                             )
-                            .clickable { vm.setThemeColorIndex(index) }
                             .semantics { contentDescription = preset.label }
+                            .clip(CircleShape)
+                            .selectable(
+                                selected = selected,
+                                onClick = { vm.setThemeColorIndex(index) },
+                                role = Role.RadioButton
+                            )
                     )
                 }
             }
