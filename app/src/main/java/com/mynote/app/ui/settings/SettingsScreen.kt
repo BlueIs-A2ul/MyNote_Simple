@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -112,12 +113,14 @@ fun SettingsScreen(store: ThemeSettingsStore, onBack: () -> Unit) {
             }
 
             Text("主题色", style = MaterialTheme.typography.titleMedium)
+            val selectedColorIndex =
+                settings.themeColorIndex.takeIf { it in ThemePresets.all.indices } ?: 0
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().selectableGroup(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 ThemePresets.all.forEachIndexed { index, preset ->
-                    val selected = settings.themeColorIndex == index
+                    val selected = index == selectedColorIndex
                     Box(
                         modifier = Modifier
                             .size(36.dp)
@@ -132,7 +135,10 @@ fun SettingsScreen(store: ThemeSettingsStore, onBack: () -> Unit) {
                             .clip(CircleShape)
                             .selectable(
                                 selected = selected,
-                                onClick = { vm.setThemeColorIndex(index) },
+                                onClick = {
+                                    if (settings.dynamicColor) vm.setDynamicColor(false)
+                                    vm.setThemeColorIndex(index)
+                                },
                                 role = Role.RadioButton
                             )
                     )

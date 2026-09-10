@@ -19,6 +19,14 @@ class ThemePresetsTest {
     }
 
     @Test
+    fun firstPresetKeepsCurrentDefaultDarkColors() {
+        val first = ThemePresets.all.first()
+        assertEquals(IndigoPrimary, first.dark.primary)
+        assertEquals(IndigoContainer, first.dark.primaryContainer)
+        assertEquals(TealAccent, first.dark.secondary)
+    }
+
+    @Test
     fun resolveOutOfRangeFallsBackToFirst() {
         assertEquals(ThemePresets.all.first(), ThemePresets.resolve(99))
         assertEquals(ThemePresets.all.first(), ThemePresets.resolve(-1))
