@@ -10,7 +10,9 @@ import com.mynote.app.data.db.NoteRevisionDao
 import com.mynote.app.data.db.NoteRevisionEntity
 import com.mynote.app.data.image.ImageStore
 import com.mynote.app.ui.notes.NoteContentParser
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
 
 class NoteRepository(
     private val noteDao: NoteDao,
@@ -78,6 +80,7 @@ class NoteRepository(
 
     suspend fun restoreRevision(noteId: Long, revisionId: Long): Boolean {
         val revision = revisionDao.getById(revisionId) ?: return false
+        if (revision.noteId != noteId) return false
         val categoryId = revision.categoryId?.takeIf { categoryDao.getById(it) != null }
         saveNote(noteId, revision.title, revision.content, categoryId, revision.pinned, revision.color)
         return true
@@ -102,7 +105,7 @@ class NoteRepository(
     private fun NoteEntity.toRevision(savedAt: Long): NoteRevisionEntity =
         NoteRevisionEntity(0, id, title, content, categoryId, pinned, color, savedAt)
 
-    private suspend fun collectImageGarbage() {
+    private suspend fun collectImageGarbage() = withContext(Dispatchers.IO) {
         val referenced = noteDao.getAll()
             .flatMap { NoteContentParser.extractImageNames(it.content) }
             .toMutableSet()

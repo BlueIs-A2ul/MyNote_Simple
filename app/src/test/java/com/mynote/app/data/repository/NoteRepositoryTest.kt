@@ -175,4 +175,21 @@ class NoteRepositoryTest {
         for (i in 1..50) repo.saveNote(id, "t", "v$i", null, false, null)
         assertEquals(false, imageStore.physicalFile("b.webp").exists())
     }
+
+    @Test
+    fun restoreRevisionRejectsRevisionFromAnotherNote() = runTest {
+        val a = repo.saveNote(null, "a", "va", null, false, null)
+        val b = repo.saveNote(null, "b", "vb", null, false, null)
+        val revisionOfA = db.noteRevisionDao().getByNote(a).first().id
+        assertEquals(false, repo.restoreRevision(b, revisionOfA))
+        assertEquals("vb", repo.getNote(b)?.content)
+        assertEquals(1, repo.countRevisions(b))
+    }
+
+    @Test
+    fun pinOnlyChangeCreatesRevision() = runTest {
+        val id = repo.saveNote(null, "t", "c", null, false, null)
+        repo.saveNote(id, "t", "c", null, true, null)
+        assertEquals(2, repo.countRevisions(id))
+    }
 }
