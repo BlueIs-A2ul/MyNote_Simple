@@ -57,8 +57,11 @@ import coil.compose.AsyncImage
 import com.mynote.app.data.backup.BackupManager
 import com.mynote.app.data.db.CategoryEntity
 import com.mynote.app.data.db.NoteEntity
+import com.mynote.app.data.export.ImageExportManager
+import com.mynote.app.data.export.NoteImageRenderer
 import com.mynote.app.data.image.ImageStore
 import com.mynote.app.data.repository.NoteRepository
+import com.mynote.app.ui.export.NoteExportDialog
 import com.mynote.app.ui.notes.NoteContentParser.ContentBlock
 import com.mynote.app.ui.theme.NoteColors
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -133,6 +136,8 @@ fun NoteEditScreen(
     repository: NoteRepository,
     imageStore: ImageStore,
     backupManager: BackupManager,
+    imageRenderer: NoteImageRenderer,
+    exportManager: ImageExportManager,
     onBack: () -> Unit
 ) {
     val vm: NoteEditViewModel = viewModel(
@@ -149,6 +154,8 @@ fun NoteEditScreen(
     var selectedCategoryId by rememberSaveable { mutableStateOf<Long?>(null) }
     var showAddCategoryDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showExportDialog by remember { mutableStateOf(false) }
+    var showImageExport by remember { mutableStateOf(false) }
 
     LaunchedEffect(note) {
         if (note != null && title.isEmpty() && content.isEmpty()) {
@@ -199,8 +206,8 @@ fun NoteEditScreen(
                         Icon(Icons.Default.Save, contentDescription = "保存")
                     }
                     if (noteId != null) {
-                        IconButton(onClick = { exportTxtLauncher.launch((note?.title ?: "note") + ".txt") }) {
-                            Icon(Icons.Default.Share, contentDescription = "导出为 txt")
+                        IconButton(onClick = { showExportDialog = true }) {
+                            Icon(Icons.Default.Share, contentDescription = "导出")
                         }
                     }
                     if (noteId != null) {
@@ -331,6 +338,51 @@ fun NoteEditScreen(
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) { Text("取消") }
             }
+        )
+    }
+
+    if (showExportDialog) {
+        val hasContent = title.isNotBlank() || content.isNotBlank()
+        AlertDialog(
+            onDismissRequest = { showExportDialog = false },
+            title = { Text("导出为…") },
+            text = {
+                Column {
+                    TextButton(
+                        onClick = {
+                            showExportDialog = false
+                            exportTxtLauncher.launch((note?.title ?: "note") + ".txt")
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("文本文档 (txt)") }
+                    TextButton(
+                        onClick = {
+                            showExportDialog = false
+                            showImageExport = true
+                        },
+                        enabled = hasContent,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("图片 (PNG)") }
+                    if (!hasContent) {
+                        Text("还没有内容", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showExportDialog = false }) { Text("取消") }
+            }
+        )
+    }
+
+    if (showImageExport) {
+        NoteExportDialog(
+            title = title,
+            content = content,
+            updatedAt = note?.updatedAt ?: System.currentTimeMillis(),
+            renderer = imageRenderer,
+            exportManager = exportManager,
+            onDismiss = { showImageExport = false }
         )
     }
 }

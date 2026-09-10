@@ -35,6 +35,8 @@ fun AppNavHost(container: AppContainer) {
                 repository = container.noteRepository,
                 imageStore = container.imageStore,
                 backupManager = container.backupManager,
+                imageRenderer = container.noteImageRenderer,
+                exportManager = container.imageExportManager,
                 onBack = { navController.popBackStack() }
             )
         }

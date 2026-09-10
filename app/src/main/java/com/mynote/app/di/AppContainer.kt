@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Room
 import com.mynote.app.data.backup.BackupManager
 import com.mynote.app.data.db.AppDatabase
+import com.mynote.app.data.export.ImageExportManager
+import com.mynote.app.data.export.NoteImageRenderer
 import com.mynote.app.data.image.ImageStore
 import com.mynote.app.data.repository.NoteRepository
 import com.mynote.app.data.settings.ThemeSettingsStore
@@ -25,4 +27,8 @@ class AppContainer(context: Context) {
     val backupManager: BackupManager by lazy {
         BackupManager(context, imageStore, database)
     }
+
+    val noteImageRenderer: NoteImageRenderer by lazy { NoteImageRenderer(imageStore) }
+
+    val imageExportManager: ImageExportManager by lazy { ImageExportManager(context) }
 }
