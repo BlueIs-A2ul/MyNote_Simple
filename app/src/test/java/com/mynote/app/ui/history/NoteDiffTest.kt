@@ -62,11 +62,11 @@ class NoteDiffTest {
 
     @Test
     fun unpairedLineIsFullyEmphasized() {
-        val lines = NoteDiff.diff("a\nb", "a\nc\nd")
-        // 删除 b / 新增 c、d：b 与 c 配对，d 未配对 → 整行强调
+        val lines = NoteDiff.diff("hello", "hello world\nx")
+        assertTrue(lines[0].emphasis.isEmpty()) // 配对行：hello 是新增行的前缀，无真正变化
         val added = lines.filter { it.type == NoteDiff.Type.ADDED }
-        assertEquals(2, added.size)
-        assertTrue(added[1].emphasis.isNotEmpty())
+        assertEquals(listOf(5..10), added[0].emphasis)
+        assertEquals(listOf(0..0), added[1].emphasis) // 未配对行：整行强调
     }
 
     @Test
@@ -77,5 +77,36 @@ class NoteDiffTest {
         assertEquals(2200, lines.size)
         assertTrue(lines.take(1100).all { it.type == NoteDiff.Type.REMOVED })
         assertTrue(lines.drop(1100).all { it.type == NoteDiff.Type.ADDED })
+    }
+
+    @Test
+    fun oneSidedSuffixChangeDoesNotEmphasizeUnchangedSide() {
+        val lines = NoteDiff.diff("hello", "hello world")
+        assertEquals(NoteDiff.Type.REMOVED, lines[0].type)
+        assertTrue(lines[0].emphasis.isEmpty())
+        assertEquals(listOf(5..10), lines[1].emphasis)
+    }
+
+    @Test
+    fun largeMostlyUnchangedDiffIsStillAligned() {
+        val old = (1..1100).joinToString("\n") { "line $it" }
+        val new = (1..1100).joinToString("\n") { if (it == 550) "line 550 changed" else "line $it" }
+        val lines = NoteDiff.diff(old, new)
+        assertEquals(1101, lines.size)
+        assertEquals(2, lines.count { it.type != NoteDiff.Type.UNCHANGED })
+    }
+
+    @Test
+    fun surrogatePairIsNotSplitByEmphasis() {
+        val lines = NoteDiff.diff("a😀b", "a😁b")
+        assertEquals(listOf(1..2), lines[0].emphasis)
+        assertEquals(listOf(1..2), lines[1].emphasis)
+    }
+
+    @Test
+    fun trailingNewlineProducesExplicitEmptyChangedLine() {
+        val lines = NoteDiff.diff("a", "a\n")
+        assertEquals(listOf(NoteDiff.Type.UNCHANGED, NoteDiff.Type.ADDED), lines.map { it.type })
+        assertEquals("", lines[1].text)
     }
 }
