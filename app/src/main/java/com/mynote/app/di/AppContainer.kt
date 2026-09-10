@@ -13,7 +13,9 @@ import com.mynote.app.data.settings.ThemeSettingsStore
 class AppContainer(context: Context) {
 
     val database: AppDatabase by lazy {
-        Room.databaseBuilder(context, AppDatabase::class.java, "mynote.db").build()
+        Room.databaseBuilder(context, AppDatabase::class.java, "mynote.db")
+            .addMigrations(AppDatabase.MIGRATION_1_2)
+            .build()
     }
 
     val imageStore: ImageStore by lazy { ImageStore(context) }
