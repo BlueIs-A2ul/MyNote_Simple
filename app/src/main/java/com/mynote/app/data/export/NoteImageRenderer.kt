@@ -130,13 +130,14 @@ class NoteImageRenderer(private val imageStore: ImageStore) {
             val contentWidth = width - 2 * padding
             val usableHeight = pageHeightPx(scale) - 2 * padding
             val blocks = buildBlocks(note, scale, contentWidth, usableHeight, measurer, density)
+            coroutineContext.ensureActive()
             Measurement(
                 totalHeightPx = ceil(plan(blocks, Float.MAX_VALUE).first().contentHeight + 2 * padding).toInt(),
                 pageCount = plan(blocks, usableHeight).size
             )
         }
 
-    /** 渲染全部页面；调用方负责在合适线程收集结果。 */
+    /** 渲染全部页面并保留在内存（预览等小尺寸场景用）。 */
     suspend fun render(
         note: NoteData,
         mode: PageMode,
@@ -144,6 +145,41 @@ class NoteImageRenderer(private val imageStore: ImageStore) {
         measurer: TextMeasurer,
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }
     ): List<RenderedPage> = withContext(Dispatchers.Default) {
+        val render = planRender(note, mode, scale, measurer)
+        render.plans.mapIndexed { index, page ->
+            onProgress(index, render.plans.size)
+            drawPage(render, page, index, mode, scale)
+        }
+    }
+
+    /**
+     * 逐页渲染并交给 [onPage]；渲染器不保留页面引用，
+     * 调用方可在回调中写盘并立即回收位图，峰值内存 ≈ 一页。返回总页数。
+     */
+    suspend fun renderPages(
+        note: NoteData,
+        mode: PageMode,
+        scale: Float,
+        measurer: TextMeasurer,
+        onPage: suspend (RenderedPage) -> Unit
+    ): Int = withContext(Dispatchers.Default) {
+        val render = planRender(note, mode, scale, measurer)
+        render.plans.forEachIndexed { index, page ->
+            coroutineContext.ensureActive()
+            onPage(drawPage(render, page, index, mode, scale))
+        }
+        render.plans.size
+    }
+
+    private data class RenderPlan(
+        val plans: List<PagePlan>,
+        val width: Int,
+        val padding: Float,
+        val contentWidth: Float,
+        val pageHeight: Float
+    )
+
+    private fun planRender(note: NoteData, mode: PageMode, scale: Float, measurer: TextMeasurer): RenderPlan {
         val density = Density(scale, 1f)
         val width = pixelWidth(scale)
         val padding = PADDING_DP * scale
@@ -156,11 +192,7 @@ class NoteImageRenderer(private val imageStore: ImageStore) {
         } else {
             plan(blocks, usableHeight)
         }
-        plans.mapIndexed { index, page ->
-            coroutineContext.ensureActive()
-            onProgress(index, plans.size)
-            drawPage(page, index, mode, plans.size, scale, width, padding, contentWidth, pageHeight)
-        }
+        return RenderPlan(plans, width, padding, contentWidth, pageHeight)
     }
 
     internal fun buildBlocks(
@@ -275,42 +307,48 @@ class NoteImageRenderer(private val imageStore: ImageStore) {
         return pages.ifEmpty { listOf(PagePlan(emptyList(), 0f)) }
     }
 
-    private fun drawPage(
-        page: PagePlan,
-        index: Int,
-        mode: PageMode,
-        pageCount: Int,
-        scale: Float,
-        width: Int,
-        padding: Float,
-        contentWidth: Float,
-        pageHeight: Float
-    ): RenderedPage {
-        val isLast = index == pageCount - 1
-        val height = if (mode == PageMode.PAGED && !isLast) pageHeight else page.contentHeight + 2 * padding
-        val bitmap = Bitmap.createBitmap(width, ceil(height).toInt(), Bitmap.Config.ARGB_8888)
+    private fun drawPage(render: RenderPlan, page: PagePlan, index: Int, mode: PageMode, scale: Float): RenderedPage {
+        val isLast = index == render.plans.size - 1
+        val height = if (mode == PageMode.PAGED && !isLast) {
+            render.pageHeight
+        } else {
+            page.contentHeight + 2 * render.padding
+        }
+        val heightPx = ceil(height).toInt()
+        val bitmap = Bitmap.createBitmap(render.width, heightPx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap.asImageBitmap())
-        CanvasDrawScope().draw(Density(scale, 1f), LayoutDirection.Ltr, canvas, Size(width.toFloat(), height)) {
+        CanvasDrawScope().draw(
+            Density(scale, 1f),
+            LayoutDirection.Ltr,
+            canvas,
+            Size(render.width.toFloat(), heightPx.toFloat())
+        ) {
             drawRect(COLOR_BACKGROUND, size = size)
             page.items.forEach { item ->
                 when (item) {
                     is PlacedItem.TextPiece -> {
                         val top = item.layout.getLineTop(item.startLine)
                         val bottom = item.layout.getLineBottom(item.endLine - 1)
-                        val itemY = padding + item.y
-                        clipRect(left = 0f, top = itemY, right = width.toFloat(), bottom = itemY + bottom - top) {
-                            drawText(item.layout, topLeft = Offset(padding, itemY - top))
+                        val itemY = render.padding + item.y
+                        clipRect(left = 0f, top = itemY, right = render.width.toFloat(), bottom = itemY + bottom - top) {
+                            drawText(item.layout, topLeft = Offset(render.padding, itemY - top))
                         }
                     }
 
                     is PlacedItem.ImagePiece -> {
-                        val decoded = decodeImage(item.block.file, item.block.width.roundToInt()) ?: return@forEach
-                        val x = if (item.block.centered) padding + (contentWidth - item.block.width) / 2f else padding
-                        val itemY = padding + item.y
+                        val block = item.block
+                        if (block.width < 1f || block.height < 1f) return@forEach
+                        val decoded = decodeImage(block.file, block.width.roundToInt()) ?: return@forEach
+                        val x = if (block.centered) {
+                            render.padding + (render.contentWidth - block.width) / 2f
+                        } else {
+                            render.padding
+                        }
+                        val itemY = render.padding + item.y
                         val path = Path().apply {
                             addRoundRect(
                                 RoundRect(
-                                    Rect(x, itemY, x + item.block.width, itemY + item.block.height),
+                                    Rect(x, itemY, x + block.width, itemY + block.height),
                                     CornerRadius(IMAGE_CORNER_DP * scale)
                                 )
                             )
@@ -319,9 +357,10 @@ class NoteImageRenderer(private val imageStore: ImageStore) {
                             drawImage(
                                 image = decoded.asImageBitmap(),
                                 dstOffset = IntOffset(x.roundToInt(), itemY.roundToInt()),
-                                dstSize = IntSize(item.block.width.roundToInt(), item.block.height.roundToInt())
+                                dstSize = IntSize(block.width.roundToInt(), block.height.roundToInt())
                             )
                         }
+                        decoded.recycle()
                     }
                 }
             }
@@ -397,11 +436,12 @@ class NoteImageRenderer(private val imageStore: ImageStore) {
 
     private fun decodeImage(file: File, targetWidth: Int): Bitmap? {
         if (!file.exists()) return null
+        val target = targetWidth.coerceAtLeast(1)
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, bounds)
         if (bounds.outWidth <= 0) return null
         var sample = 1
-        while (bounds.outWidth / (sample * 2) >= targetWidth) sample *= 2
+        while (bounds.outWidth / (sample * 2) >= target) sample *= 2
         val options = BitmapFactory.Options().apply { inSampleSize = sample }
         return BitmapFactory.decodeFile(file.absolutePath, options)
     }

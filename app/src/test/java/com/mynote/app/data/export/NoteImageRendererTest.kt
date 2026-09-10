@@ -133,10 +133,88 @@ class NoteImageRendererTest {
         assertEquals(measurement.totalHeightPx, pages.first().bitmap.height)
     }
 
+    @Test
+    fun extremeAspectImageDoesNotCrash() = runTest {
+        writeImage("sliver.webp", 1, 4000)
+        val pages = renderer.render(
+            note(content = NoteContentParser.makeImageMarkup("sliver.webp")),
+            PageMode.SINGLE,
+            1f,
+            measurer
+        )
+        assertTrue(pages.isNotEmpty())
+    }
+
+    @Test
+    fun exportScaleUsesExpectedDimensions() = runTest {
+        val pages = renderer.render(note(content = "分页文字。".repeat(300)), PageMode.PAGED, 3f, measurer)
+        assertTrue(pages.size > 1)
+        pages.dropLast(1).forEach { page ->
+            assertEquals(1080, page.bitmap.width)
+            assertEquals(4096, page.bitmap.height)
+        }
+    }
+
+    @Test
+    fun bodyTextIsDrawnOnPage() = runTest {
+        val bitmap = renderer.render(note(content = "一段正文"), PageMode.PAGED, 1f, measurer).first().bitmap
+        var nonWhite = 0
+        for (y in 0 until bitmap.height) {
+            for (x in 0 until bitmap.width) {
+                if (bitmap.getPixel(x, y) != android.graphics.Color.WHITE) nonWhite++
+            }
+        }
+        assertTrue(nonWhite > 0)
+    }
+
+    @Test
+    fun missingImageIsSkipped() = runTest {
+        val blocks = blocksOf(note(content = "正文" + NoteContentParser.makeImageMarkup("missing.webp")))
+        assertTrue(blocks.none { it is NoteImageRenderer.Block.ImageBlock })
+        assertTrue(blocks.any { it is NoteImageRenderer.Block.TextBlock })
+    }
+
+    @Test
+    fun imageIsDrawnWithRoundedCorners() = runTest {
+        writeSolidImage("solid.webp", 200, 200)
+        val bitmap = renderer.render(
+            note(content = NoteContentParser.makeImageMarkup("solid.webp")),
+            PageMode.PAGED,
+            1f,
+            measurer
+        ).first().bitmap
+
+        var minX = bitmap.width
+        var minY = bitmap.height
+        var found = false
+        for (y in 0 until bitmap.height) {
+            for (x in 0 until bitmap.width) {
+                if (bitmap.getPixel(x, y) == android.graphics.Color.RED) {
+                    found = true
+                    if (x < minX) minX = x
+                    if (y < minY) minY = y
+                }
+            }
+        }
+        assertTrue(found)
+        assertEquals(android.graphics.Color.WHITE, bitmap.getPixel(minX, minY))
+    }
+
     private fun writeImage(name: String, width: Int, height: Int) {
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val bytes = ByteArrayOutputStream().use { out ->
             bitmap.compress(Bitmap.CompressFormat.WEBP, 80, out)
+            out.toByteArray()
+        }
+        imageStore.writeFile(name, bytes)
+    }
+
+    private fun writeSolidImage(name: String, width: Int, height: Int) {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(android.graphics.Color.RED)
+        }
+        val bytes = ByteArrayOutputStream().use { out ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
             out.toByteArray()
         }
         imageStore.writeFile(name, bytes)
