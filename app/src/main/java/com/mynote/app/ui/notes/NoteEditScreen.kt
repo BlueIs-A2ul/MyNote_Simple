@@ -44,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -59,6 +60,7 @@ import com.mynote.app.data.db.NoteEntity
 import com.mynote.app.data.image.ImageStore
 import com.mynote.app.data.repository.NoteRepository
 import com.mynote.app.ui.notes.NoteContentParser.ContentBlock
+import com.mynote.app.ui.theme.NoteColors
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -92,6 +94,14 @@ class NoteEditViewModel(
             if (imageStore.importAndCompress(uri, target)) {
                 onInserted(NoteContentParser.makeImageMarkup(target.name))
             }
+        }
+    }
+
+    fun addCategory(name: String, onCreated: (Long) -> Unit) {
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            val id = repository.addCategory(name.trim(), NoteColors.random().toArgb())
+            onCreated(id)
         }
     }
 
@@ -137,6 +147,7 @@ fun NoteEditScreen(
     var previewMode by rememberSaveable { mutableStateOf(false) }
     var pinned by rememberSaveable(noteId) { mutableStateOf(false) }
     var selectedCategoryId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var showAddCategoryDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(note) {
@@ -218,6 +229,11 @@ fun NoteEditScreen(
                         label = { Text(cat.name) }
                     )
                 }
+                FilterChip(
+                    selected = false,
+                    onClick = { showAddCategoryDialog = true },
+                    label = { Text("+ 新建分类") }
+                )
             }
 
             OutlinedTextField(
@@ -272,6 +288,36 @@ fun NoteEditScreen(
                 Text("插入图片", style = MaterialTheme.typography.labelMedium)
             }
         }
+    }
+
+    if (showAddCategoryDialog) {
+        var name by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showAddCategoryDialog = false },
+            title = { Text("新建分类") },
+            text = {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("名称") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        vm.addCategory(name) { id ->
+                            selectedCategoryId = id
+                            showAddCategoryDialog = false
+                        }
+                    },
+                    enabled = name.isNotBlank()
+                ) { Text("确定") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddCategoryDialog = false }) { Text("取消") }
+            }
+        )
     }
 
     if (showDeleteDialog) {
