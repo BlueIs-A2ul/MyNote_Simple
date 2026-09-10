@@ -205,7 +205,7 @@ fun NoteEditScreen(
                     }) {
                         Icon(Icons.Default.Save, contentDescription = "保存")
                     }
-                    if (noteId != null) {
+                    if (noteId != null || title.isNotBlank() || content.isNotBlank()) {
                         IconButton(onClick = { showExportDialog = true }) {
                             Icon(Icons.Default.Share, contentDescription = "导出")
                         }
@@ -353,8 +353,12 @@ fun NoteEditScreen(
                             showExportDialog = false
                             exportTxtLauncher.launch((note?.title ?: "note") + ".txt")
                         },
+                        enabled = note != null,
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("文本文档 (txt)") }
+                    if (note == null) {
+                        Text("保存后可导出 txt", style = MaterialTheme.typography.bodySmall)
+                    }
                     TextButton(
                         onClick = {
                             showExportDialog = false

@@ -122,7 +122,7 @@ fun NoteExportDialog(
                 try {
                     exportManager.copyPageToUri(uri, files.first())
                         .onSuccess { showMessage("已保存") }
-                        .onFailure { showMessage(it.message ?: "保存失败") }
+                        .onFailure { showMessage("保存失败") }
                 } finally {
                     writing = false
                 }
