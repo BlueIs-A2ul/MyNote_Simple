@@ -38,7 +38,7 @@ class NoteEditViewModelTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries().build()
-        repo = NoteRepository(db.noteDao(), db.categoryDao(), ImageStore(context))
+        repo = NoteRepository(db.noteDao(), db.categoryDao(), db.noteRevisionDao(), ImageStore(context), db)
         vm = NoteEditViewModel(repo, ImageStore(context), noteId = null)
     }
 

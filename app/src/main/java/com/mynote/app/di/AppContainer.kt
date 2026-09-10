@@ -23,7 +23,7 @@ class AppContainer(context: Context) {
     val themeSettingsStore: ThemeSettingsStore by lazy { ThemeSettingsStore(context) }
 
     val noteRepository: NoteRepository by lazy {
-        NoteRepository(database.noteDao(), database.categoryDao(), imageStore)
+        NoteRepository(database.noteDao(), database.categoryDao(), database.noteRevisionDao(), imageStore, database)
     }
 
     val backupManager: BackupManager by lazy {
