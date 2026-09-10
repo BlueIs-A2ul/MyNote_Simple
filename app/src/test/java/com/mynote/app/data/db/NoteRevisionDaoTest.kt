@@ -7,7 +7,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -78,10 +77,30 @@ class NoteRevisionDaoTest {
     }
 
     @Test
-    fun getAllContentsReturnsEverySnapshot() = runTest {
+    fun getContentsWithImageMarkupFiltersNonImageContents() = runTest {
         val noteId = db.noteDao().insert(NoteEntity(0, "t", "", 1, 1, null, false, null))
-        db.noteRevisionDao().insert(revision(noteId, 1, "a"))
-        db.noteRevisionDao().insert(revision(noteId, 2, "b"))
-        assertTrue(db.noteRevisionDao().getAllContents().containsAll(listOf("a", "b")))
+        db.noteRevisionDao().insert(revision(noteId, 1, "![](img/a.webp)"))
+        db.noteRevisionDao().insert(revision(noteId, 2, "plain text"))
+        assertEquals(
+            listOf("![](img/a.webp)"),
+            db.noteRevisionDao().getContentsWithImageMarkup()
+        )
+    }
+
+    @Test
+    fun observeByNoteBreaksSavedAtTiesByNewestId() = runTest {
+        val noteId = db.noteDao().insert(NoteEntity(0, "t", "", 1, 1, null, false, null))
+        db.noteRevisionDao().insert(revision(noteId, 100, "first"))
+        db.noteRevisionDao().insert(revision(noteId, 100, "second"))
+        val list = db.noteRevisionDao().observeByNote(noteId).first()
+        assertEquals(listOf("second", "first"), list.map { it.content })
+    }
+
+    @Test
+    fun trimToIsNoOpWhenUnderLimit() = runTest {
+        val noteId = db.noteDao().insert(NoteEntity(0, "t", "", 1, 1, null, false, null))
+        for (i in 1..10) db.noteRevisionDao().insert(revision(noteId, i.toLong(), "v$i"))
+        assertEquals(0, db.noteRevisionDao().trimTo(noteId, 50))
+        assertEquals(10, db.noteRevisionDao().countByNote(noteId))
     }
 }

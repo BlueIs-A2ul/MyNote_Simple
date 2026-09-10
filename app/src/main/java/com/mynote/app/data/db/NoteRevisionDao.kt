@@ -34,6 +34,7 @@ interface NoteRevisionDao {
     )
     suspend fun trimTo(noteId: Long, keep: Int): Int
 
-    @Query("SELECT content FROM note_revisions")
-    suspend fun getAllContents(): List<String>
+    /** 图片 GC 用：只取含图片标记的快照正文，避免全量载入内存。 */
+    @Query("SELECT content FROM note_revisions WHERE content LIKE '%![](img/%'")
+    suspend fun getContentsWithImageMarkup(): List<String>
 }
