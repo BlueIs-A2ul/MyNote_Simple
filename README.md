@@ -10,7 +10,8 @@
 - 分类：单维度分类（增/改/删，删除后笔记移入未分类，同名幂等）
 - 主题：浅色/深色/跟随系统三态、8 档预设主题色、Android 12+ 动态取色开关（Material You；点选主题色自动关闭动态取色）
 - 设置：主页 ⋮ → 设置，主题修改即时生效、重启保持
-- 备份：zip 全量备份 / 导入（按 id 去重、冲突保留更新者）+ 单条笔记导出 txt
+- 备份：zip 全量备份 / 导入（按 id 去重、冲突保留更新者）
+- 导出：单条笔记导出 txt 或图片（纯白 PNG、无任何品牌元素；长笔记可选自动分页或单张长图，含内嵌图片）
 
 ## 技术栈
 
@@ -33,7 +34,7 @@ Kotlin · Jetpack Compose + Material 3 · MVVM + 单向数据流（UDF） · Roo
 
 ```bat
 .\gradlew :app:assembleDebug          rem debug APK
-.\gradlew :app:testDebugUnitTest      rem 39 个单元测试
+.\gradlew :app:testDebugUnitTest      rem 69 个单元测试
 .\gradlew :app:assembleRelease        rem release（R8 + 资源压缩 + 签名）
 ```
 
@@ -54,12 +55,14 @@ app/src/main/java/com/mynote/app/
 │   ├── repository/           # NoteRepository（业务逻辑 + 图片垃圾回收）
 │   ├── settings/             # ThemeSettingsStore（SharedPreferences + StateFlow）
 │   ├── image/                # ImageStore（落盘 / 采样压缩 / 缩略图 / GC）
-│   └── backup/               # BackupManager（zip 备份导入导出 / txt 导出）
+│   ├── backup/               # BackupManager（zip 备份导入导出 / txt 导出）
+│   └── export/               # NoteImageRenderer / ImageExportManager（图片导出）
 ├── ui/
 │   ├── theme/                # 主题（8 档色板 / 动态取色应用）
 │   ├── notes/                # 列表 / 编辑 / 解析器 / ViewModel
 │   ├── categories/           # 分类管理
 │   ├── settings/             # 主题设置页 / ViewModel
+│   ├── export/               # 导出图片预览页 / ViewModel
 │   └── navigation/           # Compose Navigation 路由
 └── util/                     # 日期格式化等
 ```

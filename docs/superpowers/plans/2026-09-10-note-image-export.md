@@ -1710,3 +1710,15 @@ git commit -m "docs: 图片导出功能落地（README + 设计文档状态）"
 5. 分享到微信（或任一聊天应用）验证单张与多张。
 6. 编辑页有未保存修改时导出，图片应包含未保存内容。
 7. 空笔记（无标题无正文）时「图片 (PNG)」置灰并显示「还没有内容」。
+
+---
+
+## 修订记录
+
+- **2026-09-10 实现期修订（流式导出，控制峰值内存）**：审查发现「渲染全部分页并持有列表」的峰值内存 ≈ 页数 × 17.7MB，与设计目标「峰值 ≈ 一页」冲突。最终实现：
+  - `NoteImageRenderer` 新增流式接口 `renderPages(note, mode, scale, measurer, onPage: suspend (RenderedPage, total) -> Unit): Int`；`render()` 保留给低清预览；修复极端宽高比图片导致 `decodeImage` 除零崩溃；绘制使用 ceil 后的高度并回收解码位图。
+  - `ImageExportManager` 改为缓存文件流式 API：`prepareCache` / `cacheFile` / `writePageFile` / `cachePageUri` / `copyPageToUri` / `copyCacheToTree` / internal `copyFiles`；移除 `writeToUri` / `writeToTree` / `writePages` / `writeCacheFiles`。
+  - `NoteExportViewModel.renderToCache`：逐页全清渲染 → 写缓存 → 立即回收位图；`exporting` 用 CAS 防重入；SINGLE 渲染失败自动切分页。
+  - `NoteExportDialog`：保存/分享前先渲染到缓存；选择位置后的复制期间有独立忙状态防止缓存竞态。
+  - `app/build.gradle.kts`：单测 JVM 参数增加 `--add-opens=java.base/java.io=ALL-UNNAMED`（Robolectric 在 JDK 17 下关闭 ParcelFileDescriptor 流所需）。
+  - 本计划 Task 2–5 中的代码块为初始版本；最终以仓库实现与各任务审查结论为准。
