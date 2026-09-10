@@ -98,9 +98,18 @@ fun NoteExportDialog(
     val scope = rememberCoroutineScope()
     val snackbarHost = remember { SnackbarHostState() }
     var pendingFiles by remember { mutableStateOf<List<File>?>(null) }
+    var writing by remember { mutableStateOf(false) }
 
     fun showMessage(message: String) {
         scope.launch { snackbarHost.showSnackbar(message) }
+    }
+
+    fun dismiss() {
+        if (writing) {
+            showMessage("正在写入文件，请稍候")
+        } else {
+            onDismiss()
+        }
     }
 
     val createDocument = rememberLauncherForActivityResult(
@@ -108,10 +117,15 @@ fun NoteExportDialog(
     ) { uri ->
         val files = pendingFiles
         if (uri != null && files != null) {
+            writing = true
             scope.launch {
-                exportManager.copyPageToUri(uri, files.first())
-                    .onSuccess { showMessage("已保存") }
-                    .onFailure { showMessage("保存失败") }
+                try {
+                    exportManager.copyPageToUri(uri, files.first())
+                        .onSuccess { showMessage("已保存") }
+                        .onFailure { showMessage(it.message ?: "保存失败") }
+                } finally {
+                    writing = false
+                }
             }
         }
         pendingFiles = null
@@ -122,10 +136,15 @@ fun NoteExportDialog(
     ) { uri ->
         val files = pendingFiles
         if (uri != null && files != null) {
+            writing = true
             scope.launch {
-                exportManager.copyCacheToTree(uri, files)
-                    .onSuccess { showMessage("已保存 $it 张") }
-                    .onFailure { showMessage(it.message ?: "保存失败") }
+                try {
+                    exportManager.copyCacheToTree(uri, files)
+                        .onSuccess { showMessage("已保存 $it 张") }
+                        .onFailure { showMessage(it.message ?: "保存失败") }
+                } finally {
+                    writing = false
+                }
             }
         }
         pendingFiles = null
@@ -165,7 +184,7 @@ fun NoteExportDialog(
     }
 
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { dismiss() },
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -174,7 +193,7 @@ fun NoteExportDialog(
                     TopAppBar(
                         title = { Text("导出图片") },
                         navigationIcon = {
-                            IconButton(onClick = onDismiss) {
+                            IconButton(onClick = { dismiss() }) {
                                 Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                             }
                         }
@@ -196,12 +215,12 @@ fun NoteExportDialog(
                             ) {
                                 OutlinedButton(
                                     onClick = { save() },
-                                    enabled = !exporting,
+                                    enabled = !exporting && !writing,
                                     modifier = Modifier.weight(1f)
                                 ) { Text("保存") }
                                 Button(
                                     onClick = { share() },
-                                    enabled = !exporting,
+                                    enabled = !exporting && !writing,
                                     modifier = Modifier.weight(1f)
                                 ) { Text("分享") }
                             }
@@ -238,14 +257,14 @@ fun NoteExportDialog(
                                             selected = current.mode == PageMode.PAGED,
                                             onClick = { vm.setMode(PageMode.PAGED) },
                                             shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                                            enabled = !exporting,
+                                            enabled = !exporting && !writing,
                                             label = { Text("分页 ${current.pageCount} 张") }
                                         )
                                         SegmentedButton(
                                             selected = current.mode == PageMode.SINGLE,
                                             onClick = { vm.setMode(PageMode.SINGLE) },
                                             shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                                            enabled = !exporting,
+                                            enabled = !exporting && !writing,
                                             label = { Text("单张长图") }
                                         )
                                     }
