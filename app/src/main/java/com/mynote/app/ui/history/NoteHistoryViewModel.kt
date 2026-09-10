@@ -8,7 +8,9 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.mynote.app.data.db.NoteRevisionDao
 import com.mynote.app.data.db.NoteRevisionEntity
 import com.mynote.app.data.repository.NoteRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -50,6 +52,8 @@ class NoteHistoryViewModel(
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state
 
+    private var diffJob: Job? = null
+
     init {
         viewModelScope.launch {
             repository.observeRevisions(noteId).collectLatest { raw ->
@@ -90,7 +94,8 @@ class NoteHistoryViewModel(
             )
         }
         if (older != null) {
-            viewModelScope.launch {
+            diffJob?.cancel()
+            diffJob = viewModelScope.launch {
                 val lines = withContext(Dispatchers.Default) {
                     NoteDiff.diff(older.revision.content, item.revision.content)
                 }
@@ -123,9 +128,15 @@ class NoteHistoryViewModel(
         _state.update { it.copy(restoring = true) }
         val revisionId = detail.revision.id
         viewModelScope.launch {
-            val ok = repository.restoreRevision(noteId, revisionId)
-            _state.update {
-                it.copy(restoring = false, restoreSucceeded = ok, message = if (ok) null else "恢复失败")
+            try {
+                val ok = repository.restoreRevision(noteId, revisionId)
+                _state.update {
+                    it.copy(restoring = false, restoreSucceeded = ok, message = if (ok) null else "恢复失败")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Throwable) {
+                _state.update { it.copy(restoring = false, restoreSucceeded = false, message = "恢复失败") }
             }
         }
     }
@@ -141,6 +152,7 @@ class NoteHistoryViewModel(
     private fun refreshDetail(detail: DetailState?, raw: List<NoteRevisionEntity>): DetailState? {
         if (detail == null) return null
         val index = raw.indexOfFirst { it.id == detail.revision.id }
+        // 正在查看的版本被裁剪后自动关闭详情
         if (index < 0) return null
         val rev = raw[index]
         val older = raw.getOrNull(index + 1)

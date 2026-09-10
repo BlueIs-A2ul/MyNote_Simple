@@ -108,10 +108,12 @@ class NoteHistoryViewModelTest {
         val vm = createVm(id)
         val state = vm.state.first { it.count == 2 }
         val oldId = state.revisions[1].revision.id
+        val currentId = state.revisions[0].revision.id
 
         vm.selectRevision(oldId)
         vm.restore()
-        vm.restore() // 第二次应被防重入拦截
+        vm.selectRevision(currentId)
+        vm.restore() // 第二次应被防重入拦截（否则 v2 会覆盖回去并多一条历史）
 
         vm.state.first { it.restoreSucceeded }
         assertEquals("v1", repo.getNote(id)?.content)
@@ -128,5 +130,18 @@ class NoteHistoryViewModelTest {
         assertNotNull(vm.state.value.detail)
         vm.closeDetail()
         assertEquals(null, vm.state.value.detail)
+    }
+
+    @Test
+    fun toggleFullTextFlipsFlag() = runTest(dispatcher) {
+        val id = repo.saveNote(null, "t1", "c1", null, false, null)
+        repo.saveNote(id, "t2", "c2", null, false, null)
+        val vm = createVm(id)
+        val state = vm.state.first { it.count == 2 }
+        vm.selectRevision(state.revisions[0].revision.id)
+
+        assertEquals(false, vm.state.value.detail!!.showFullText)
+        vm.toggleFullText()
+        assertEquals(true, vm.state.value.detail!!.showFullText)
     }
 }
