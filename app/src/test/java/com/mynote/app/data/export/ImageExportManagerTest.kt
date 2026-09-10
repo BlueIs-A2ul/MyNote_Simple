@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -13,6 +14,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.Calendar
 
@@ -23,6 +25,16 @@ class ImageExportManagerTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val manager = ImageExportManager(context)
 
+    private fun page() = RenderedPage(Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888), 0)
+
+    private fun pngBytes(color: Int): ByteArray {
+        val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888).apply { eraseColor(color) }
+        return ByteArrayOutputStream().use { out ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            out.toByteArray()
+        }
+    }
+
     @Test
     fun sanitizeNameReplacesIllegalCharacters() {
         assertEquals("a_b_c__", manager.sanitizeName("""a/b:c*?"""))
@@ -32,6 +44,11 @@ class ImageExportManagerTest {
     fun sanitizeNameFallsBackForBlankTitle() {
         assertEquals("笔记", manager.sanitizeName("   "))
         assertEquals("笔记", manager.sanitizeName(".."))
+    }
+
+    @Test
+    fun sanitizeNameTrimsAfterTruncation() {
+        assertEquals("a", manager.sanitizeName("a" + " ".repeat(100) + "b"))
     }
 
     @Test
@@ -48,26 +65,77 @@ class ImageExportManagerTest {
     }
 
     @Test
-    fun writeToUriWritesPngFile() = runTest {
-        val file = File(context.cacheDir, "single-test.png")
-        val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
-        val result = manager.writeToUri(Uri.fromFile(file), listOf(RenderedPage(bitmap, 0)))
-        assertTrue(result.isSuccess)
+    fun writePageFileWritesPngBytes() {
+        val file = File(context.cacheDir, "exports-test/page.png")
+        manager.writePageFile(file, page())
         assertTrue(file.exists())
         val header = file.readBytes().take(4).map { it.toInt() and 0xFF }
         assertEquals(listOf(0x89, 0x50, 0x4E, 0x47), header)
     }
 
     @Test
-    fun clearCacheDeletesOldExportFiles() {
-        val dir = File(context.cacheDir, "exports")
-        dir.mkdirs()
-        val stale = File(dir, "old.png")
-        stale.writeText("x")
+    fun copyPageToUriCopiesBytes() = runTest {
+        val source = File(context.cacheDir, "copy-source.png")
+            .apply { writeBytes(pngBytes(android.graphics.Color.RED)) }
+        val target = File(context.cacheDir, "copy-target.png")
+        val result = manager.copyPageToUri(Uri.fromFile(target), source)
+        assertTrue(result.isSuccess)
+        assertArrayEquals(source.readBytes(), target.readBytes())
+    }
 
-        manager.clearCache()
-
+    @Test
+    fun prepareCacheClearsOldFiles() {
+        val dir = File(context.cacheDir, "exports").apply { mkdirs() }
+        val stale = File(dir, "old.png").apply { writeText("x") }
+        manager.prepareCache()
         assertFalse(stale.exists())
+        assertTrue(dir.exists())
+    }
+
+    @Test
+    fun copyFilesWritesEachPageWithSequentialNames() {
+        val sourceDir = File(context.cacheDir, "copy-source").apply { mkdirs() }
+        val targetDir = File(context.cacheDir, "copy-target").apply { mkdirs() }
+        val files = listOf(
+            File(sourceDir, "标题-20260910-1.png").apply { writeBytes(pngBytes(android.graphics.Color.RED)) },
+            File(sourceDir, "标题-20260910-2.png").apply { writeBytes(pngBytes(android.graphics.Color.BLUE)) }
+        )
+        val created = mutableListOf<String>()
+
+        val result = manager.copyFiles(files) { name ->
+            created += name
+            Uri.fromFile(File(targetDir, name))
+        }
+
+        assertTrue(result.isSuccess)
+        assertEquals(2, result.getOrNull())
+        assertEquals(listOf("标题-20260910-1.png", "标题-20260910-2.png"), created)
+        assertArrayEquals(files[0].readBytes(), File(targetDir, "标题-20260910-1.png").readBytes())
+    }
+
+    @Test
+    fun copyFilesReportsPartialCountOnFailure() {
+        val sourceDir = File(context.cacheDir, "copy-fail").apply { mkdirs() }
+        val targetDir = File(context.cacheDir, "copy-fail-target").apply { mkdirs() }
+        val files = listOf(
+            File(sourceDir, "a-1.png").apply { writeBytes(pngBytes(android.graphics.Color.RED)) },
+            File(sourceDir, "a-2.png").apply { writeBytes(pngBytes(android.graphics.Color.RED)) }
+        )
+        var calls = 0
+
+        val result = manager.copyFiles(files) { name ->
+            calls++
+            if (calls == 1) Uri.fromFile(File(targetDir, name)) else null
+        }
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("已保存 1 张"))
+    }
+
+    @Test
+    fun copyFilesRejectsEmptyList() {
+        val result = manager.copyFiles(emptyList()) { null }
+        assertTrue(result.isFailure)
     }
 
     @Test
@@ -90,67 +158,6 @@ class ImageExportManagerTest {
         assertEquals(Intent.ACTION_SEND_MULTIPLE, intent.action)
         val extra = intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
         assertEquals(2, extra?.size)
-    }
-
-    @Test
-    fun sanitizeNameTrimsAfterTruncation() {
-        assertEquals("a", manager.sanitizeName("a" + " ".repeat(100) + "b"))
-    }
-
-    @Test
-    fun writeToUriRejectsMultiplePages() = runTest {
-        val file = File(context.cacheDir, "multi-test.png")
-        val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
-        val result = manager.writeToUri(
-            Uri.fromFile(file),
-            listOf(RenderedPage(bitmap, 0), RenderedPage(bitmap, 1))
-        )
-        assertTrue(result.isFailure)
-    }
-
-    @Test
-    fun writePagesWritesEachPageWithSequentialNames() {
-        val dir = File(context.cacheDir, "tree-test").apply { mkdirs() }
-        val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
-        val created = mutableListOf<String>()
-
-        val result = manager.writePages(
-            pages = listOf(RenderedPage(bitmap, 0), RenderedPage(bitmap, 1)),
-            base = "标题-20260910"
-        ) { name ->
-            created += name
-            Uri.fromFile(File(dir, name))
-        }
-
-        assertTrue(result.isSuccess)
-        assertEquals(2, result.getOrNull())
-        assertEquals(listOf("标题-20260910-1.png", "标题-20260910-2.png"), created)
-        assertTrue(File(dir, "标题-20260910-1.png").exists())
-        assertTrue(File(dir, "标题-20260910-2.png").exists())
-    }
-
-    @Test
-    fun writePagesReportsPartialCountOnFailure() {
-        val dir = File(context.cacheDir, "tree-fail").apply { mkdirs() }
-        val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
-        var calls = 0
-
-        val result = manager.writePages(
-            pages = listOf(RenderedPage(bitmap, 0), RenderedPage(bitmap, 1)),
-            base = "标题-20260910"
-        ) { name ->
-            calls++
-            if (calls == 1) Uri.fromFile(File(dir, name)) else null
-        }
-
-        assertTrue(result.isFailure)
-        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("已保存 1 张"))
-    }
-
-    @Test
-    fun writePagesRejectsEmptyList() {
-        val result = manager.writePages(emptyList(), "标题-20260910") { null }
-        assertTrue(result.isFailure)
     }
 
     @Test(expected = IllegalStateException::class)
