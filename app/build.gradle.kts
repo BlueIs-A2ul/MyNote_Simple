@@ -61,6 +61,7 @@ android {
         unitTests {
             isIncludeAndroidResources = true
             all {
+                // Robolectric 在 JDK 17 下关闭 ParcelFileDescriptor 流需要该参数
                 it.jvmArgs("--add-opens=java.base/java.io=ALL-UNNAMED")
             }
         }

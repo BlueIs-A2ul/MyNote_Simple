@@ -5,7 +5,6 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
-import com.mynote.app.util.TimeFormat
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -38,8 +37,7 @@ class ImageExportManagerTest {
     @Test
     fun baseNameCombinesTitleAndDate() {
         val timestamp = Calendar.getInstance().apply { set(2026, Calendar.SEPTEMBER, 10) }.timeInMillis
-        val expectedDate = TimeFormat.date(timestamp).replace("-", "")
-        assertEquals("旅行-$expectedDate", manager.baseName("旅行", timestamp))
+        assertEquals("旅行-20260910", manager.baseName("旅行", timestamp))
     }
 
     @Test
@@ -92,5 +90,71 @@ class ImageExportManagerTest {
         assertEquals(Intent.ACTION_SEND_MULTIPLE, intent.action)
         val extra = intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
         assertEquals(2, extra?.size)
+    }
+
+    @Test
+    fun sanitizeNameTrimsAfterTruncation() {
+        assertEquals("a", manager.sanitizeName("a" + " ".repeat(100) + "b"))
+    }
+
+    @Test
+    fun writeToUriRejectsMultiplePages() = runTest {
+        val file = File(context.cacheDir, "multi-test.png")
+        val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+        val result = manager.writeToUri(
+            Uri.fromFile(file),
+            listOf(RenderedPage(bitmap, 0), RenderedPage(bitmap, 1))
+        )
+        assertTrue(result.isFailure)
+    }
+
+    @Test
+    fun writePagesWritesEachPageWithSequentialNames() {
+        val dir = File(context.cacheDir, "tree-test").apply { mkdirs() }
+        val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+        val created = mutableListOf<String>()
+
+        val result = manager.writePages(
+            pages = listOf(RenderedPage(bitmap, 0), RenderedPage(bitmap, 1)),
+            base = "标题-20260910"
+        ) { name ->
+            created += name
+            Uri.fromFile(File(dir, name))
+        }
+
+        assertTrue(result.isSuccess)
+        assertEquals(2, result.getOrNull())
+        assertEquals(listOf("标题-20260910-1.png", "标题-20260910-2.png"), created)
+        assertTrue(File(dir, "标题-20260910-1.png").exists())
+        assertTrue(File(dir, "标题-20260910-2.png").exists())
+    }
+
+    @Test
+    fun writePagesReportsPartialCountOnFailure() {
+        val dir = File(context.cacheDir, "tree-fail").apply { mkdirs() }
+        val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+        var calls = 0
+
+        val result = manager.writePages(
+            pages = listOf(RenderedPage(bitmap, 0), RenderedPage(bitmap, 1)),
+            base = "标题-20260910"
+        ) { name ->
+            calls++
+            if (calls == 1) Uri.fromFile(File(dir, name)) else null
+        }
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("已保存 1 张"))
+    }
+
+    @Test
+    fun writePagesRejectsEmptyList() {
+        val result = manager.writePages(emptyList(), "标题-20260910") { null }
+        assertTrue(result.isFailure)
+    }
+
+    @Test(expected = IllegalStateException::class)
+    fun buildShareIntentRejectsEmptyList() {
+        manager.buildShareIntent(emptyList())
     }
 }
