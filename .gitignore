@@ -10,6 +10,7 @@
 app/build/
 .scratch/
 .reasonix/
+.superpowers/
 keystore.properties
 *.keystore
 *.jks
