@@ -1,6 +1,6 @@
 # MyNote 安卓备忘录
 
-一款**内存占用小、足够灵活、设计简洁**的原生安卓备忘录应用：纯文本笔记 + 图文混排 + 分类 + 深色模式 + 备份导入导出，全程零敏感存储权限（SAF + Photo Picker）。
+一款**内存占用小、足够灵活、设计简洁**的原生安卓备忘录应用：纯文本笔记 + 图文混排 + 分类 + 可配置主题 + 备份导入导出，全程零敏感存储权限（SAF + Photo Picker）。
 
 ## 功能
 
@@ -8,7 +8,8 @@
 - 搜索：标题与正文全文搜索
 - 图文混排：正文以纯文本存储、图片用 `![](img/<name>)` 标记内嵌，查看时文本/图片交错渲染，图片懒加载
 - 分类：单维度分类（增/改/删，删除后笔记移入未分类，同名幂等）
-- 主题：浅色/深色跟随系统，Android 12+ 动态取色（Material You）
+- 主题：浅色/深色/跟随系统三态、8 档预设主题色、Android 12+ 动态取色开关（Material You；点选主题色自动关闭动态取色）
+- 设置：主页 ⋮ → 设置，主题修改即时生效、重启保持
 - 备份：zip 全量备份 / 导入（按 id 去重、冲突保留更新者）+ 单条笔记导出 txt
 
 ## 技术栈
@@ -20,7 +21,7 @@ Kotlin · Jetpack Compose + Material 3 · MVVM + 单向数据流（UDF） · Roo
 | minSdk / targetSdk | 24 / 34 |
 | JDK | 17 |
 | Gradle | 8.7（Wrapper） |
-| release 产物 | R8 混淆 + 资源压缩，约 1.5MB（未签名） |
+| release 产物 | R8 混淆 + 资源压缩，约 1.5MB（按 keystore.properties 签名） |
 
 ## 构建
 
@@ -32,14 +33,14 @@ Kotlin · Jetpack Compose + Material 3 · MVVM + 单向数据流（UDF） · Roo
 
 ```bat
 .\gradlew :app:assembleDebug          rem debug APK
-.\gradlew :app:testDebugUnitTest      rem 22 个单元测试
-.\gradlew :app:assembleRelease        rem release（R8 + 资源压缩，未签名）
+.\gradlew :app:testDebugUnitTest      rem 39 个单元测试
+.\gradlew :app:assembleRelease        rem release（R8 + 资源压缩 + 签名）
 ```
 
 产物：
 
 - debug：`app/build/outputs/apk/debug/app-debug.apk`
-- release：`app/build/outputs/apk/release/app-release-unsigned.apk`
+- release：`app/build/outputs/apk/release/app-release.apk`
 
 ## 项目结构
 
@@ -51,12 +52,14 @@ app/src/main/java/com/mynote/app/
 ├── data/
 │   ├── db/                   # NoteEntity / CategoryEntity / DAO / AppDatabase（Room）
 │   ├── repository/           # NoteRepository（业务逻辑 + 图片垃圾回收）
+│   ├── settings/             # ThemeSettingsStore（SharedPreferences + StateFlow）
 │   ├── image/                # ImageStore（落盘 / 采样压缩 / 缩略图 / GC）
 │   └── backup/               # BackupManager（zip 备份导入导出 / txt 导出）
 ├── ui/
-│   ├── theme/                # 主题（浅/深 + 动态取色）
+│   ├── theme/                # 主题（8 档色板 / 动态取色应用）
 │   ├── notes/                # 列表 / 编辑 / 解析器 / ViewModel
 │   ├── categories/           # 分类管理
+│   ├── settings/             # 主题设置页 / ViewModel
 │   └── navigation/           # Compose Navigation 路由
 └── util/                     # 日期格式化等
 ```
@@ -66,5 +69,6 @@ app/src/main/java/com/mynote/app/
 ## 文档
 
 - 设计文档：[`docs/superpowers/specs/2026-08-13-mynote-design.md`](docs/superpowers/specs/2026-08-13-mynote-design.md)
+- 主题设置设计：[`docs/superpowers/specs/2026-09-10-theme-settings-design.md`](docs/superpowers/specs/2026-09-10-theme-settings-design.md)
 - 实现计划（含修订记录）：[`docs/superpowers/plans/2026-08-13-mynote.md`](docs/superpowers/plans/2026-08-13-mynote.md)
 - 构建指南（问题记录 + 环境说明）：[`docs/build-guide.md`](docs/build-guide.md)

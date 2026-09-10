@@ -1,6 +1,6 @@
 # 主题颜色管理 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 增加主题设置功能：深浅色三态切换、动态取色开关（Android 12+）、8 档预设主题色，设置持久化并即时生效。
 
@@ -27,7 +27,7 @@
 - Create: `app/src/main/java/com/mynote/app/data/settings/ThemeSettingsStore.kt`
 - Test: `app/src/test/java/com/mynote/app/data/settings/ThemeSettingsStoreTest.kt`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 创建 `app/src/test/java/com/mynote/app/data/settings/ThemeSettingsStoreTest.kt`：
 
@@ -99,12 +99,12 @@ class ThemeSettingsStoreTest {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `.\gradlew :app:testDebugUnitTest --tests "com.mynote.app.data.settings.ThemeSettingsStoreTest"`
 Expected: 编译失败，`Unresolved reference: ThemeSettingsStore` / `DarkMode`
 
-- [ ] **Step 3: 创建数据模型**
+- [x] **Step 3: 创建数据模型**
 
 创建 `app/src/main/java/com/mynote/app/data/settings/ThemeSettings.kt`：
 
@@ -120,7 +120,7 @@ data class ThemeSettings(
 )
 ```
 
-- [ ] **Step 4: 创建存储实现**
+- [x] **Step 4: 创建存储实现**
 
 创建 `app/src/main/java/com/mynote/app/data/settings/ThemeSettingsStore.kt`：
 
@@ -173,12 +173,12 @@ class ThemeSettingsStore(context: Context) {
 }
 ```
 
-- [ ] **Step 5: 运行测试确认通过**
+- [x] **Step 5: 运行测试确认通过**
 
 Run: `.\gradlew :app:testDebugUnitTest --tests "com.mynote.app.data.settings.ThemeSettingsStoreTest"`
 Expected: `tests="4" failures="0"`，BUILD SUCCESSFUL
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add app/src/main/java/com/mynote/app/data/settings app/src/test/java/com/mynote/app/data/settings
@@ -193,7 +193,7 @@ git commit -m "feat: 主题设置数据层（ThemeSettings/ThemeSettingsStore + 
 - Create: `app/src/main/java/com/mynote/app/ui/theme/ThemePresets.kt`
 - Test: `app/src/test/java/com/mynote/app/ui/theme/ThemePresetsTest.kt`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 创建 `app/src/test/java/com/mynote/app/ui/theme/ThemePresetsTest.kt`：
 
@@ -236,12 +236,12 @@ class ThemePresetsTest {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `.\gradlew :app:testDebugUnitTest --tests "com.mynote.app.ui.theme.ThemePresetsTest"`
 Expected: 编译失败，`Unresolved reference: ThemePresets`
 
-- [ ] **Step 3: 创建色板实现**
+- [x] **Step 3: 创建色板实现**
 
 创建 `app/src/main/java/com/mynote/app/ui/theme/ThemePresets.kt`：
 
@@ -374,12 +374,12 @@ object ThemePresets {
 
 （`IndigoPrimary`、`IndigoContainer`、`TealAccent` 来自同包 `Color.kt`，无需 import。）
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `.\gradlew :app:testDebugUnitTest --tests "com.mynote.app.ui.theme.ThemePresetsTest"`
 Expected: `tests="5" failures="0"`，BUILD SUCCESSFUL
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/src/main/java/com/mynote/app/ui/theme/ThemePresets.kt app/src/test/java/com/mynote/app/ui/theme/ThemePresetsTest.kt
@@ -395,7 +395,7 @@ git commit -m "feat: 8 档预设主题色板与 resolve 兜底"
 - Modify: `app/src/main/java/com/mynote/app/di/AppContainer.kt`
 - Modify: `app/src/main/java/com/mynote/app/MainActivity.kt`
 
-- [ ] **Step 1: 重写 Theme.kt**
+- [x] **Step 1: 重写 Theme.kt**
 
 整体替换 `app/src/main/java/com/mynote/app/ui/theme/Theme.kt` 为：
 
@@ -434,7 +434,7 @@ fun MyNoteTheme(
 
 （删除原 `LightColors`/`DarkColors` 与默认参数；`isSystemInDarkTheme` 不再在此使用。）
 
-- [ ] **Step 2: AppContainer 增加 store**
+- [x] **Step 2: AppContainer 增加 store**
 
 修改 `app/src/main/java/com/mynote/app/di/AppContainer.kt`：新增 import 与属性（放在 `imageStore` 之前或之后均可）：
 
@@ -446,7 +446,7 @@ import com.mynote.app.data.settings.ThemeSettingsStore
     val themeSettingsStore: ThemeSettingsStore by lazy { ThemeSettingsStore(context) }
 ```
 
-- [ ] **Step 3: MainActivity 接线**
+- [x] **Step 3: MainActivity 接线**
 
 整体替换 `app/src/main/java/com/mynote/app/MainActivity.kt` 为：
 
@@ -486,17 +486,17 @@ class MainActivity : ComponentActivity() {
 }
 ```
 
-- [ ] **Step 4: 编译验证**
+- [x] **Step 4: 编译验证**
 
 Run: `.\gradlew :app:assembleDebug`
 Expected: BUILD SUCCESSFUL
 
-- [ ] **Step 5: 回归测试**
+- [x] **Step 5: 回归测试**
 
 Run: `.\gradlew :app:testDebugUnitTest`
 Expected: 全部通过（26 + Task1 的 4 + Task2 的 5 = 35 个）
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add app/src/main/java/com/mynote/app/ui/theme/Theme.kt app/src/main/java/com/mynote/app/di/AppContainer.kt app/src/main/java/com/mynote/app/MainActivity.kt
@@ -511,7 +511,7 @@ git commit -m "feat: 主题改为可配置应用（Theme.kt/AppContainer/MainAct
 - Create: `app/src/main/java/com/mynote/app/ui/settings/SettingsViewModel.kt`
 - Test: `app/src/test/java/com/mynote/app/ui/settings/SettingsViewModelTest.kt`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 创建 `app/src/test/java/com/mynote/app/ui/settings/SettingsViewModelTest.kt`：
 
@@ -567,12 +567,12 @@ class SettingsViewModelTest {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `.\gradlew :app:testDebugUnitTest --tests "com.mynote.app.ui.settings.SettingsViewModelTest"`
 Expected: 编译失败，`Unresolved reference: SettingsViewModel`
 
-- [ ] **Step 3: 创建 ViewModel**
+- [x] **Step 3: 创建 ViewModel**
 
 创建 `app/src/main/java/com/mynote/app/ui/settings/SettingsViewModel.kt`：
 
@@ -605,12 +605,12 @@ class SettingsViewModel(private val store: ThemeSettingsStore) : ViewModel() {
 }
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `.\gradlew :app:testDebugUnitTest --tests "com.mynote.app.ui.settings.SettingsViewModelTest"`
 Expected: `tests="3" failures="0"`，BUILD SUCCESSFUL
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app/src/main/java/com/mynote/app/ui/settings/SettingsViewModel.kt app/src/test/java/com/mynote/app/ui/settings/SettingsViewModelTest.kt
@@ -624,7 +624,7 @@ git commit -m "feat: 设置页 ViewModel（薄封装 ThemeSettingsStore + 测试
 **Files:**
 - Create: `app/src/main/java/com/mynote/app/ui/settings/SettingsScreen.kt`
 
-- [ ] **Step 1: 创建设置页**
+- [x] **Step 1: 创建设置页**
 
 创建 `app/src/main/java/com/mynote/app/ui/settings/SettingsScreen.kt`：
 
@@ -762,12 +762,12 @@ private fun darkModeLabel(mode: DarkMode): String = when (mode) {
 
 说明：8 个 36dp 圆点按 `SpaceBetween` 排布适配 328dp 内容宽；`preset.light.primary` 直接作为背景色，无需转换。
 
-- [ ] **Step 2: 编译验证**
+- [x] **Step 2: 编译验证**
 
 Run: `.\gradlew :app:assembleDebug`
 Expected: BUILD SUCCESSFUL
 
-- [ ] **Step 3: 提交**
+- [x] **Step 3: 提交**
 
 ```bash
 git add app/src/main/java/com/mynote/app/ui/settings/SettingsScreen.kt
@@ -782,7 +782,7 @@ git commit -m "feat: 设置页 UI（深浅色/动态取色/主题色）"
 - Modify: `app/src/main/java/com/mynote/app/ui/notes/NotesScreen.kt`
 - Modify: `app/src/main/java/com/mynote/app/ui/navigation/AppNavHost.kt`
 
-- [ ] **Step 1: NotesScreen 增加设置入口**
+- [x] **Step 1: NotesScreen 增加设置入口**
 
 在 `NotesScreen` 函数签名（`NotesScreen.kt:56-62`）新增参数：
 
@@ -800,7 +800,7 @@ git commit -m "feat: 设置页 UI（深浅色/动态取色/主题色）"
                         )
 ```
 
-- [ ] **Step 2: AppNavHost 接线**
+- [x] **Step 2: AppNavHost 接线**
 
 在 `composable("notes")` 调用中新增：
 
@@ -825,22 +825,22 @@ git commit -m "feat: 设置页 UI（深浅色/动态取色/主题色）"
 import com.mynote.app.ui.settings.SettingsScreen
 ```
 
-- [ ] **Step 3: 全量测试**
+- [x] **Step 3: 全量测试**
 
 Run: `.\gradlew :app:testDebugUnitTest`
 Expected: 38 个测试全部通过（26 存量 + 4 + 5 + 3 新增），`failures=0`
 
-- [ ] **Step 4: debug 构建**
+- [x] **Step 4: debug 构建**
 
 Run: `.\gradlew :app:assembleDebug`
 Expected: BUILD SUCCESSFUL，APK 更新（`app\build\outputs\apk\debug\app-debug.apk`）
 
-- [ ] **Step 5: release 构建**
+- [x] **Step 5: release 构建**
 
 Run: `.\gradlew :app:assembleRelease`
 Expected: BUILD SUCCESSFUL，`app\build\outputs\apk\release\app-release.apk`（约 1.5-1.6MB）
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add app/src/main/java/com/mynote/app/ui/notes/NotesScreen.kt app/src/main/java/com/mynote/app/ui/navigation/AppNavHost.kt

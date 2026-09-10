@@ -1,7 +1,7 @@
 # 主题颜色管理 — 设计文档
 
 - 日期：2026-09-10
-- 状态：已实现（2026-09-10，38 个单测全绿 + debug/release 构建通过；真机 UI 手工验证待做）
+- 状态：已实现（2026-09-10，39 个单测全绿 + debug/release 构建通过；真机 UI 手工验证待做）
 - 关联：`docs/superpowers/specs/2026-08-13-mynote-design.md`（§3 主题、§12 里程碑 4）
 
 ## 1. 背景与问题
@@ -108,7 +108,7 @@ setContent {
 
 1. **深色模式**：`SingleChoiceSegmentedButtonRow` 三选一（跟随系统/浅色/深色），点击即写 store。
 2. **动态取色**：`Switch` 行（标题 + 说明文字），仅 `Build.VERSION.SDK_INT >= Build.VERSION_CODES.S` 时显示；关闭后使用所选主题色。
-3. **主题色**：横向排列各档色板圆点（颜色取该档 `light.primary`），选中档描边/外环比其他更醒目；每档带 contentDescription = preset.label。
+3. **主题色**：横向排列各档色板圆点（颜色取该档 `light.primary`），选中档描边/外环比其他更醒目；每档带 contentDescription = preset.label。**点击任一色板时，若动态取色开启则自动关闭动态取色并立即应用该主题色**（最终审查决策，保证点选即时可见）。
 
 ### 6.3 入口与导航
 
@@ -125,6 +125,8 @@ setContent {
 | Android < 12 | 设置页不显示动态取色开关；`MyNoteTheme` 忽略 dynamicColor（SDK 判断兜底） |
 | 设置页频繁切换 | 每次点击同步写 prefs + 更新 StateFlow，立即重组主题 |
 | 首次启动 | 无存储时使用默认值，外观与现状一致 |
+
+release（R8）下枚举名安全：实测 `mapping.txt` 中枚举字段被重命名，但 `Enum.<init>` 仍传入 `"SYSTEM"/"LIGHT"/"DARK"` 字符串，`valueOf` 保持可用，SharedPreferences 的 `name` 写入与 `valueOf` 读取往返不受混淆影响。
 
 ## 8. 测试策略
 
