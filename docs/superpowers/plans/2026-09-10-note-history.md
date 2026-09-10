@@ -1760,4 +1760,4 @@ git commit -m "docs: 笔记历史功能落地（README / AGENTS / 设计文档�
 ## 修订记录
 
 - 2026-09-10（初稿）：依据设计文档 `2026-09-10-note-history-design.md` 拆分 7 个任务；快照存储选全量快照而非增量 delta；diff 采用行级 LCS + 配对行字符前后缀高亮；迁移测试用手工 v1 库文件而非引入 room-testing（零新增依赖）。
-- 2026-09-10（执行期修订，Task 1 质量审查）：`NoteRevisionDao.getAllContents()` 改为 `getContentsWithImageMarkup()`（SQL 层 `WHERE content LIKE '%![](img/%'`），避免图片 GC 时全量载入历史正文；Task 2 代码与设计文档 §3.3/§8 已同步。
+- 2026-09-10（执行期修订，Task 2 质量审查）：`restoreRevision` 增加 `revision.noteId == noteId` 归属校验；`collectImageGarbage` 包 `withContext(Dispatchers.IO)`；GC 与并发写入的 TOCTOU 窗口在设计文档 §14 记为已接受风险。
