@@ -1,6 +1,6 @@
 # MyNote 安卓备忘录
 
-一款**内存占用小、足够灵活、设计简洁**的原生安卓备忘录应用：纯文本笔记 + 图文混排 + 分类 + 可配置主题 + 备份导入导出，全程零敏感存储权限（SAF + Photo Picker）。
+一款**内存占用小、足够灵活、设计简洁**的原生安卓备忘录应用：纯文本笔记 + 图文混排 + 分类 + 可配置主题 + 备份导入导出，全程零敏感存储权限（SAF + Photo Picker）；AI 助手需联网，仅新增普通 `INTERNET` 权限，无存储类敏感权限。
 
 ## 功能
 
@@ -13,6 +13,7 @@
 - 备份：zip 全量备份 / 导入（按 id 去重、冲突保留更新者）
 - 导出：单条笔记导出 txt 或图片（纯白 PNG、无任何品牌元素；长笔记可选自动分页或单张长图，含内嵌图片）
 - 历史：每次保存自动留存版本（无变化不记；每篇上限 50 条、40 条起提醒），时间线可看字段变更标签与行级 + 行内 diff 对比，一键恢复旧版（恢复也生成一条新记录）
+- AI 助手：编辑页唤起，复用 DeepSeek 网页版（隐藏 WebView 自动发送与抓取回答）；会话按笔记留档，回答可插入正文 / 替换选中 / 复制 / 存为新笔记；首次使用有隐私确认，出错可切到可见网页手动操作
 
 ## 技术栈
 
@@ -35,7 +36,7 @@ Kotlin · Jetpack Compose + Material 3 · MVVM + 单向数据流（UDF） · Roo
 
 ```bat
 .\gradlew :app:assembleDebug          rem debug APK
-.\gradlew :app:testDebugUnitTest      rem 113 个单元测试
+.\gradlew :app:testDebugUnitTest      rem 186 个单元测试
 .\gradlew :app:assembleRelease        rem release（R8 + 资源压缩 + 签名）
 ```
 
@@ -52,9 +53,10 @@ app/src/main/java/com/mynote/app/
 ├── MainActivity.kt           # 唯一 Activity
 ├── di/AppContainer.kt        # 手写依赖注入（database/imageStore/repository/backup）
 ├── data/
-│   ├── db/                   # NoteEntity / CategoryEntity / NoteRevisionEntity / DAO / AppDatabase（Room v2 + 迁移）
+│   ├── db/                   # NoteEntity / CategoryEntity / NoteRevisionEntity / AiSessionEntity / AiMessageEntity / DAO / AppDatabase（Room v3 + 迁移）
 │   ├── repository/           # NoteRepository（业务逻辑 + 图片垃圾回收）
 │   ├── settings/             # ThemeSettingsStore（SharedPreferences + StateFlow）
+│   ├── ai/                   # AI 网页驱动（AiWebDriver / DeepSeekDriver / WebViewAiSession / 会话仓库）
 │   ├── image/                # ImageStore（落盘 / 采样压缩 / 缩略图 / GC）
 │   ├── backup/               # BackupManager（zip 备份导入导出 / txt 导出）
 │   └── export/               # NoteImageRenderer / ImageExportManager（图片导出）
@@ -65,6 +67,7 @@ app/src/main/java/com/mynote/app/
 │   ├── settings/             # 主题设置页 / ViewModel
 │   ├── export/               # 导出图片预览页 / ViewModel
 │   ├── history/              # 历史时间线 / diff 详情 / 恢复
+│   ├── ai/                   # AI 聊天页 / ViewModel（会话抽屉 / 流式回答 / 回答落地）
 │   └── navigation/           # Compose Navigation 路由
 └── util/                     # 日期格式化等
 ```
@@ -77,6 +80,8 @@ app/src/main/java/com/mynote/app/
 - 主题设置设计：[`docs/superpowers/specs/2026-09-10-theme-settings-design.md`](docs/superpowers/specs/2026-09-10-theme-settings-design.md)
 - 图片导出设计：[`docs/superpowers/specs/2026-09-10-note-image-export-design.md`](docs/superpowers/specs/2026-09-10-note-image-export-design.md)
 - 历史修改记录设计：[`docs/superpowers/specs/2026-09-10-note-history-design.md`](docs/superpowers/specs/2026-09-10-note-history-design.md)
+- AI 网页端助手设计：[`docs/superpowers/specs/2026-09-11-ai-web-assistant-design.md`](docs/superpowers/specs/2026-09-11-ai-web-assistant-design.md)
+- AI 网页端助手计划（含修订记录）：[`docs/superpowers/plans/2026-09-11-ai-web-assistant.md`](docs/superpowers/plans/2026-09-11-ai-web-assistant.md)
 - 图片导出计划（含修订记录）：[`docs/superpowers/plans/2026-09-10-note-image-export.md`](docs/superpowers/plans/2026-09-10-note-image-export.md)
 - 历史修改记录计划（含修订记录）：[`docs/superpowers/plans/2026-09-10-note-history.md`](docs/superpowers/plans/2026-09-10-note-history.md)
 - 实现计划（含修订记录）：[`docs/superpowers/plans/2026-08-13-mynote.md`](docs/superpowers/plans/2026-08-13-mynote.md)

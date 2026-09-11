@@ -3175,6 +3175,23 @@ git commit -m "docs: 更新 AI 助手文档与测试数（含计划修订记录�
 - AI 会话不进备份 zip（避免导入后 `noteId` 关联失效）。
 - 流式回答只在「保存点」落库：错误 / 停止 / 页面销毁时存半截，进程被杀时流式半截丢失属预期。
 
+---
+
+## 修订记录（执行期）
+
+1. 实际单测数量：186（原 113 + 新增 73）。
+2. release APK 体积：1.69 MB（1,773,356 字节，`app/build/outputs/apk/release/app-release.apk`）。
+3. 与设计的偏差（执行期实际偏差 / 质量审查加固）：
+   - `AiSessionDao.updateRemoteChatId` 参数放宽为 `String?`（为支持设计 §5.2 的 remoteChatId 置空；质量审查加固）。
+   - `DeepSeekDriver` 脚本加固：findSend 不再盲点最后一个按钮（改走 Enter 兜底）、观察器 150ms 节流 + 500ms 强扫、JSON 转义补 U+2028/2029、脚本内 `__emit` 守卫、newChat 只匹配 button/role=button、停止按钮中英匹配、started 判定增强、发送后重查输入框并失败上报、`window.__mynoteText` 用后置 null。
+   - `WebViewAiSession` 加固：`doUpdateVisitedHistory` 捕获 SPA pushState 的会话 id（去重）、导航/加载失败重置 pageReady/loggedIn、release/stop 清理 pending、桥事件统一主线程、parser 显式 JSON null 语义。
+   - `AiChatViewModel` 状态机修复：生成中 newChat/selectSession 先 stop+finalize(INTERRUPTED) 到旧会话、`sendRequested` 同步防重、`finalizeAssistant` 落库改用外部作用域且 sessionId 为空也复位发送态、ReplyChunk/ChatId 加 sending 守卫、PageError 口径与 ReplyError 对齐、`send(): Boolean`。
+   - `AiChatScreen`：ModalDrawerSheet 带 drawerState、`onWebViewDetached()` 处理旋转/离开、删除当前会话后自动新开网页对话、横幅加「显示网页」action、消息自动滚动、生成中会话删除按钮置灰。
+   - 既有迁移测试 `migrate1To2...` 补注册 `MIGRATION_2_3`（数据库升 v3 后 1→2→3 完整链路，计划文档遗漏）。
+   - 未实现项（与设计差异）：`AiWebSession.checkLogin()` 独立方法、服务切换 UI（当前仅注册 DeepSeek）、会话删除二次确认、`remoteChatId` 失效的独立提示、`AiChatRepository.updateRemoteChatId` 参数仍为非空 `String`（DAO 已支持可空）。
+   - 已知小瑕疵：`AiResultApplierTest.selectionOutOfRangeIsClamped` 因 TextFieldValue 构造器自带 selection coercion 实为空测试；`onCleared` 与 `onWebViewDetached` 落库状态口径在空半截时不完全一致（interrupted vs failed）。
+4. 真机人工验证（设计 §12 清单）待用户执行，结果回填于此。
+
 
 
 

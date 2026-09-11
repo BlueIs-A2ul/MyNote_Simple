@@ -4,7 +4,7 @@ MyNote 安卓备忘录（原生 Android，单模块 `:app`）。本文件只记�
 
 ## 项目与约束
 
-- 技术栈：Kotlin + Jetpack Compose (Material 3) + MVVM/UDF；Room(KSP) + Coil 2 + kotlinx.serialization + Navigation Compose；手写 DI（`di/AppContainer.kt`，无 Hilt）。minSdk 24 / target 34 / JDK 17；依赖统一加在 `gradle/libs.versions.toml`。
+- 技术栈：Kotlin + Jetpack Compose (Material 3) + MVVM/UDF；Room(KSP) + Coil 2 + kotlinx.serialization + Navigation Compose；手写 DI（`di/AppContainer.kt`，无 Hilt）。minSdk 24 / target 34 / JDK 17；依赖统一加在 `gradle/libs.versions.toml`。AI 助手为应用首个联网功能（`INTERNET` 普通权限），其余仍保持零敏感权限与零新增三方依赖。
 - 硬约束（设计文档反复强调）：内存占用小、**零新增第三方依赖**、零敏感存储权限（只用 SAF / Photo Picker / FileProvider）。
 - 无远程仓库，历史在 `master` 线性推进；不要 push。提交信息用中文 + `feat|fix|docs|chore|refactor:` 前缀（与现有历史一致）。
 
@@ -13,7 +13,7 @@ MyNote 安卓备忘录（原生 Android，单模块 `:app`）。本文件只记�
 | 目的 | 命令 |
 |---|---|
 | debug APK | `.\gradlew :app:assembleDebug` |
-| 全部单测（当前 113 个） | `.\gradlew :app:testDebugUnitTest` |
+| 全部单测（当前 186 个） | `.\gradlew :app:testDebugUnitTest` |
 | 单个测试类 | `.\gradlew :app:testDebugUnitTest --tests "com.mynote.app.data.db.NoteDaoTest"` |
 | release（R8 + 资源压缩 + 签名） | `.\gradlew :app:assembleRelease` |
 
@@ -35,8 +35,9 @@ MyNote 安卓备忘录（原生 Android，单模块 `:app`）。本文件只记�
 ## 数据与代码惯例
 
 - 笔记正文为纯文本，图片以 `![](img/<name>)` 标记内嵌：解析/生成必须走 `ui/notes/NoteContentParser.kt`，不要手写正则。图片文件在 `filesDir/notes_images/`、不存库；删除笔记时由 `ImageStore.collectGarbage` 回收孤儿文件。
-- Room `version = 2`、`exportSchema = false`；已有手写 `MIGRATION_1_2`（历史表）。修改 Entity 需升版本并自行补迁移与迁移测试（v1 库手工建库模式见 `AppDatabaseMigrationTest`）。
+- Room `version = 3`、`exportSchema = false`；已有手写 `MIGRATION_1_2`（历史表）与 `MIGRATION_2_3`（AI 会话/消息表）。修改 Entity 需升版本并自行补迁移与迁移测试（v1 库手工建库模式见 `AppDatabaseMigrationTest`）。
 - 笔记历史：每次保存写一条 `note_revisions` 快照（无变化不写；每篇上限 50 条，超出自动裁最旧，`NoteRevisionDao.MAX_PER_NOTE/WARN_AT`）；保存事务在 `NoteRepository.saveNote`，图片 GC 的引用集 = 当前正文 ∪ 含图片标记的历史快照（`getContentsWithImageMarkup`），勿只统计正文。
 - 图片导出：`data/export/`（自绘渲染 + 流式缓存导出）+ `ui/export/`（全屏预览 Dialog）。产物为纯白 PNG、无任何品牌元素；渲染用 `NoteImageRenderer.renderPages` 逐页回调，调用方写盘后立即 `recycle()`，峰值内存 ≈ 一页——不要改回"先收集全部页位图"的写法。FileProvider authority 为 `com.mynote.app.fileprovider`，`res/xml/file_paths.xml` 只暴露 `cacheDir/exports`。
 - 导出图片固定纯白，不跟随深色模式/主题色；界面主题在 `ui/theme/`（8 档色板 + 动态取色），设置持久化在 `data/settings/ThemeSettingsStore`。
 - 新功能先写设计 `docs/superpowers/specs/YYYY-MM-DD-*-design.md`、计划 `docs/superpowers/plans/`（计划末尾记「修订记录」），再动代码；文档、注释、提交均为中文。
+- AI 助手：DeepSeek 网页适配集中在 `data/ai/DeepSeekDriver.kt`（URL / DOM 选择器 / 注入 JS），新增服务 = 一个 `AiWebDriver` 实现 + `AiDriverRegistry` 注册一行；会话与消息存 `ai_sessions` / `ai_messages`（Room v3），网页上下文靠 `remoteChatId` 恢复；编辑页通过 `savedStateHandle` 传递选区与正文快照、回传 AI 结果；WebView 只在 `ui/ai/AiChatScreen` 创建，离开即 `destroy()`；测试用 `FakeAiWebSession` 替换网页层。
