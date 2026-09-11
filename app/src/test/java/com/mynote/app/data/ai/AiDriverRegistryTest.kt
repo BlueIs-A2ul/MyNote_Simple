@@ -30,8 +30,28 @@ class AiDriverRegistryTest {
         assertEquals(listOf(a, b), registry.all)
     }
 
+    @Test
+    fun findNullReturnsNull() {
+        val registry = AiDriverRegistry(listOf(FakeDriver("a")))
+        assertNull(registry.find(null))
+    }
+
+    @Test
+    fun allReturnsIndependentSnapshot() {
+        val registry = AiDriverRegistry(listOf(FakeDriver("a"), FakeDriver("b")))
+        @Suppress("UNCHECKED_CAST")
+        val snapshot = registry.all as MutableList<AiWebDriver>
+        snapshot.clear()
+        assertEquals(listOf("a", "b"), registry.all.map { it.id })
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun emptyRegistryRejected() {
         AiDriverRegistry(emptyList())
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun duplicateIdsRejected() {
+        AiDriverRegistry(listOf(FakeDriver("a"), FakeDriver("a")))
     }
 }
