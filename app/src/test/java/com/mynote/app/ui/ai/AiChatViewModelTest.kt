@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -75,7 +76,8 @@ class AiChatViewModelTest {
         noteId: Long,
         title: String = "标题",
         content: String = "正文",
-        store: AiSettingsStore = settings
+        store: AiSettingsStore = settings,
+        watchdogTimeoutMs: Long = 0L
     ): AiChatViewModel {
         val vm = AiChatViewModel(
             noteId = noteId,
@@ -86,7 +88,8 @@ class AiChatViewModelTest {
             settingsStore = store,
             externalScope = CoroutineScope(dispatcher),
             registry = AiDriverRegistry(listOf(FakeDriver)),
-            webSessionFactory = { fake }
+            webSessionFactory = { fake },
+            watchdogTimeoutMs = watchdogTimeoutMs
         )
         vms += vm
         return vm
@@ -441,6 +444,23 @@ class AiChatViewModelTest {
         val messages = aiRepo.observeMessages(sessionId).first { it.size == 2 }
         assertEquals("半截", messages[1].content)
         assertEquals(AiMessageEntity.STATUS_INTERRUPTED, messages[1].status)
+    }
+
+    @Test
+    fun watchdogFinalizesWhenNoWebEvents() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val vm = createVm(noteId, watchdogTimeoutMs = 1_000L)
+        vm.send("问")
+        vm.state.first { it.sending }
+        val sessionId = aiRepo.observeSessions(noteId).first { it.isNotEmpty() }.single().id
+
+        advanceTimeBy(1_001)
+        vm.state.first { !it.sending }
+
+        val messages = aiRepo.observeMessages(sessionId).first { it.size == 2 }
+        assertEquals(AiMessageEntity.STATUS_FAILED, messages[1].status)
+        assertTrue(vm.state.value.banner != null)
+        assertTrue(vm.state.value.webVisible)
     }
 
     private object FakeDriver : AiWebDriver {

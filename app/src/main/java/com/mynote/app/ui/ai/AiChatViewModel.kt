@@ -18,6 +18,7 @@ import com.mynote.app.data.repository.NoteRepository
 import com.mynote.app.data.settings.AiSettingsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -33,7 +34,8 @@ class AiChatViewModel(
     private val settingsStore: AiSettingsStore,
     private val externalScope: CoroutineScope,
     registry: AiDriverRegistry,
-    webSessionFactory: (AiWebDriver) -> AiWebSession
+    webSessionFactory: (AiWebDriver) -> AiWebSession,
+    private val watchdogTimeoutMs: Long = WATCHDOG_TIMEOUT_MS
 ) : ViewModel() {
 
     data class UiState(
@@ -63,6 +65,7 @@ class AiChatViewModel(
     private var initialSelectionDone = false
     private var userStartedNewChat = false
     private var sendRequested = false
+    private var watchdogJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -210,6 +213,25 @@ class AiChatViewModel(
         _state.update { it.copy(sending = true, streamingText = "", banner = null) }
         sendRequested = false
         webSession.send(payload)
+        startWatchdog()
+    }
+
+    /** 注入的观察脚本失效时兜底：超时未收到终态事件则按半截/失败收尾（设计 §13 风险缓解）。 */
+    private fun startWatchdog() {
+        if (watchdogTimeoutMs <= 0L) return
+        watchdogJob?.cancel()
+        watchdogJob = viewModelScope.launch {
+            delay(watchdogTimeoutMs)
+            if (!_state.value.sending) return@launch
+            val partial = _state.value.streamingText
+            finalizeAssistant(
+                if (partial.isBlank()) AiMessageEntity.STATUS_FAILED
+                else AiMessageEntity.STATUS_INTERRUPTED
+            )
+            _state.update {
+                it.copy(banner = "回答超时，可重试或显示网页手动发送", webVisible = true)
+            }
+        }
     }
 
     private fun observeMessages(sessionId: Long?) {
@@ -272,6 +294,7 @@ class AiChatViewModel(
     private fun finalizeAssistant(status: String, textOverride: String? = null) {
         val snapshot = _state.value
         if (!snapshot.sending) return
+        watchdogJob?.cancel()
         val text = textOverride?.takeIf { it.isNotEmpty() } ?: snapshot.streamingText
         sendRequested = false
         _state.update { it.copy(sending = false, streamingText = "") }
@@ -290,6 +313,8 @@ class AiChatViewModel(
     }
 
     companion object {
+        private const val WATCHDOG_TIMEOUT_MS = 120_000L
+
         fun factory(
             noteId: Long,
             noteTitle: String,
@@ -299,12 +324,13 @@ class AiChatViewModel(
             settingsStore: AiSettingsStore,
             externalScope: CoroutineScope,
             registry: AiDriverRegistry,
-            webSessionFactory: (AiWebDriver) -> AiWebSession
+            webSessionFactory: (AiWebDriver) -> AiWebSession,
+            watchdogTimeoutMs: Long = WATCHDOG_TIMEOUT_MS
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 AiChatViewModel(
                     noteId, noteTitle, noteContent, aiRepository, noteRepository,
-                    settingsStore, externalScope, registry, webSessionFactory
+                    settingsStore, externalScope, registry, webSessionFactory, watchdogTimeoutMs
                 )
             }
         }
