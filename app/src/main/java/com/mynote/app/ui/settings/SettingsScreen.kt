@@ -7,8 +7,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -17,19 +19,11 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -43,6 +37,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mynote.app.data.settings.DarkMode
 import com.mynote.app.data.settings.ThemeSettingsStore
+import com.mynote.app.ui.components.HairlineDivider
+import com.mynote.app.ui.components.PaperTopBar
+import com.mynote.app.ui.components.TextTabRow
 import com.mynote.app.ui.theme.ThemePresets
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -52,39 +49,30 @@ fun SettingsScreen(store: ThemeSettingsStore, onBack: () -> Unit) {
     val settings by vm.settings.collectAsState()
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("设置") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
-                    }
-                }
-            )
-        }
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = { PaperTopBar(title = "设置", onBack = onBack) }
     ) { padding ->
         Column(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(horizontal = 16.dp)
         ) {
-            Text("深色模式", style = MaterialTheme.typography.titleMedium)
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                DarkMode.entries.forEachIndexed { index, mode ->
-                    SegmentedButton(
-                        selected = settings.darkMode == mode,
-                        onClick = { vm.setDarkMode(mode) },
-                        shape = SegmentedButtonDefaults.itemShape(
-                            index = index,
-                            count = DarkMode.entries.size
-                        ),
-                        label = { Text(darkModeLabel(mode)) }
-                    )
-                }
-            }
+            Text(
+                "外观",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+            )
+            TextTabRow(
+                tabs = DarkMode.entries.toList(),
+                selected = settings.darkMode,
+                onSelect = { vm.setDarkMode(it) },
+                label = { darkModeLabel(it) }
+            )
+            Spacer(Modifier.height(16.dp))
+            HairlineDivider()
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 Row(
@@ -94,25 +82,33 @@ fun SettingsScreen(store: ThemeSettingsStore, onBack: () -> Unit) {
                             value = settings.dynamicColor,
                             onValueChange = { vm.setDynamicColor(it) },
                             role = Role.Switch
-                        ),
+                        )
+                        .padding(vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("动态取色", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "动态取色",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
                         Text(
                             "跟随系统壁纸自动配色",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Switch(
-                        checked = settings.dynamicColor,
-                        onCheckedChange = null
-                    )
+                    Switch(checked = settings.dynamicColor, onCheckedChange = null)
                 }
+                HairlineDivider()
             }
 
-            Text("主题色", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "主题色",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 16.dp, bottom = 12.dp)
+            )
             val selectedColorIndex =
                 settings.themeColorIndex.takeIf { it in ThemePresets.all.indices } ?: 0
             Row(
@@ -123,11 +119,11 @@ fun SettingsScreen(store: ThemeSettingsStore, onBack: () -> Unit) {
                     val selected = index == selectedColorIndex
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(28.dp)
                             .background(preset.light.primary, CircleShape)
                             .border(
-                                width = if (selected) 3.dp else 1.dp,
-                                color = if (selected) MaterialTheme.colorScheme.onSurface
+                                width = if (selected) 1.5.dp else 1.dp,
+                                color = if (selected) MaterialTheme.colorScheme.onBackground
                                 else MaterialTheme.colorScheme.outlineVariant,
                                 shape = CircleShape
                             )
@@ -144,6 +140,7 @@ fun SettingsScreen(store: ThemeSettingsStore, onBack: () -> Unit) {
                     )
                 }
             }
+            Spacer(Modifier.height(24.dp))
         }
     }
 }
