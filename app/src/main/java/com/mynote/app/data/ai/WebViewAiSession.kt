@@ -35,18 +35,20 @@ class WebViewAiSession(initialDriver: AiWebDriver) : AiWebSession {
     private var pendingNewChat = false
     private var pageReady = false
     private var loggedIn: Boolean? = null
+    private var lastChatId: String? = null
 
     private val bridge = MyNoteJsBridge { json ->
         val event = AiWebEventParser.parse(json)
         if (event != null) {
             val view = webView
-            if (view != null) view.post { handleEvent(event) } else handleEvent(event)
+            if (view != null) view.post { handleEvent(event) }
         }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun attach(webView: WebView) {
         this.webView = webView
+        lastChatId = null
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
         webView.settings.databaseEnabled = true
@@ -56,7 +58,7 @@ class WebViewAiSession(initialDriver: AiWebDriver) : AiWebSession {
             override fun onPageFinished(view: WebView, url: String?) {
                 pageReady = true
                 _events.tryEmit(AiWebEvent.PageReady)
-                driver.parseChatId(url ?: view.url.orEmpty())?.let { _events.tryEmit(AiWebEvent.ChatId(it)) }
+                emitChatId(driver.parseChatId(url ?: view.url.orEmpty()))
                 view.evaluateJavascript(BOOTSTRAP_JS, null)
                 if (pendingNewChat) {
                     pendingNewChat = false
@@ -65,12 +67,18 @@ class WebViewAiSession(initialDriver: AiWebDriver) : AiWebSession {
                 view.evaluateJavascript(driver.loginCheckJs(), null)
             }
 
+            override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
+                emitChatId(driver.parseChatId(url.orEmpty()))
+            }
+
             override fun onReceivedError(
                 view: WebView,
                 request: WebResourceRequest,
                 error: WebResourceError
             ) {
                 if (request.isForMainFrame) {
+                    pageReady = false
+                    loggedIn = null
                     _events.tryEmit(AiWebEvent.PageError(error.description?.toString() ?: "网页加载失败"))
                 }
             }
@@ -83,6 +91,8 @@ class WebViewAiSession(initialDriver: AiWebDriver) : AiWebSession {
     override fun openNewChat() {
         pendingSend = null
         pendingNewChat = true
+        pageReady = false
+        loggedIn = null
         val url = driver.homeUrl
         desiredUrl = url
         webView?.loadUrl(url)
@@ -91,6 +101,8 @@ class WebViewAiSession(initialDriver: AiWebDriver) : AiWebSession {
     override fun openChat(remoteChatId: String) {
         pendingSend = null
         pendingNewChat = false
+        pageReady = false
+        loggedIn = null
         val url = driver.chatUrl(remoteChatId)
         desiredUrl = url
         webView?.loadUrl(url)
@@ -107,16 +119,30 @@ class WebViewAiSession(initialDriver: AiWebDriver) : AiWebSession {
     }
 
     override fun stop() {
+        pendingSend = null
         val view = webView ?: return
         view.evaluateJavascript(driver.stopObservingJs(), null)
         view.evaluateJavascript(driver.stopGeneratingJs(), null)
     }
 
     override fun release() {
-        webView?.removeJavascriptInterface(BRIDGE_NAME)
+        val view = webView
+        if (view != null) {
+            view.evaluateJavascript(driver.stopObservingJs(), null)
+            view.removeJavascriptInterface(BRIDGE_NAME)
+        }
         webView = null
         pageReady = false
         loggedIn = null
+        pendingSend = null
+        pendingNewChat = false
+    }
+
+    private fun emitChatId(id: String?) {
+        if (id != null && id != lastChatId) {
+            lastChatId = id
+            _events.tryEmit(AiWebEvent.ChatId(id))
+        }
     }
 
     private fun handleEvent(event: AiWebEvent) {

@@ -10,14 +10,18 @@ object AiWebEventParser {
         val payload = root.optJSONObject("payload") ?: JSONObject()
         when (root.getString("type")) {
             "loginState" -> AiWebEvent.LoginState(payload.optBoolean("loggedIn", false))
-            "replyChunk" -> AiWebEvent.ReplyChunk(payload.optString("text"))
-            "replyDone" -> AiWebEvent.ReplyDone(payload.optString("text"))
-            "replyError", "sendFailed" -> AiWebEvent.ReplyError(payload.optString("reason", "未知错误"))
-            "chatId" -> payload.optString("id").takeIf { it.isNotEmpty() }?.let { AiWebEvent.ChatId(it) }
+            "replyChunk" -> payload.stringOrNull("text")?.let { AiWebEvent.ReplyChunk(it) }
+            "replyDone" -> AiWebEvent.ReplyDone(payload.stringOrNull("text") ?: "")
+            "replyError", "sendFailed" -> AiWebEvent.ReplyError(payload.stringOrNull("reason") ?: "未知错误")
+            "chatId" -> payload.stringOrNull("id")?.let { AiWebEvent.ChatId(it) }
             "pageReady" -> AiWebEvent.PageReady
             else -> null
         }
     } catch (_: Exception) {
         null
     }
+
+    /** 显式 JSON null / 缺失 / 空串统一视为无值，避免把 null 当字符串 "null"。 */
+    private fun JSONObject.stringOrNull(key: String): String? =
+        if (isNull(key)) null else optString(key).takeIf { it.isNotEmpty() }
 }
