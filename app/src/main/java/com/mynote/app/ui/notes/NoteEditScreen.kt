@@ -4,40 +4,39 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.FlowRowOverflow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.filled.Save
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.PushPin
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -50,6 +49,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
@@ -68,13 +69,19 @@ import com.mynote.app.data.export.ImageExportManager
 import com.mynote.app.data.export.NoteImageRenderer
 import com.mynote.app.data.image.ImageStore
 import com.mynote.app.data.repository.NoteRepository
+import com.mynote.app.ui.components.CategoryDot
+import com.mynote.app.ui.components.HairlineDivider
+import com.mynote.app.ui.components.PaperAlertDialog
+import com.mynote.app.ui.components.PaperTopBar
 import com.mynote.app.ui.export.NoteExportDialog
 import com.mynote.app.ui.notes.NoteContentParser.ContentBlock
 import com.mynote.app.ui.theme.NoteColors
+import com.mynote.app.ui.theme.PaperPalette
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+
 class NoteEditViewModel(
     private val repository: NoteRepository,
     private val imageStore: ImageStore,
@@ -148,7 +155,7 @@ class NoteEditViewModel(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NoteEditScreen(
     noteId: Long?,
@@ -170,9 +177,10 @@ fun NoteEditScreen(
     var title by rememberSaveable(noteId) { mutableStateOf("") }
     var content by rememberSaveable(noteId) { mutableStateOf("") }
     var previewMode by rememberSaveable { mutableStateOf(false) }
-    var categoriesExpanded by rememberSaveable { mutableStateOf(false) }
     var pinned by rememberSaveable(noteId) { mutableStateOf(false) }
     var selectedCategoryId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var menuOpen by remember { mutableStateOf(false) }
+    var showCategorySheet by remember { mutableStateOf(false) }
     var showAddCategoryDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
@@ -206,21 +214,12 @@ fun NoteEditScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
-                title = { Text(if (noteId == null) "新建笔记" else "编辑笔记") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
-                    }
-                },
+            PaperTopBar(
+                onBack = onBack,
                 actions = {
-                    if (noteId != null && noteId != 0L) {
-                        IconButton(onClick = onOpenHistory) {
-                            Icon(Icons.Default.History, contentDescription = "历史记录")
-                        }
-                    }
                     IconButton(onClick = { pinned = !pinned }) {
                         Icon(
                             imageVector = if (pinned) Icons.Default.PushPin else Icons.Outlined.PushPin,
@@ -229,7 +228,7 @@ fun NoteEditScreen(
                             else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    IconButton(onClick = {
+                    TextButton(onClick = {
                         vm.save(title, content, selectedCategoryId, pinned, note?.color) { warning ->
                             if (warning != null) {
                                 scope.launch {
@@ -241,121 +240,179 @@ fun NoteEditScreen(
                             }
                         }
                     }) {
-                        Icon(Icons.Default.Save, contentDescription = "保存")
+                        Text("保存", style = MaterialTheme.typography.labelLarge)
                     }
-                    if (noteId != null || title.isNotBlank() || content.isNotBlank()) {
-                        IconButton(onClick = { showExportDialog = true }) {
-                            Icon(Icons.Default.Share, contentDescription = "导出")
+                    IconButton(onClick = { menuOpen = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "更多")
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        if (noteId != null && noteId != 0L) {
+                            DropdownMenuItem(
+                                text = { Text("历史记录") },
+                                onClick = { menuOpen = false; onOpenHistory() }
+                            )
                         }
-                    }
-                    if (noteId != null) {
-                        IconButton(onClick = { showDeleteDialog = true }) {
-                            Icon(Icons.Default.Delete, contentDescription = "删除")
+                        if (noteId != null || title.isNotBlank() || content.isNotBlank()) {
+                            DropdownMenuItem(
+                                text = { Text("导出") },
+                                onClick = { menuOpen = false; showExportDialog = true }
+                            )
+                        }
+                        if (noteId != null) {
+                            DropdownMenuItem(
+                                text = { Text("删除", color = MaterialTheme.colorScheme.error) },
+                                onClick = { menuOpen = false; showDeleteDialog = true }
+                            )
                         }
                     }
                 }
             )
         }
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
-            FlowRow(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                maxLines = if (categoriesExpanded) Int.MAX_VALUE else 2,
-                overflow = FlowRowOverflow.expandIndicator {
-                    FilterChip(
-                        selected = false,
-                        onClick = { categoriesExpanded = true },
-                        label = { Text("展开") }
-                    )
-                }
-            ) {
-                FilterChip(
-                    selected = previewMode,
-                    onClick = { previewMode = !previewMode },
-                    label = { Text("预览") }
-                )
-                categories.forEach { cat ->
-                    FilterChip(
-                        selected = selectedCategoryId == cat.id,
-                        onClick = { selectedCategoryId = cat.id },
-                        label = { Text(cat.name) }
-                    )
-                }
-                FilterChip(
-                    selected = false,
-                    onClick = { showAddCategoryDialog = true },
-                    label = { Text("+ 新建分类") }
-                )
-                if (categoriesExpanded) {
-                    FilterChip(
-                        selected = false,
-                        onClick = { categoriesExpanded = false },
-                        label = { Text("收起") }
-                    )
-                }
-            }
-
-            OutlinedTextField(
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .imePadding()
+        ) {
+            BasicTextField(
                 value = title,
                 onValueChange = { title = it },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                placeholder = { Text("标题") },
-                singleLine = true
+                textStyle = MaterialTheme.typography.titleLarge.copy(
+                    color = MaterialTheme.colorScheme.onBackground
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                singleLine = true,
+                decorationBox = { innerTextField ->
+                    if (title.isEmpty()) {
+                        Text(
+                            "标题",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    innerTextField()
+                }
             )
 
             if (previewMode) {
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                    modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(NoteContentParser.parse(content)) { block ->
                         when (block) {
                             is ContentBlock.Text -> Text(
                                 block.text,
-                                style = MaterialTheme.typography.bodyLarge
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onBackground
                             )
                             is ContentBlock.Image -> AsyncImage(
                                 model = imageStore.physicalFile(block.name),
                                 contentDescription = "图片",
-                                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(MaterialTheme.shapes.large),
                                 contentScale = ContentScale.FillWidth
                             )
                         }
                     }
                 }
             } else {
-                OutlinedTextField(
+                BasicTextField(
                     value = content,
                     onValueChange = { content = it },
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
-                    placeholder = { Text("开始记录…") }
+                    modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp, vertical = 4.dp),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        color = MaterialTheme.colorScheme.onBackground
+                    ),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    decorationBox = { innerTextField ->
+                        if (content.isEmpty()) {
+                            Text(
+                                "开始记录…",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        innerTextField()
+                    }
                 )
             }
 
+            HairlineDivider()
             Row(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = {
-                    pickImage.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                TextButton(
+                    onClick = {
+                        pickImage.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                }) {
-                    Icon(Icons.Default.Image, contentDescription = "插入图片")
+                ) { Text("图片") }
+                TextButton(
+                    onClick = { showCategorySheet = true },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    Text(
+                        (categories.firstOrNull { it.id == selectedCategoryId }?.name ?: "分类") + " ▾"
+                    )
                 }
-                Text("插入图片", style = MaterialTheme.typography.labelMedium)
+                TextButton(onClick = { previewMode = !previewMode }) {
+                    Text(
+                        "预览",
+                        color = if (previewMode) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+
+    if (showCategorySheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showCategorySheet = false },
+            shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
+                CategorySheetRow(
+                    label = "未分类",
+                    selected = selectedCategoryId == null,
+                    onClick = { selectedCategoryId = null; showCategorySheet = false }
+                )
+                categories.forEach { cat ->
+                    CategorySheetRow(
+                        label = cat.name,
+                        color = PaperPalette.nearest(cat.color),
+                        selected = selectedCategoryId == cat.id,
+                        onClick = { selectedCategoryId = cat.id; showCategorySheet = false }
+                    )
+                }
+                HairlineDivider()
+                CategorySheetRow(
+                    label = "+ 新建分类",
+                    selected = false,
+                    onClick = { showCategorySheet = false; showAddCategoryDialog = true }
+                )
             }
         }
     }
 
     if (showAddCategoryDialog) {
         var name by remember { mutableStateOf("") }
-        AlertDialog(
+        PaperAlertDialog(
             onDismissRequest = { showAddCategoryDialog = false },
-            title = { Text("新建分类") },
+            title = "新建分类",
             text = {
                 OutlinedTextField(
                     value = name,
@@ -382,9 +439,9 @@ fun NoteEditScreen(
     }
 
     if (showDeleteDialog) {
-        AlertDialog(
+        PaperAlertDialog(
             onDismissRequest = { showDeleteDialog = false },
-            title = { Text("删除笔记？") },
+            title = "删除笔记？",
             text = { Text("删除后不可恢复。") },
             confirmButton = {
                 TextButton(onClick = { vm.delete(onBack) }) { Text("删除") }
@@ -397,9 +454,9 @@ fun NoteEditScreen(
 
     if (showExportDialog) {
         val hasContent = title.isNotBlank() || content.isNotBlank()
-        AlertDialog(
+        PaperAlertDialog(
             onDismissRequest = { showExportDialog = false },
-            title = { Text("导出为…") },
+            title = "导出为…",
             text = {
                 Column {
                     TextButton(
@@ -441,6 +498,33 @@ fun NoteEditScreen(
             renderer = imageRenderer,
             exportManager = exportManager,
             onDismiss = { showImageExport = false }
+        )
+    }
+}
+
+@Composable
+private fun CategorySheetRow(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    color: Color? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (color != null) {
+            CategoryDot(color)
+            Spacer(Modifier.width(10.dp))
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (selected) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurface
         )
     }
 }
