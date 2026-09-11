@@ -20,12 +20,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -74,6 +72,7 @@ import com.mynote.app.data.repository.NoteRepository
 import com.mynote.app.ui.components.CategoryDot
 import com.mynote.app.ui.components.HairlineDivider
 import com.mynote.app.ui.components.PaperAlertDialog
+import com.mynote.app.ui.components.PaperOverflowMenu
 import com.mynote.app.ui.components.PaperTopBar
 import com.mynote.app.ui.export.NoteExportDialog
 import com.mynote.app.ui.notes.NoteContentParser.ContentBlock
@@ -269,10 +268,10 @@ fun NoteEditScreen(
                     }) {
                         Text("保存", style = MaterialTheme.typography.labelLarge)
                     }
-                    IconButton(onClick = { menuOpen = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "更多")
-                    }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    PaperOverflowMenu(
+                        expanded = menuOpen,
+                        onExpandedChange = { menuOpen = it }
+                    ) {
                         if (noteId != null && noteId != 0L) {
                             DropdownMenuItem(
                                 text = { Text("历史记录") },

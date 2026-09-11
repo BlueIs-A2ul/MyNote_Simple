@@ -16,10 +16,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -49,6 +47,7 @@ import com.mynote.app.data.db.CategoryEntity
 import com.mynote.app.ui.components.EmptyState
 import com.mynote.app.ui.components.HairlineDivider
 import com.mynote.app.ui.components.NoteRow
+import com.mynote.app.ui.components.PaperOverflowMenu
 import com.mynote.app.ui.components.PaperTopBar
 import com.mynote.app.ui.components.TextTabRow
 import com.mynote.app.ui.theme.PaperPalette
@@ -104,10 +103,10 @@ fun NotesScreen(
                     IconButton(onClick = { searchActive = true }) {
                         Icon(Icons.Default.Search, contentDescription = "搜索")
                     }
-                    IconButton(onClick = { menuOpen = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "更多")
-                    }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    PaperOverflowMenu(
+                        expanded = menuOpen,
+                        onExpandedChange = { menuOpen = it }
+                    ) {
                         DropdownMenuItem(
                             text = { Text("分类管理") },
                             onClick = { menuOpen = false; onManageCategories() }
