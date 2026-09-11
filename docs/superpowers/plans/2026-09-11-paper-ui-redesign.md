@@ -2339,7 +2339,7 @@ git commit -m "feat: 历史记录页纸感改版"
 
 - [ ] **Step 1: 替换顶栏、分段按钮与预览图样式**
 
-- import 区：删除 `TopAppBar`、`SegmentedButton`、`SegmentedButtonDefaults`、`SingleChoiceSegmentedButtonRow`；新增 `androidx.compose.foundation.clip`、`com.mynote.app.ui.components.PaperTopBar`、`com.mynote.app.ui.components.TextTabRow`。
+- import 区：删除 `TopAppBar`、`SegmentedButton`、`SegmentedButtonDefaults`、`SingleChoiceSegmentedButtonRow`；新增 `androidx.compose.ui.draw.clip`、`com.mynote.app.ui.components.PaperTopBar`、`com.mynote.app.ui.components.TextTabRow`。
 - 顶栏替换为：
 
 ```kotlin
