@@ -114,8 +114,12 @@ class NoteEditViewModel(
 
     fun save(title: String, content: String, categoryId: Long?, pinned: Boolean, color: Int?, onDone: (String?) -> Unit) {
         viewModelScope.launch {
+            val before = if (noteId != null && noteId != 0L) repository.countRevisions(noteId) else 0
             val id = repository.saveNote(noteId, title, content, categoryId, pinned, color)
-            val warning = if (noteId != null && noteId != 0L && repository.countRevisions(id) == NoteRevisionDao.WARN_AT) {
+            val warning = if (noteId != null && noteId != 0L &&
+                before < NoteRevisionDao.WARN_AT &&
+                repository.countRevisions(id) == NoteRevisionDao.WARN_AT
+            ) {
                 HISTORY_WARNING
             } else {
                 null

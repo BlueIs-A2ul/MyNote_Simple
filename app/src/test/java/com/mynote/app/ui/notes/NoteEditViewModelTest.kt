@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.mynote.app.data.db.AppDatabase
-import com.mynote.app.data.db.NoteRevisionDao
 import com.mynote.app.data.image.ImageStore
 import com.mynote.app.data.repository.NoteRepository
 import kotlinx.coroutines.CompletableDeferred
@@ -90,10 +89,20 @@ class NoteEditViewModelTest {
 
         vm.viewModelScope.cancel()
         vm = NoteEditViewModel(repo, ImageStore(ApplicationProvider.getApplicationContext()), noteId = id)
-        val warning = CompletableDeferred<String?>()
-        vm.save("t", "v39", null, false, null) { warning.complete(it) }
-        assertEquals(NoteEditViewModel.HISTORY_WARNING, warning.await())
+
+        val crossing = CompletableDeferred<String?>()
+        vm.save("t", "v39", null, false, null) { crossing.complete(it) }
+        assertEquals(NoteEditViewModel.HISTORY_WARNING, crossing.await())
         assertEquals(40, repo.countRevisions(id))
+
+        val noop = CompletableDeferred<String?>()
+        vm.save("t", "v39", null, false, null) { noop.complete(it) }
+        assertEquals(null, noop.await())
+
+        val beyond = CompletableDeferred<String?>()
+        vm.save("t", "v40", null, false, null) { beyond.complete(it) }
+        assertEquals(null, beyond.await())
+        assertEquals(41, repo.countRevisions(id))
     }
 
     @Test
