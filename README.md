@@ -12,6 +12,7 @@
 - 设置：主页 ⋮ → 设置，主题修改即时生效、重启保持
 - 备份：zip 全量备份 / 导入（按 id 去重、冲突保留更新者）
 - 导出：单条笔记导出 txt 或图片（纯白 PNG、无任何品牌元素；长笔记可选自动分页或单张长图，含内嵌图片）
+- 历史：每次保存自动留存版本（无变化不记；每篇上限 50 条、40 条起提醒），时间线可看字段变更标签与行级 + 行内 diff 对比，一键恢复旧版（恢复也生成一条新记录）
 
 ## 技术栈
 
@@ -34,7 +35,7 @@ Kotlin · Jetpack Compose + Material 3 · MVVM + 单向数据流（UDF） · Roo
 
 ```bat
 .\gradlew :app:assembleDebug          rem debug APK
-.\gradlew :app:testDebugUnitTest      rem 70 个单元测试
+.\gradlew :app:testDebugUnitTest      rem 113 个单元测试
 .\gradlew :app:assembleRelease        rem release（R8 + 资源压缩 + 签名）
 ```
 
@@ -51,7 +52,7 @@ app/src/main/java/com/mynote/app/
 ├── MainActivity.kt           # 唯一 Activity
 ├── di/AppContainer.kt        # 手写依赖注入（database/imageStore/repository/backup）
 ├── data/
-│   ├── db/                   # NoteEntity / CategoryEntity / DAO / AppDatabase（Room）
+│   ├── db/                   # NoteEntity / CategoryEntity / NoteRevisionEntity / DAO / AppDatabase（Room v2 + 迁移）
 │   ├── repository/           # NoteRepository（业务逻辑 + 图片垃圾回收）
 │   ├── settings/             # ThemeSettingsStore（SharedPreferences + StateFlow）
 │   ├── image/                # ImageStore（落盘 / 采样压缩 / 缩略图 / GC）
@@ -63,6 +64,7 @@ app/src/main/java/com/mynote/app/
 │   ├── categories/           # 分类管理
 │   ├── settings/             # 主题设置页 / ViewModel
 │   ├── export/               # 导出图片预览页 / ViewModel
+│   ├── history/              # 历史时间线 / diff 详情 / 恢复
 │   └── navigation/           # Compose Navigation 路由
 └── util/                     # 日期格式化等
 ```
@@ -74,6 +76,8 @@ app/src/main/java/com/mynote/app/
 - 设计文档：[`docs/superpowers/specs/2026-08-13-mynote-design.md`](docs/superpowers/specs/2026-08-13-mynote-design.md)
 - 主题设置设计：[`docs/superpowers/specs/2026-09-10-theme-settings-design.md`](docs/superpowers/specs/2026-09-10-theme-settings-design.md)
 - 图片导出设计：[`docs/superpowers/specs/2026-09-10-note-image-export-design.md`](docs/superpowers/specs/2026-09-10-note-image-export-design.md)
+- 历史修改记录设计：[`docs/superpowers/specs/2026-09-10-note-history-design.md`](docs/superpowers/specs/2026-09-10-note-history-design.md)
 - 图片导出计划（含修订记录）：[`docs/superpowers/plans/2026-09-10-note-image-export.md`](docs/superpowers/plans/2026-09-10-note-image-export.md)
+- 历史修改记录计划（含修订记录）：[`docs/superpowers/plans/2026-09-10-note-history.md`](docs/superpowers/plans/2026-09-10-note-history.md)
 - 实现计划（含修订记录）：[`docs/superpowers/plans/2026-08-13-mynote.md`](docs/superpowers/plans/2026-08-13-mynote.md)
 - 构建指南（问题记录 + 环境说明）：[`docs/build-guide.md`](docs/build-guide.md)
