@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.FlowRowOverflow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -169,6 +170,7 @@ fun NoteEditScreen(
     var title by rememberSaveable(noteId) { mutableStateOf("") }
     var content by rememberSaveable(noteId) { mutableStateOf("") }
     var previewMode by rememberSaveable { mutableStateOf(false) }
+    var categoriesExpanded by rememberSaveable { mutableStateOf(false) }
     var pinned by rememberSaveable(noteId) { mutableStateOf(false) }
     var selectedCategoryId by rememberSaveable { mutableStateOf<Long?>(null) }
     var showAddCategoryDialog by remember { mutableStateOf(false) }
@@ -259,7 +261,15 @@ fun NoteEditScreen(
             FlowRow(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                maxLines = if (categoriesExpanded) Int.MAX_VALUE else 2,
+                overflow = FlowRowOverflow.expandIndicator {
+                    FilterChip(
+                        selected = false,
+                        onClick = { categoriesExpanded = true },
+                        label = { Text("展开") }
+                    )
+                }
             ) {
                 FilterChip(
                     selected = previewMode,
@@ -278,6 +288,13 @@ fun NoteEditScreen(
                     onClick = { showAddCategoryDialog = true },
                     label = { Text("+ 新建分类") }
                 )
+                if (categoriesExpanded) {
+                    FilterChip(
+                        selected = false,
+                        onClick = { categoriesExpanded = false },
+                        label = { Text("收起") }
+                    )
+                }
             }
 
             OutlinedTextField(
