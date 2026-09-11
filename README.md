@@ -36,7 +36,7 @@ Kotlin · Jetpack Compose + Material 3 · MVVM + 单向数据流（UDF） · Roo
 
 ```bat
 .\gradlew :app:assembleDebug          rem debug APK
-.\gradlew :app:testDebugUnitTest      rem 186 个单元测试
+.\gradlew :app:testDebugUnitTest      rem 199 个单元测试
 .\gradlew :app:assembleRelease        rem release（R8 + 资源压缩 + 签名）
 ```
 

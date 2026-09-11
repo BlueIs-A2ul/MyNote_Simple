@@ -3179,8 +3179,8 @@ git commit -m "docs: 更新 AI 助手文档与测试数（含计划修订记录�
 
 ## 修订记录（执行期）
 
-1. 实际单测数量：186（原 113 + 新增 73）。
-2. release APK 体积：1.69 MB（1,773,356 字节，`app/build/outputs/apk/release/app-release.apk`）。
+1. 实际单测数量：199（AI 分支合入时 186；rebase 到含纸感改版的 master 后，合并双方用例为 199）。
+2. release APK 体积：1.72 MB（1,798,496 字节，`app/build/outputs/apk/release/app-release.apk`，rebase 集成后重新构建）。
 3. 与设计的偏差（执行期实际偏差 / 质量审查加固）：
    - `AiSessionDao.updateRemoteChatId` 参数放宽为 `String?`（为支持设计 §5.2 的 remoteChatId 置空；质量审查加固）。
    - `DeepSeekDriver` 脚本加固：findSend 不再盲点最后一个按钮（改走 Enter 兜底）、观察器 150ms 节流 + 500ms 强扫、JSON 转义补 U+2028/2029、脚本内 `__emit` 守卫、newChat 只匹配 button/role=button、停止按钮中英匹配、started 判定增强、发送后重查输入框并失败上报、`window.__mynoteText` 用后置 null。
@@ -3191,6 +3191,8 @@ git commit -m "docs: 更新 AI 助手文档与测试数（含计划修订记录�
    - 未实现项（与设计差异）：`AiWebSession.checkLogin()` 独立方法、服务切换 UI（当前仅注册 DeepSeek）、会话删除二次确认、`remoteChatId` 失效的独立提示、`AiChatRepository.updateRemoteChatId` 参数仍为非空 `String`（DAO 已支持可空）。
    - 已知小瑕疵：`AiResultApplierTest.selectionOutOfRangeIsClamped` 因 TextFieldValue 构造器自带 selection coercion 实为空测试；`onCleared` 与 `onWebViewDetached` 落库状态口径在空半截时不完全一致（interrupted vs failed）。
 4. 真机人工验证（设计 §12 清单）待用户执行，结果回填于此。
+5. 合入前追加加固：`AiChatViewModel` 增加原生回答看门狗（默认 120s，测试可注入超时；注入观察器失效时按半截 `interrupted` / 无内容 `failed` 收尾并提示，避免永久「生成中」）。
+6. 集成：分支原基于纸感改版前的 `1568ffb`，合入前已 rebase 到最新 `master`（纸感极简 UI 改版），编辑页冲突已合并（保留 `PaperTopBar`/更多菜单，AI 图标与 `TextFieldValue`/结果落回并入）；全量测试与 release 在 rebase 后重跑。
 
 
 
