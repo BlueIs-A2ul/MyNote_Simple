@@ -18,26 +18,18 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -48,6 +40,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -60,6 +53,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mynote.app.data.export.ImageExportManager
 import com.mynote.app.data.export.NoteImageRenderer
 import com.mynote.app.data.export.PageMode
+import com.mynote.app.ui.components.PaperTopBar
+import com.mynote.app.ui.components.TextTabRow
 import com.mynote.app.util.TimeFormat
 import kotlinx.coroutines.launch
 import java.io.File
@@ -190,13 +185,9 @@ fun NoteExportDialog(
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Scaffold(
                 topBar = {
-                    TopAppBar(
-                        title = { Text("导出图片") },
-                        navigationIcon = {
-                            IconButton(onClick = { dismiss() }) {
-                                Icon(Icons.Default.ArrowBack, contentDescription = "返回")
-                            }
-                        }
+                    PaperTopBar(
+                        title = "导出图片",
+                        onBack = { dismiss() }
                     )
                 },
                 snackbarHost = { SnackbarHost(snackbarHost) },
@@ -216,11 +207,13 @@ fun NoteExportDialog(
                                 OutlinedButton(
                                     onClick = { save() },
                                     enabled = !exporting && !writing,
+                                    shape = MaterialTheme.shapes.small,
                                     modifier = Modifier.weight(1f)
                                 ) { Text("保存") }
                                 Button(
                                     onClick = { share() },
                                     enabled = !exporting && !writing,
+                                    shape = MaterialTheme.shapes.small,
                                     modifier = Modifier.weight(1f)
                                 ) { Text("分享") }
                             }
@@ -252,22 +245,17 @@ fun NoteExportDialog(
                                     .padding(horizontal = 16.dp)
                             ) {
                                 if (current.pageCount > 1) {
-                                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                                        SegmentedButton(
-                                            selected = current.mode == PageMode.PAGED,
-                                            onClick = { vm.setMode(PageMode.PAGED) },
-                                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                                            enabled = !exporting && !writing,
-                                            label = { Text("分页 ${current.pageCount} 张") }
-                                        )
-                                        SegmentedButton(
-                                            selected = current.mode == PageMode.SINGLE,
-                                            onClick = { vm.setMode(PageMode.SINGLE) },
-                                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                                            enabled = !exporting && !writing,
-                                            label = { Text("单张长图") }
-                                        )
-                                    }
+                                    TextTabRow(
+                                        tabs = listOf(PageMode.PAGED, PageMode.SINGLE),
+                                        selected = current.mode,
+                                        onSelect = { mode ->
+                                            if (!exporting && !writing) vm.setMode(mode)
+                                        },
+                                        label = {
+                                            if (it == PageMode.PAGED) "分页 ${current.pageCount} 张" else "单张长图"
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
                                     Spacer(Modifier.height(8.dp))
                                 }
                                 if (current.longWarning) {
@@ -284,7 +272,12 @@ fun NoteExportDialog(
                                         contentDescription = null,
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                                            .clip(MaterialTheme.shapes.large)
+                                            .border(
+                                                1.dp,
+                                                MaterialTheme.colorScheme.outlineVariant,
+                                                MaterialTheme.shapes.large
+                                            )
                                     )
                                     Spacer(Modifier.height(12.dp))
                                 }
