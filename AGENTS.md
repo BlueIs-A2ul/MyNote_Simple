@@ -7,6 +7,7 @@ MyNote 安卓备忘录（原生 Android，单模块 `:app`）。本文件只记�
 - 技术栈：Kotlin + Jetpack Compose (Material 3) + MVVM/UDF；Room(KSP) + Coil 2 + kotlinx.serialization + Navigation Compose；手写 DI（`di/AppContainer.kt`，无 Hilt）。minSdk 24 / target 34 / JDK 17；依赖统一加在 `gradle/libs.versions.toml`。AI 助手为应用首个联网功能（`INTERNET` 普通权限），其余仍保持零敏感权限与零新增三方依赖。
 - 硬约束（设计文档反复强调）：内存占用小、**零新增第三方依赖**、零敏感存储权限（只用 SAF / Photo Picker / FileProvider）。
 - 无远程仓库，历史在 `master` 线性推进；不要 push。提交信息用中文 + `feat|fix|docs|chore|refactor:` 前缀（与现有历史一致）。
+- 版本规则：`versionName` 语义化 `major.minor.patch`；`versionCode = major*10000 + minor*100 + patch`（定义在 `app/build.gradle.kts` 顶部）；release 产物名 `MyNote-<versionName>-release.apk`；设置页底部显示版本号。发 release 前先递增 minor（功能）/ patch（修复），并同步 README 的版本行。
 
 ## 命令（Windows PowerShell，统一 `.\gradlew`）
 

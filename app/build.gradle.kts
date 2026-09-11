@@ -15,6 +15,10 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
+// 版本规则：versionName 语义化 major.minor.patch；versionCode = major*10000 + minor*100 + patch
+val appVersionName = "1.1.0"
+val appVersionCode = 1_01_00
+
 android {
     namespace = "com.mynote.app"
     compileSdk = 34
@@ -23,8 +27,8 @@ android {
         applicationId = "com.mynote.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
     }
 
     signingConfigs {
@@ -56,6 +60,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     testOptions {
         unitTests {
@@ -68,6 +73,15 @@ android {
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    }
+}
+
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        variant.outputs.forEach { output ->
+            (output as? com.android.build.api.variant.impl.VariantOutputImpl)
+                ?.outputFileName?.set("MyNote-$appVersionName-release.apk")
+        }
     }
 }
 

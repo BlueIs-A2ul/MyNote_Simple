@@ -33,8 +33,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.mynote.app.BuildConfig
 import com.mynote.app.data.settings.DarkMode
 import com.mynote.app.data.settings.ThemeSettingsStore
 import com.mynote.app.ui.components.HairlineDivider
@@ -141,6 +143,13 @@ fun SettingsScreen(store: ThemeSettingsStore, onBack: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(24.dp))
+            Text(
+                "MyNote ${BuildConfig.VERSION_NAME}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)
+            )
         }
     }
 }

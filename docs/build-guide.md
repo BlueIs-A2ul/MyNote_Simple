@@ -82,9 +82,9 @@ dependencyResolutionManagement {
 | 目的 | 命令 | 预期 |
 |---|---|---|
 | debug APK | `.\gradlew :app:assembleDebug` | `app\build\outputs\apk\debug\app-debug.apk`（约 17.8MB） |
-| 全部单元测试 | `.\gradlew :app:testDebugUnitTest` | 39 个测试全部 PASS |
+| 全部单元测试 | `.\gradlew :app:testDebugUnitTest` | 199 个测试全部 PASS |
 | 单个测试类 | `.\gradlew :app:testDebugUnitTest --tests "com.mynote.app.data.db.NoteDaoTest"` | 该类 PASS |
-| release APK | `.\gradlew :app:assembleRelease` | `app\build\outputs\apk\release\app-release.apk`（约 1.6MB，R8 + 资源压缩，按 `keystore.properties` 签名） |
+| release APK | `.\gradlew :app:assembleRelease` | `app\build\outputs\apk\release\MyNote-<版本>-release.apk`（约 1.7MB，R8 + 资源压缩，按 `keystore.properties` 签名） |
 
 **耗时说明**：
 
@@ -106,6 +106,6 @@ dependencyResolutionManagement {
 
 ## 5. 已知遗留事项
 
-- **签名**：release 已通过根目录 `keystore.properties`（已 gitignore）配置 `signingConfigs` 并产出已签名 `app-release.apk`；**新克隆/换机若无该文件，release 构建会在配置阶段失败**（`app/build.gradle.kts` 对键值使用 `as String` 强制转换），需自备密钥文件后构建。
+- **签名**：release 已通过根目录 `keystore.properties`（已 gitignore）配置 `signingConfigs` 并产出已签名 `MyNote-<版本>-release.apk`；**新克隆/换机若无该文件，release 构建会在配置阶段失败**（`app/build.gradle.kts` 对键值使用 `as String` 强制转换），需自备密钥文件后构建。
 - **ABI 拆分**：计划中的可选步骤未启用（应用含少量 Compose 原生库，本地分发如需进一步减小体积可开启）。
 - **性能/内存校验**（计划 Task 11 Step 4）：需真机或模拟器 + Android Studio Profiler 人工完成。
