@@ -253,6 +253,147 @@ class AiChatViewModelTest {
         assertTrue(fresh.isPrivacyAccepted("deepseek"))
     }
 
+    @Test
+    fun stopDuringStreamingSavesInterrupted() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val vm = createVm(noteId)
+        vm.send("问")
+        vm.state.first { it.sending }
+        val sessionId = aiRepo.observeSessions(noteId).first { it.isNotEmpty() }.single().id
+
+        fake.emit(AiWebEvent.ReplyChunk("半截"))
+        vm.state.first { it.streamingText == "半截" }
+        vm.stop()
+        assertFalse(vm.state.value.sending)
+
+        val messages = aiRepo.observeMessages(sessionId).first { it.size == 2 }
+        assertEquals("半截", messages[1].content)
+        assertEquals(AiMessageEntity.STATUS_INTERRUPTED, messages[1].status)
+
+        fake.emit(AiWebEvent.ReplyDone("迟到"))
+        runCurrent()
+        assertEquals(2, aiRepo.getMessages(sessionId).size)
+    }
+
+    @Test
+    fun newChatDuringSendingFinalizesOldSession() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val vm = createVm(noteId)
+        vm.send("问")
+        vm.state.first { it.sending }
+        val sessionId = aiRepo.observeSessions(noteId).first { it.isNotEmpty() }.single().id
+
+        fake.emit(AiWebEvent.ReplyChunk("半截"))
+        vm.state.first { it.streamingText == "半截" }
+        vm.newChat()
+
+        assertFalse(vm.state.value.sending)
+        assertNull(vm.state.value.currentSessionId)
+
+        val messages = aiRepo.observeMessages(sessionId).first { it.size == 2 }
+        assertEquals("半截", messages[1].content)
+        assertEquals(AiMessageEntity.STATUS_INTERRUPTED, messages[1].status)
+    }
+
+    @Test
+    fun selectSessionDuringSendingFinalizesOldSession() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val vm = createVm(noteId)
+        vm.send("问")
+        vm.state.first { it.sending }
+        val sessionId = aiRepo.observeSessions(noteId).first { it.isNotEmpty() }.single().id
+
+        fake.emit(AiWebEvent.ReplyChunk("半截"))
+        vm.state.first { it.streamingText == "半截" }
+
+        val secondId = aiRepo.createSession(noteId, "deepseek", "第二个", System.currentTimeMillis())
+        vm.state.first { it.sessions.any { session -> session.id == secondId } }
+        vm.selectSession(secondId)
+
+        assertFalse(vm.state.value.sending)
+        assertEquals(secondId, vm.state.value.currentSessionId)
+
+        val oldMessages = aiRepo.observeMessages(sessionId).first { it.size == 2 }
+        assertEquals("半截", oldMessages[1].content)
+        assertEquals(AiMessageEntity.STATUS_INTERRUPTED, oldMessages[1].status)
+
+        runCurrent()
+        assertEquals(0, aiRepo.getMessages(secondId).size)
+    }
+
+    @Test
+    fun lateReplyChunkAfterDoneIsIgnored() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val vm = createVm(noteId)
+        vm.send("问")
+        vm.state.first { it.sending }
+        val sessionId = aiRepo.observeSessions(noteId).first { it.isNotEmpty() }.single().id
+
+        fake.emit(AiWebEvent.ReplyDone("答"))
+        vm.state.first { !it.sending }
+        aiRepo.observeMessages(sessionId).first { it.size == 2 }
+
+        fake.emit(AiWebEvent.ReplyChunk("幽灵"))
+        runCurrent()
+        assertEquals("", vm.state.value.streamingText)
+        assertEquals(2, aiRepo.getMessages(sessionId).size)
+    }
+
+    @Test
+    fun rapidDoubleSendOnlySendsOnce() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val vm = createVm(noteId)
+        vm.send("问")
+        vm.send("问")
+        vm.state.first { it.sending }
+        runCurrent()
+
+        val sessions = aiRepo.observeSessions(noteId).first { it.isNotEmpty() }
+        assertEquals(1, sessions.size)
+        assertEquals(1, fake.sent.size)
+        assertEquals(1, aiRepo.getMessages(sessions.single().id).size)
+    }
+
+    @Test
+    fun pageErrorWithPartialStoresInterruptedWithoutPartialStoresFailed() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val vm = createVm(noteId)
+        vm.send("问一")
+        vm.state.first { it.sending }
+        val sessionId = aiRepo.observeSessions(noteId).first { it.isNotEmpty() }.single().id
+
+        fake.emit(AiWebEvent.ReplyChunk("半截"))
+        vm.state.first { it.streamingText == "半截" }
+        fake.emit(AiWebEvent.PageError("网页加载失败"))
+        vm.state.first { !it.sending && it.banner != null }
+        val afterPartial = aiRepo.observeMessages(sessionId).first { it.size == 2 }
+        assertEquals("半截", afterPartial[1].content)
+        assertEquals(AiMessageEntity.STATUS_INTERRUPTED, afterPartial[1].status)
+
+        vm.send("问二")
+        vm.state.first { it.sending }
+        fake.emit(AiWebEvent.PageError("页面未就绪"))
+        vm.state.first { !it.sending && it.banner == "页面未就绪" }
+        val all = aiRepo.observeMessages(sessionId).first { it.size == 4 }
+        assertEquals(AiMessageEntity.STATUS_FAILED, all[3].status)
+        assertEquals("", all[3].content)
+    }
+
+    @Test
+    fun chatIdIgnoredWhenNotSending() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val vm = createVm(noteId)
+        vm.send("问")
+        vm.state.first { it.sending }
+        fake.emit(AiWebEvent.ReplyDone("答"))
+        vm.state.first { !it.sending }
+
+        fake.emit(AiWebEvent.ChatId("late-chat"))
+        runCurrent()
+        assertNull(aiRepo.observeSessions(noteId).first { it.isNotEmpty() }.single().remoteChatId)
+        assertNull(vm.state.value.sessions.single().remoteChatId)
+    }
+
     private object FakeDriver : AiWebDriver {
         override val id = "deepseek"
         override val displayName = "DeepSeek"

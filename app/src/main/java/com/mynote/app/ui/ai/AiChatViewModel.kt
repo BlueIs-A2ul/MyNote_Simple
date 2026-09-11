@@ -62,6 +62,7 @@ class AiChatViewModel(
     private var messagesJob: Job? = null
     private var initialSelectionDone = false
     private var userStartedNewChat = false
+    private var sendRequested = false
 
     init {
         viewModelScope.launch {
@@ -90,7 +91,12 @@ class AiChatViewModel(
     }
 
     fun selectSession(sessionId: Long) {
+        if (sessionId == _state.value.currentSessionId) return
         val session = _state.value.sessions.firstOrNull { it.id == sessionId } ?: return
+        if (_state.value.sending) {
+            webSession.stop()
+            finalizeAssistant(AiMessageEntity.STATUS_INTERRUPTED)
+        }
         userStartedNewChat = false
         _state.update { it.copy(currentSessionId = sessionId, streamingText = "", banner = null) }
         observeMessages(sessionId)
@@ -99,6 +105,10 @@ class AiChatViewModel(
     }
 
     fun newChat() {
+        if (_state.value.sending) {
+            webSession.stop()
+            finalizeAssistant(AiMessageEntity.STATUS_INTERRUPTED)
+        }
         userStartedNewChat = true
         _state.update { it.copy(currentSessionId = null, streamingText = "", banner = null) }
         observeMessages(null)
@@ -108,7 +118,8 @@ class AiChatViewModel(
     fun send(rawInput: String) {
         val input = rawInput.trim()
         val snapshot = _state.value
-        if (input.isEmpty() || snapshot.sending || !snapshot.privacyAccepted) return
+        if (input.isEmpty() || snapshot.sending || sendRequested || !snapshot.privacyAccepted) return
+        sendRequested = true
         val sessionId = snapshot.currentSessionId
         if (sessionId != null) {
             val session = snapshot.sessions.firstOrNull { it.id == sessionId }
@@ -168,11 +179,13 @@ class AiChatViewModel(
         val sessionId = snapshot.currentSessionId
         if (snapshot.sending && sessionId != null) {
             val text = snapshot.streamingText
+            val status = if (text.isBlank()) AiMessageEntity.STATUS_FAILED
+            else AiMessageEntity.STATUS_INTERRUPTED
             externalScope.launch {
                 val now = System.currentTimeMillis()
                 aiRepository.appendMessage(
                     sessionId, AiMessageEntity.ROLE_ASSISTANT, text,
-                    AiMessageEntity.STATUS_INTERRUPTED, now
+                    status, now
                 )
                 aiRepository.touch(sessionId, now)
             }
@@ -190,6 +203,7 @@ class AiChatViewModel(
         val now = System.currentTimeMillis()
         aiRepository.appendMessage(sessionId, AiMessageEntity.ROLE_USER, input, AiMessageEntity.STATUS_DONE, now)
         _state.update { it.copy(sending = true, streamingText = "", banner = null) }
+        sendRequested = false
         webSession.send(payload)
     }
 
@@ -216,10 +230,14 @@ class AiChatViewModel(
                 )
             }
             is AiWebEvent.ChatId -> {
+                if (!_state.value.sending) return
                 val sessionId = _state.value.currentSessionId ?: return
                 viewModelScope.launch { aiRepository.updateRemoteChatId(sessionId, event.id) }
             }
-            is AiWebEvent.ReplyChunk -> _state.update { it.copy(streamingText = event.text) }
+            is AiWebEvent.ReplyChunk -> {
+                if (!_state.value.sending) return
+                _state.update { it.copy(streamingText = event.text) }
+            }
             is AiWebEvent.ReplyDone -> finalizeAssistant(AiMessageEntity.STATUS_DONE, event.text)
             is AiWebEvent.ReplyError -> {
                 if (!_state.value.sending) return
@@ -233,7 +251,13 @@ class AiChatViewModel(
                 }
             }
             is AiWebEvent.PageError -> {
-                if (_state.value.sending) finalizeAssistant(AiMessageEntity.STATUS_FAILED)
+                if (_state.value.sending) {
+                    val partial = _state.value.streamingText
+                    finalizeAssistant(
+                        if (partial.isBlank()) AiMessageEntity.STATUS_FAILED
+                        else AiMessageEntity.STATUS_INTERRUPTED
+                    )
+                }
                 _state.update { it.copy(banner = event.description) }
             }
             AiWebEvent.PageReady -> _state.update { it.copy(banner = null) }
@@ -243,14 +267,15 @@ class AiChatViewModel(
     private fun finalizeAssistant(status: String, textOverride: String? = null) {
         val snapshot = _state.value
         if (!snapshot.sending) return
+        val text = textOverride?.takeIf { it.isNotEmpty() } ?: snapshot.streamingText
+        sendRequested = false
+        _state.update { it.copy(sending = false, streamingText = "") }
         val sessionId = snapshot.currentSessionId ?: return
-        val text = textOverride ?: snapshot.streamingText
-        viewModelScope.launch {
+        externalScope.launch {
             val now = System.currentTimeMillis()
             aiRepository.appendMessage(sessionId, AiMessageEntity.ROLE_ASSISTANT, text, status, now)
             aiRepository.touch(sessionId, now)
         }
-        _state.update { it.copy(sending = false, streamingText = "") }
     }
 
     private fun titleFor(input: String): String {
