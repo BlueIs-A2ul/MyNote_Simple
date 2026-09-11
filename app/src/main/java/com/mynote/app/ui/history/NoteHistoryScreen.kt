@@ -90,6 +90,9 @@ fun NoteHistoryScreen(
         snackbarHostState.showSnackbar(message)
         vm.consumeMessage()
     }
+    LaunchedEffect(state.detail) {
+        if (state.detail == null) showRestoreDialog = false
+    }
 
     Scaffold(
         topBar = {
@@ -188,17 +191,19 @@ private fun DetailContent(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = !detail.showFullText,
-                    onClick = { if (detail.showFullText) vm.toggleFullText() },
-                    label = { Text("对比") }
-                )
-                FilterChip(
-                    selected = detail.showFullText,
-                    onClick = { if (!detail.showFullText) vm.toggleFullText() },
-                    label = { Text("全文") }
-                )
+            if (!detail.isFirst) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = !detail.showFullText,
+                        onClick = { if (detail.showFullText) vm.toggleFullText() },
+                        label = { Text("对比") }
+                    )
+                    FilterChip(
+                        selected = detail.showFullText,
+                        onClick = { if (!detail.showFullText) vm.toggleFullText() },
+                        label = { Text("全文") }
+                    )
+                }
             }
         }
         HorizontalDivider()
@@ -244,12 +249,12 @@ private fun DiffLineRow(line: NoteDiff.Line) {
     val text = buildAnnotatedString {
         var cursor = 0
         for (range in line.emphasis) {
-            if (range.first > cursor) append(line.text.substring(cursor, range.first))
+            val start = range.first.coerceAtLeast(cursor)
             val end = (range.last + 1).coerceAtMost(line.text.length)
-            if (end > range.first) {
-                withStyle(SpanStyle(background = emphasisColor)) {
-                    append(line.text.substring(range.first, end))
-                }
+            if (end <= start) continue
+            if (start > cursor) append(line.text.substring(cursor, start))
+            withStyle(SpanStyle(background = emphasisColor)) {
+                append(line.text.substring(start, end))
             }
             cursor = end
         }
