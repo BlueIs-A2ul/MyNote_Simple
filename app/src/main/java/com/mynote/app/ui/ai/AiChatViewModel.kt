@@ -86,8 +86,12 @@ class AiChatViewModel(
         webSession.attach(webView)
     }
 
-    fun releaseWebView() {
+    /** WebView 随组合销毁（返回 / 旋转）时调用：断开旧的 WebView 并结束流式态。 */
+    fun onWebViewDetached() {
         webSession.release()
+        if (_state.value.sending) {
+            finalizeAssistant(AiMessageEntity.STATUS_INTERRUPTED)
+        }
     }
 
     fun selectSession(sessionId: Long) {
@@ -115,10 +119,11 @@ class AiChatViewModel(
         webSession.openNewChat()
     }
 
-    fun send(rawInput: String) {
+    /** 返回是否真正进入发送流程；被拒（空输入 / 生成中 / 重复请求 / 未接受隐私）返回 false。 */
+    fun send(rawInput: String): Boolean {
         val input = rawInput.trim()
         val snapshot = _state.value
-        if (input.isEmpty() || snapshot.sending || sendRequested || !snapshot.privacyAccepted) return
+        if (input.isEmpty() || snapshot.sending || sendRequested || !snapshot.privacyAccepted) return false
         sendRequested = true
         val sessionId = snapshot.currentSessionId
         if (sessionId != null) {
@@ -133,6 +138,7 @@ class AiChatViewModel(
                 launchSendNow(id, null, input)
             }
         }
+        return true
     }
 
     fun stop() {
@@ -146,8 +152,7 @@ class AiChatViewModel(
         viewModelScope.launch {
             aiRepository.deleteSession(sessionId)
             if (_state.value.currentSessionId == sessionId) {
-                _state.update { it.copy(currentSessionId = null, streamingText = "") }
-                observeMessages(null)
+                newChat()
             }
         }
     }

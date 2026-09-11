@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -108,7 +109,7 @@ fun AiChatScreen(
 
     DisposableEffect(Unit) {
         onDispose {
-            vm.releaseWebView()
+            vm.onWebViewDetached()
             webView?.destroy()
             webView = null
         }
@@ -140,7 +141,7 @@ fun AiChatScreen(
         drawerState = drawerState,
         gesturesEnabled = !state.webVisible,
         drawerContent = {
-            ModalDrawerSheet {
+            ModalDrawerSheet(drawerState = drawerState) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -160,6 +161,7 @@ fun AiChatScreen(
                         SessionItem(
                             session = session,
                             selected = session.id == state.currentSessionId,
+                            deleteEnabled = !(state.sending && session.id == state.currentSessionId),
                             onClick = {
                                 vm.selectSession(session.id)
                                 scope.launch { drawerState.close() }
@@ -219,10 +221,10 @@ fun AiChatScreen(
                         input = input,
                         onInputChange = { input = it },
                         onSend = {
-                            vm.send(input)
-                            input = ""
+                            if (vm.send(input)) input = ""
                         },
                         onStop = { vm.stop() },
+                        onShowWeb = { vm.toggleWebVisible() },
                         onInsert = { text -> onApplyResult("insert", text) },
                         onReplace = { text -> onApplyResult("replace", text) },
                         onCopy = { text ->
@@ -248,6 +250,7 @@ fun AiChatScreen(
 private fun SessionItem(
     session: AiSessionEntity,
     selected: Boolean,
+    deleteEnabled: Boolean,
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -255,7 +258,7 @@ private fun SessionItem(
         headlineContent = { Text(session.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = { Text(TimeFormat.dateTime(session.updatedAt)) },
         trailingContent = {
-            IconButton(onClick = onDelete) {
+            IconButton(onClick = onDelete, enabled = deleteEnabled) {
                 Icon(Icons.Default.Delete, contentDescription = "删除会话")
             }
         },
@@ -275,11 +278,20 @@ private fun ChatLayer(
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
+    onShowWeb: () -> Unit,
     onInsert: (String) -> Unit,
     onReplace: (String) -> Unit,
     onCopy: (String) -> Unit,
     onSaveAsNote: (String) -> Unit
 ) {
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(state.messages.size, state.sending) {
+        val itemCount = state.messages.size +
+            if (state.sending || state.streamingText.isNotEmpty()) 1 else 0
+        if (itemCount > 0) listState.animateScrollToItem(itemCount - 1)
+    }
+
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(modifier = Modifier.fillMaxSize()) {
             state.banner?.let { banner ->
@@ -287,12 +299,21 @@ private fun ChatLayer(
                     color = MaterialTheme.colorScheme.errorContainer,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        banner,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                            .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            banner,
+                            modifier = Modifier.weight(1f).padding(vertical = 6.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        if (!state.webVisible) {
+                            TextButton(onClick = onShowWeb) { Text("显示网页") }
+                        }
+                    }
                 }
             }
             if (state.messages.isEmpty() && !state.sending && state.streamingText.isEmpty()) {
@@ -308,6 +329,7 @@ private fun ChatLayer(
                 }
             } else {
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)

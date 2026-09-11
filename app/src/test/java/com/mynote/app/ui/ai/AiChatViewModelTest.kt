@@ -394,6 +394,55 @@ class AiChatViewModelTest {
         assertNull(vm.state.value.sessions.single().remoteChatId)
     }
 
+    @Test
+    fun deleteCurrentSessionOpensNewWebChat() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val vm = createVm(noteId)
+        vm.send("问")
+        vm.state.first { it.sending }
+        val sessionId = aiRepo.observeSessions(noteId).first { it.isNotEmpty() }.single().id
+        fake.emit(AiWebEvent.ReplyDone("答"))
+        vm.state.first { !it.sending }
+
+        val before = fake.newChatCount
+        vm.deleteSession(sessionId)
+        vm.state.first { it.sessions.isEmpty() }
+
+        assertNull(vm.state.value.currentSessionId)
+        assertTrue(vm.state.value.messages.isEmpty())
+        assertEquals(before + 1, fake.newChatCount)
+    }
+
+    @Test
+    fun sendReturnsFalseWhenRejected() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val vm = createVm(noteId)
+
+        assertFalse(vm.send("  "))
+        assertTrue(vm.send("问"))
+        vm.state.first { it.sending }
+        assertFalse(vm.send("第二问"))
+        assertEquals(1, fake.sent.size)
+    }
+
+    @Test
+    fun webViewDetachedDuringStreamingSavesInterrupted() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val vm = createVm(noteId)
+        vm.send("问")
+        vm.state.first { it.sending }
+        val sessionId = aiRepo.observeSessions(noteId).first { it.isNotEmpty() }.single().id
+
+        fake.emit(AiWebEvent.ReplyChunk("半截"))
+        vm.state.first { it.streamingText == "半截" }
+        vm.onWebViewDetached()
+
+        assertFalse(vm.state.value.sending)
+        val messages = aiRepo.observeMessages(sessionId).first { it.size == 2 }
+        assertEquals("半截", messages[1].content)
+        assertEquals(AiMessageEntity.STATUS_INTERRUPTED, messages[1].status)
+    }
+
     private object FakeDriver : AiWebDriver {
         override val id = "deepseek"
         override val displayName = "DeepSeek"
