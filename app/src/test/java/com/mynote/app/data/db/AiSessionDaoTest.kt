@@ -67,6 +67,24 @@ class AiSessionDaoTest {
     }
 
     @Test
+    fun updateRemoteChatIdCanClearToNull() = runTest {
+        val noteId = db.noteDao().insert(NoteEntity(0, "t", "c", 1, 1, null, false, null))
+        val id = db.aiSessionDao().insert(session(noteId))
+        db.aiSessionDao().updateRemoteChatId(id, "abc")
+        db.aiSessionDao().updateRemoteChatId(id, null)
+        assertEquals(null, db.aiSessionDao().getById(id)!!.remoteChatId)
+    }
+
+    @Test
+    fun equalUpdatedAtBreaksTieByIdDesc() = runTest {
+        val noteId = db.noteDao().insert(NoteEntity(0, "t", "c", 1, 1, null, false, null))
+        db.aiSessionDao().insert(session(noteId, "first", 100))
+        db.aiSessionDao().insert(session(noteId, "second", 100))
+        val list = db.aiSessionDao().observeByNote(noteId).first()
+        assertEquals(listOf("second", "first"), list.map { it.title })
+    }
+
+    @Test
     fun deletingNoteCascadesSessions() = runTest {
         val noteId = db.noteDao().insert(NoteEntity(0, "t", "c", 1, 1, null, false, null))
         db.aiSessionDao().insert(session(noteId))

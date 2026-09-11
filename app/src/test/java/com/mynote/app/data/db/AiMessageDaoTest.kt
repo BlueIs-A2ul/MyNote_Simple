@@ -41,7 +41,7 @@ class AiMessageDaoTest {
         )
     }
 
-    private fun message(sessionId: Long, role: String, content: String, createdAt: Long, status: String = "done") =
+    private fun message(sessionId: Long, role: String, content: String, createdAt: Long, status: String = AiMessageEntity.STATUS_DONE) =
         AiMessageEntity(sessionId = sessionId, role = role, content = content, status = status, createdAt = createdAt)
 
     @Test
@@ -63,6 +63,15 @@ class AiMessageDaoTest {
         val row = db.aiMessageDao().getBySession(sessionId).single()
         assertEquals("半截完整一点", row.content)
         assertEquals(AiMessageEntity.STATUS_INTERRUPTED, row.status)
+    }
+
+    @Test
+    fun equalCreatedAtBreaksTieByIdAsc() = runTest {
+        val sessionId = newSession()
+        db.aiMessageDao().insert(message(sessionId, AiMessageEntity.ROLE_USER, "m1", 100))
+        db.aiMessageDao().insert(message(sessionId, AiMessageEntity.ROLE_ASSISTANT, "m2", 100))
+        val list = db.aiMessageDao().observeBySession(sessionId).first()
+        assertEquals(listOf("m1", "m2"), list.map { it.content })
     }
 
     @Test

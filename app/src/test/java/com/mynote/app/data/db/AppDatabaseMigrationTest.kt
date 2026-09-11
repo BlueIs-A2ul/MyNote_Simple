@@ -144,6 +144,7 @@ class AppDatabaseMigrationTest {
 
             db.noteDao().delete(db.noteDao().getById(1)!!)
             assertEquals(0, db.aiSessionDao().observeByNote(1).first().size)
+            assertEquals(0, db.aiMessageDao().getBySession(sessionId).size)
         } finally {
             db.close()
         }
