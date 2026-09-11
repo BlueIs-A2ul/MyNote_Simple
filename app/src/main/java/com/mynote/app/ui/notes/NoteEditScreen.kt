@@ -53,6 +53,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -175,7 +176,9 @@ fun NoteEditScreen(
     val categories by vm.categories.collectAsState()
 
     var title by rememberSaveable(noteId) { mutableStateOf("") }
-    var content by rememberSaveable(noteId) { mutableStateOf("") }
+    var content by rememberSaveable(noteId, stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(""))
+    }
     var previewMode by rememberSaveable { mutableStateOf(false) }
     var pinned by rememberSaveable(noteId) { mutableStateOf(false) }
     var selectedCategoryId by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -187,9 +190,9 @@ fun NoteEditScreen(
     var showImageExport by remember { mutableStateOf(false) }
 
     LaunchedEffect(note) {
-        if (note != null && title.isEmpty() && content.isEmpty()) {
+        if (note != null && title.isEmpty() && content.text.isEmpty()) {
             title = note!!.title
-            content = note!!.content
+            content = TextFieldValue(note!!.content)
             selectedCategoryId = note!!.categoryId
             pinned = note!!.pinned
         }
@@ -198,7 +201,7 @@ fun NoteEditScreen(
     val pickImage = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
     ) { uri ->
-        uri?.let { vm.insertImage(it) { markup -> content += markup } }
+        uri?.let { vm.insertImage(it) { markup -> content = AiResultApplier.apply(content, AiResultApplier.Type.INSERT, markup) } }
     }
 
     val scope = rememberCoroutineScope()
@@ -229,7 +232,7 @@ fun NoteEditScreen(
                         )
                     }
                     TextButton(onClick = {
-                        vm.save(title, content, selectedCategoryId, pinned, note?.color) { warning ->
+                        vm.save(title, content.text, selectedCategoryId, pinned, note?.color) { warning ->
                             if (warning != null) {
                                 scope.launch {
                                     snackbarHostState.showSnackbar(warning)
@@ -252,7 +255,7 @@ fun NoteEditScreen(
                                 onClick = { menuOpen = false; onOpenHistory() }
                             )
                         }
-                        if (noteId != null || title.isNotBlank() || content.isNotBlank()) {
+                        if (noteId != null || title.isNotBlank() || content.text.isNotBlank()) {
                             DropdownMenuItem(
                                 text = { Text("导出") },
                                 onClick = { menuOpen = false; showExportDialog = true }
@@ -301,7 +304,7 @@ fun NoteEditScreen(
                     modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(NoteContentParser.parse(content)) { block ->
+                    items(NoteContentParser.parse(content.text)) { block ->
                         when (block) {
                             is ContentBlock.Text -> Text(
                                 block.text,
@@ -329,7 +332,7 @@ fun NoteEditScreen(
                     ),
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     decorationBox = { innerTextField ->
-                        if (content.isEmpty()) {
+                        if (content.text.isEmpty()) {
                             Text(
                                 "开始记录…",
                                 style = MaterialTheme.typography.bodyLarge,
@@ -453,7 +456,7 @@ fun NoteEditScreen(
     }
 
     if (showExportDialog) {
-        val hasContent = title.isNotBlank() || content.isNotBlank()
+        val hasContent = title.isNotBlank() || content.text.isNotBlank()
         PaperAlertDialog(
             onDismissRequest = { showExportDialog = false },
             title = "导出为…",
@@ -493,7 +496,7 @@ fun NoteEditScreen(
     if (showImageExport) {
         NoteExportDialog(
             title = title,
-            content = content,
+            content = content.text,
             updatedAt = note?.updatedAt ?: System.currentTimeMillis(),
             renderer = imageRenderer,
             exportManager = exportManager,
