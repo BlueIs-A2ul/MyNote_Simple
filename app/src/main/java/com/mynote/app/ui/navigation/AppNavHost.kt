@@ -7,6 +7,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.mynote.app.di.AppContainer
 import com.mynote.app.ui.categories.CategoriesScreen
+import com.mynote.app.ui.history.NoteHistoryScreen
 import com.mynote.app.ui.notes.NoteEditScreen
 import com.mynote.app.ui.notes.NotesScreen
 import com.mynote.app.ui.notes.NotesViewModel
@@ -37,6 +38,16 @@ fun AppNavHost(container: AppContainer) {
                 backupManager = container.backupManager,
                 imageRenderer = container.noteImageRenderer,
                 exportManager = container.imageExportManager,
+                onOpenHistory = { id?.let { navController.navigate("note_history/$it") } },
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable("note_history/{noteId}") { backStack ->
+            val noteId = backStack.arguments?.getString("noteId")?.toLongOrNull() ?: return@composable
+            NoteHistoryScreen(
+                noteId = noteId,
+                repository = container.noteRepository,
+                onRestored = { navController.popBackStack("notes", inclusive = false) },
                 onBack = { navController.popBackStack() }
             )
         }

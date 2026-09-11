@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Save
@@ -138,6 +139,7 @@ fun NoteEditScreen(
     backupManager: BackupManager,
     imageRenderer: NoteImageRenderer,
     exportManager: ImageExportManager,
+    onOpenHistory: () -> Unit,
     onBack: () -> Unit
 ) {
     val vm: NoteEditViewModel = viewModel(
@@ -192,6 +194,11 @@ fun NoteEditScreen(
                     }
                 },
                 actions = {
+                    if (noteId != null && noteId != 0L) {
+                        IconButton(onClick = onOpenHistory) {
+                            Icon(Icons.Default.History, contentDescription = "历史记录")
+                        }
+                    }
                     IconButton(onClick = { pinned = !pinned }) {
                         Icon(
                             imageVector = if (pinned) Icons.Default.PushPin else Icons.Outlined.PushPin,
