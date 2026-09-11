@@ -1,6 +1,6 @@
 # 纸感极简 UI 改版 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 按 `docs/superpowers/specs/2026-09-11-paper-ui-redesign-design.md` 把全 App 6 屏与对话框改造成「纸感极简」风格。
 
@@ -19,7 +19,7 @@
 - Move: `docs/superpowers/specs/2026-09-11-paper-ui-redesign-design.md`
 - Move: `docs/superpowers/plans/2026-09-11-paper-ui-redesign.md`
 
-- [ ] **Step 1: 创建 worktree 与功能分支**
+- [x] **Step 1: 创建 worktree 与功能分支**
 
 先按 `superpowers:using-git-worktrees` 技能确认本机可用方式，然后执行：
 
@@ -29,7 +29,7 @@ git worktree add ".worktrees/paper-ui-redesign" -b feature/paper-ui-redesign mas
 
 Expected: `Preparing worktree (new branch 'feature/paper-ui-redesign')`。
 
-- [ ] **Step 2: 把未入库的设计与计划文档搬进 worktree**
+- [x] **Step 2: 把未入库的设计与计划文档搬进 worktree**
 
 ```powershell
 Copy-Item "docs\superpowers\specs\2026-09-11-paper-ui-redesign-design.md" ".worktrees\paper-ui-redesign\docs\superpowers\specs\"
@@ -47,14 +47,14 @@ Copy-Item "app\mynote-release.keystore" ".worktrees\paper-ui-redesign\app\mynote
 
 （以下所有命令都在 worktree 目录下执行。）
 
-- [ ] **Step 3: 提交文档**
+- [x] **Step 3: 提交文档**
 
 ```powershell
 git add docs/superpowers/specs/2026-09-11-paper-ui-redesign-design.md docs/superpowers/plans/2026-09-11-paper-ui-redesign.md
 git commit -m "docs: 添加纸感极简 UI 改版设计与实施计划"
 ```
 
-- [ ] **Step 4: 基线验证（确认 worktree 可构建）**
+- [x] **Step 4: 基线验证（确认 worktree 可构建）**
 
 Run: `.\gradlew :app:testDebugUnitTest`
 Expected: BUILD SUCCESSFUL，113 个测试全绿。
@@ -67,7 +67,7 @@ Expected: BUILD SUCCESSFUL，113 个测试全绿。
 - Modify: `app/src/main/java/com/mynote/app/ui/theme/Color.kt`
 - Test: `app/src/test/java/com/mynote/app/ui/theme/PaperPaletteTest.kt`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 创建 `PaperPaletteTest.kt`：
 
@@ -123,12 +123,12 @@ class PaperPaletteTest {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `.\gradlew :app:testDebugUnitTest --tests "com.mynote.app.ui.theme.PaperPaletteTest"`
 Expected: 编译失败或测试失败（`PaperCategoryColors`/`PaperPalette` 未定义）。
 
-- [ ] **Step 3: 实现 Color.kt**
+- [x] **Step 3: 实现 Color.kt**
 
 整体替换 `Color.kt` 为：
 
@@ -226,12 +226,12 @@ object PaperPalette {
 }
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `.\gradlew :app:testDebugUnitTest --tests "com.mynote.app.ui.theme.PaperPaletteTest"`
 Expected: PASS（7 个测试）。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```powershell
 git add app/src/main/java/com/mynote/app/ui/theme/Color.kt app/src/test/java/com/mynote/app/ui/theme/PaperPaletteTest.kt
@@ -247,7 +247,7 @@ git commit -m "feat: 纸感调色板与旧分类色映射"
 - Create: `app/src/main/java/com/mynote/app/ui/theme/Shape.kt`
 - Modify: `app/src/main/java/com/mynote/app/ui/theme/Theme.kt`
 
-- [ ] **Step 1: 替换 Type.kt**
+- [x] **Step 1: 替换 Type.kt**
 
 ```kotlin
 package com.mynote.app.ui.theme
@@ -301,7 +301,7 @@ val AppTypography = Typography(
 )
 ```
 
-- [ ] **Step 2: 新建 Shape.kt**
+- [x] **Step 2: 新建 Shape.kt**
 
 ```kotlin
 package com.mynote.app.ui.theme
@@ -320,7 +320,7 @@ val AppShapes = Shapes(
 )
 ```
 
-- [ ] **Step 3: 修改 Theme.kt 覆盖纸面中性色**
+- [x] **Step 3: 修改 Theme.kt 覆盖纸面中性色**
 
 ```kotlin
 package com.mynote.app.ui.theme
@@ -390,12 +390,12 @@ private fun ColorScheme.paperDark(): ColorScheme = copy(
 )
 ```
 
-- [ ] **Step 4: 编译与全量测试**
+- [x] **Step 4: 编译与全量测试**
 
 Run: `.\gradlew :app:testDebugUnitTest`
 Expected: BUILD SUCCESSFUL，全部测试绿（含 `ThemePresetsTest`，预设色未动）。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```powershell
 git add app/src/main/java/com/mynote/app/ui/theme/Type.kt app/src/main/java/com/mynote/app/ui/theme/Shape.kt app/src/main/java/com/mynote/app/ui/theme/Theme.kt
@@ -410,7 +410,7 @@ git commit -m "feat: 纸感排版、小圆角与主题覆盖"
 - Modify: `app/src/main/java/com/mynote/app/util/TimeFormat.kt`
 - Test: `app/src/test/java/com/mynote/app/util/TimeFormatTest.kt`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```kotlin
 package com.mynote.app.util
@@ -461,12 +461,12 @@ class TimeFormatTest {
 }
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `.\gradlew :app:testDebugUnitTest --tests "com.mynote.app.util.TimeFormatTest"`
 Expected: 编译失败（`relativeDate` 未定义）。
 
-- [ ] **Step 3: 实现 relativeDate**
+- [x] **Step 3: 实现 relativeDate**
 
 在 `TimeFormat.kt` 的 `object TimeFormat` 内追加（保留现有 `dateTime`/`date`）：
 
@@ -494,12 +494,12 @@ Expected: 编译失败（`relativeDate` 未定义）。
 
 文件顶部补 `import java.util.Calendar`。
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `.\gradlew :app:testDebugUnitTest --tests "com.mynote.app.util.TimeFormatTest"`
 Expected: PASS（5 个测试）。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```powershell
 git add app/src/main/java/com/mynote/app/util/TimeFormat.kt app/src/test/java/com/mynote/app/util/TimeFormatTest.kt
@@ -518,7 +518,7 @@ git commit -m "feat: 新增相对日期格式化"
 - Create: `app/src/main/java/com/mynote/app/ui/components/PaperAlertDialog.kt`
 - Create: `app/src/main/java/com/mynote/app/ui/components/CategoryDot.kt`
 
-- [ ] **Step 1: 创建 PaperTopBar.kt**
+- [x] **Step 1: 创建 PaperTopBar.kt**
 
 ```kotlin
 package com.mynote.app.ui.components
@@ -596,7 +596,7 @@ fun HairlineDivider(modifier: Modifier = Modifier) {
 }
 ```
 
-- [ ] **Step 2: 创建 TextTabRow.kt**
+- [x] **Step 2: 创建 TextTabRow.kt**
 
 ```kotlin
 package com.mynote.app.ui.components
@@ -661,7 +661,7 @@ fun <T> TextTabRow(
 }
 ```
 
-- [ ] **Step 3: 创建 NoteRow.kt**
+- [x] **Step 3: 创建 NoteRow.kt**
 
 ```kotlin
 package com.mynote.app.ui.components
@@ -761,7 +761,7 @@ fun NoteRow(
 }
 ```
 
-- [ ] **Step 4: 创建 EmptyState.kt、PaperAlertDialog.kt、CategoryDot.kt**
+- [x] **Step 4: 创建 EmptyState.kt、PaperAlertDialog.kt、CategoryDot.kt**
 
 ```kotlin
 // EmptyState.kt
@@ -867,12 +867,12 @@ fun CategoryDot(color: Color, modifier: Modifier = Modifier) {
 }
 ```
 
-- [ ] **Step 5: 编译**
+- [x] **Step 5: 编译**
 
 Run: `.\gradlew :app:assembleDebug`
 Expected: BUILD SUCCESSFUL。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```powershell
 git add app/src/main/java/com/mynote/app/ui/components
@@ -886,7 +886,7 @@ git commit -m "feat: 新增纸感复用组件"
 **Files:**
 - Modify: `app/src/main/java/com/mynote/app/ui/notes/NotesScreen.kt`（整体替换）
 
-- [ ] **Step 1: 整体替换 NotesScreen.kt**
+- [x] **Step 1: 整体替换 NotesScreen.kt**
 
 ```kotlin
 package com.mynote.app.ui.notes
@@ -1116,12 +1116,12 @@ fun NotesScreen(
 }
 ```
 
-- [ ] **Step 2: 编译与全量测试**
+- [x] **Step 2: 编译与全量测试**
 
 Run: `.\gradlew :app:testDebugUnitTest` 然后 `.\gradlew :app:assembleDebug`
 Expected: 全部 PASS，BUILD SUCCESSFUL。
 
-- [ ] **Step 3: 提交**
+- [x] **Step 3: 提交**
 
 ```powershell
 git add app/src/main/java/com/mynote/app/ui/notes/NotesScreen.kt
@@ -1135,7 +1135,7 @@ git commit -m "feat: 笔记列表页纸感改版"
 **Files:**
 - Modify: `app/src/main/java/com/mynote/app/ui/notes/NoteEditScreen.kt`（整体替换）
 
-- [ ] **Step 1: 替换 ViewModel 之上的导入与文件其余部分**
+- [x] **Step 1: 替换 ViewModel 之上的导入与文件其余部分**
 
 保留 `NoteEditViewModel` 类实现（第 78-149 行）完全不变；仅替换 import 区与 `NoteEditScreen` 组合函数。import 区改为：
 
@@ -1225,7 +1225,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 ```
 
-- [ ] **Step 2: 用以下实现替换 `NoteEditScreen` 组合函数（从 `@OptIn(...)` 到文件末尾）**
+- [x] **Step 2: 用以下实现替换 `NoteEditScreen` 组合函数（从 `@OptIn(...)` 到文件末尾）**
 
 ```kotlin
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1605,12 +1605,12 @@ private fun CategorySheetRow(
 
 注意：`CategorySheetRow` 用到 `clickable`，需要在 import 区补 `androidx.compose.foundation.clickable`。
 
-- [ ] **Step 3: 编译与全量测试**
+- [x] **Step 3: 编译与全量测试**
 
 Run: `.\gradlew :app:testDebugUnitTest` 然后 `.\gradlew :app:assembleDebug`
 Expected: 全部 PASS，BUILD SUCCESSFUL。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```powershell
 git add app/src/main/java/com/mynote/app/ui/notes/NoteEditScreen.kt
@@ -1624,7 +1624,7 @@ git commit -m "feat: 笔记编辑页纸感改版"
 **Files:**
 - Modify: `app/src/main/java/com/mynote/app/ui/categories/CategoriesScreen.kt`（整体替换）
 
-- [ ] **Step 1: 整体替换**
+- [x] **Step 1: 整体替换**
 
 ```kotlin
 package com.mynote.app.ui.categories
@@ -1813,12 +1813,12 @@ private fun CategoryRow(cat: CategoryEntity, onRename: (String) -> Unit, onDelet
 }
 ```
 
-- [ ] **Step 2: 编译与全量测试**
+- [x] **Step 2: 编译与全量测试**
 
 Run: `.\gradlew :app:testDebugUnitTest` 然后 `.\gradlew :app:assembleDebug`
 Expected: 全部 PASS，BUILD SUCCESSFUL。
 
-- [ ] **Step 3: 提交**
+- [x] **Step 3: 提交**
 
 ```powershell
 git add app/src/main/java/com/mynote/app/ui/categories/CategoriesScreen.kt
@@ -1832,7 +1832,7 @@ git commit -m "feat: 分类管理页纸感改版"
 **Files:**
 - Modify: `app/src/main/java/com/mynote/app/ui/settings/SettingsScreen.kt`（整体替换）
 
-- [ ] **Step 1: 整体替换**
+- [x] **Step 1: 整体替换**
 
 ```kotlin
 package com.mynote.app.ui.settings
@@ -1989,12 +1989,12 @@ private fun darkModeLabel(mode: DarkMode): String = when (mode) {
 }
 ```
 
-- [ ] **Step 2: 编译与全量测试**
+- [x] **Step 2: 编译与全量测试**
 
 Run: `.\gradlew :app:testDebugUnitTest` 然后 `.\gradlew :app:assembleDebug`
 Expected: 全部 PASS，BUILD SUCCESSFUL。
 
-- [ ] **Step 3: 提交**
+- [x] **Step 3: 提交**
 
 ```powershell
 git add app/src/main/java/com/mynote/app/ui/settings/SettingsScreen.kt
@@ -2008,7 +2008,7 @@ git commit -m "feat: 设置页纸感改版"
 **Files:**
 - Modify: `app/src/main/java/com/mynote/app/ui/history/NoteHistoryScreen.kt`（整体替换）
 
-- [ ] **Step 1: 整体替换**
+- [x] **Step 1: 整体替换**
 
 ```kotlin
 package com.mynote.app.ui.history
@@ -2318,12 +2318,12 @@ private fun DiffLineRow(line: NoteDiff.Line) {
 
 注意：`DetailContent` 的 diff 列表用到 `items`，import 区需补 `androidx.compose.foundation.lazy.items`。
 
-- [ ] **Step 2: 编译与全量测试**
+- [x] **Step 2: 编译与全量测试**
 
 Run: `.\gradlew :app:testDebugUnitTest` 然后 `.\gradlew :app:assembleDebug`
 Expected: 全部 PASS，BUILD SUCCESSFUL。
 
-- [ ] **Step 3: 提交**
+- [x] **Step 3: 提交**
 
 ```powershell
 git add app/src/main/java/com/mynote/app/ui/history/NoteHistoryScreen.kt
@@ -2337,7 +2337,7 @@ git commit -m "feat: 历史记录页纸感改版"
 **Files:**
 - Modify: `app/src/main/java/com/mynote/app/ui/export/NoteExportDialog.kt`
 
-- [ ] **Step 1: 替换顶栏、分段按钮与预览图样式**
+- [x] **Step 1: 替换顶栏、分段按钮与预览图样式**
 
 - import 区：删除 `TopAppBar`、`SegmentedButton`、`SegmentedButtonDefaults`、`SingleChoiceSegmentedButtonRow`；新增 `androidx.compose.ui.draw.clip`、`com.mynote.app.ui.components.PaperTopBar`、`com.mynote.app.ui.components.TextTabRow`。
 - 顶栏替换为：
@@ -2384,12 +2384,12 @@ git commit -m "feat: 历史记录页纸感改版"
 - 底部 `OutlinedButton` / `Button` 各加 `shape = MaterialTheme.shapes.small`。
 - 其余（Loading / Error / Ready 状态、保存、分享、snackbar）逻辑不动。
 
-- [ ] **Step 2: 编译与全量测试**
+- [x] **Step 2: 编译与全量测试**
 
 Run: `.\gradlew :app:testDebugUnitTest` 然后 `.\gradlew :app:assembleDebug`
 Expected: 全部 PASS，BUILD SUCCESSFUL。
 
-- [ ] **Step 3: 提交**
+- [x] **Step 3: 提交**
 
 ```powershell
 git add app/src/main/java/com/mynote/app/ui/export/NoteExportDialog.kt
@@ -2400,17 +2400,17 @@ git commit -m "feat: 导出预览页纸感改版"
 
 ## Task 12: 全量验证与收尾
 
-- [ ] **Step 1: 全量单测**
+- [x] **Step 1: 全量单测**
 
 Run: `.\gradlew :app:testDebugUnitTest`
 Expected: BUILD SUCCESSFUL，113 个旧测试 + 12 个新增（7 个 PaperPaletteTest + 5 个 TimeFormatTest）= 125 个全绿。
 
-- [ ] **Step 2: debug 构建**
+- [x] **Step 2: debug 构建**
 
 Run: `.\gradlew :app:assembleDebug`
 Expected: BUILD SUCCESSFUL，产物在 `app/build/outputs/apk/debug/`。
 
-- [ ] **Step 3: 检查 Material 默认控件残留**
+- [x] **Step 3: 检查 Material 默认控件残留**
 
 Run: `rg -n "FilterChip|SegmentedButton|Card\(|TopAppBar" app/src/main/java/com/mynote/app/ui`
 Expected: 无输出（`OutlinedTextField` 允许仅存在于新建/重命名分类对话框）。
@@ -2431,14 +2431,14 @@ Expected: 无输出（`OutlinedTextField` 允许仅存在于新建/重命名分�
 | 导出预览 | 分页/长图切换、保存/分享、PNG 仍纯白 |
 | 备份导出/导入 | 行为不变 |
 
-- [ ] **Step 5: 如有修复则提交**
+- [x] **Step 5: 如有修复则提交**
 
 ```powershell
 git add -A
 git commit -m "fix: 纸感改版收尾修正"
 ```
 
-- [ ] **Step 6: 汇报**
+- [x] **Step 6: 汇报**
 
 汇总：改动文件列表、测试结果、构建结果、手工核对结论、分支名与提交数；合并与否交由用户决定（不自行合并 master、不 push）。
 
@@ -2449,4 +2449,5 @@ git commit -m "fix: 纸感改版收尾修正"
 | 日期 | 修订 |
 |---|---|
 | 2026-09-11 | 初稿：按设计文档拆分 12 个任务，含完整代码、命令与验收标准 |
+| 2026-09-11 | 执行完成：Task 1-12 全部执行；发现并修正计划内 2 处导入缺失（NoteRow 的 `Box`、导出页 `clip` 包名）；125 个单测全绿、`assembleDebug` 通过；真机手工核对（Task 12 Step 4）未执行，待设备可用时补做 |
 
