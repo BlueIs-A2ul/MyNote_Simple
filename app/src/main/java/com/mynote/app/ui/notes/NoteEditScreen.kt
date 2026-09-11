@@ -22,6 +22,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -165,6 +166,10 @@ fun NoteEditScreen(
     backupManager: BackupManager,
     imageRenderer: NoteImageRenderer,
     exportManager: ImageExportManager,
+    aiResultType: String?,
+    aiResultText: String?,
+    onAiResultConsumed: () -> Unit,
+    onOpenAi: (selStart: Int, selEnd: Int, noteTitle: String, noteContent: String) -> Unit,
     onOpenHistory: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -198,6 +203,17 @@ fun NoteEditScreen(
         }
     }
 
+    LaunchedEffect(aiResultType, aiResultText) {
+        val type = aiResultType ?: return@LaunchedEffect
+        val text = aiResultText ?: return@LaunchedEffect
+        content = AiResultApplier.apply(
+            content,
+            if (type == "replace") AiResultApplier.Type.REPLACE else AiResultApplier.Type.INSERT,
+            text
+        )
+        onAiResultConsumed()
+    }
+
     val pickImage = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
     ) { uri ->
@@ -223,6 +239,14 @@ fun NoteEditScreen(
             PaperTopBar(
                 onBack = onBack,
                 actions = {
+                    if (noteId != null && noteId != 0L) {
+                        IconButton(onClick = {
+                            val sel = content.selection
+                            onOpenAi(sel.start, sel.end, title, content.text)
+                        }) {
+                            Icon(Icons.Outlined.AutoAwesome, contentDescription = "AI 助手")
+                        }
+                    }
                     IconButton(onClick = { pinned = !pinned }) {
                         Icon(
                             imageVector = if (pinned) Icons.Default.PushPin else Icons.Outlined.PushPin,

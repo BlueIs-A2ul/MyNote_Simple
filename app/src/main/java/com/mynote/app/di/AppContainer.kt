@@ -2,13 +2,23 @@ package com.mynote.app.di
 
 import android.content.Context
 import androidx.room.Room
+import com.mynote.app.data.ai.AiChatRepository
+import com.mynote.app.data.ai.AiDriverRegistry
+import com.mynote.app.data.ai.AiWebDriver
+import com.mynote.app.data.ai.AiWebSession
+import com.mynote.app.data.ai.DeepSeekDriver
+import com.mynote.app.data.ai.WebViewAiSession
 import com.mynote.app.data.backup.BackupManager
 import com.mynote.app.data.db.AppDatabase
 import com.mynote.app.data.export.ImageExportManager
 import com.mynote.app.data.export.NoteImageRenderer
 import com.mynote.app.data.image.ImageStore
 import com.mynote.app.data.repository.NoteRepository
+import com.mynote.app.data.settings.AiSettingsStore
 import com.mynote.app.data.settings.ThemeSettingsStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 class AppContainer(context: Context) {
 
@@ -33,4 +43,21 @@ class AppContainer(context: Context) {
     val noteImageRenderer: NoteImageRenderer by lazy { NoteImageRenderer(imageStore) }
 
     val imageExportManager: ImageExportManager by lazy { ImageExportManager(context) }
+
+    /** 应用级协程作用域：ViewModel 清理后仍需完成的收尾写入（流式中断存档）用它。 */
+    val applicationScope: CoroutineScope by lazy {
+        CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    }
+
+    val aiChatRepository: AiChatRepository by lazy {
+        AiChatRepository(database.aiSessionDao(), database.aiMessageDao())
+    }
+
+    val aiSettingsStore: AiSettingsStore by lazy { AiSettingsStore(context) }
+
+    val aiDriverRegistry: AiDriverRegistry by lazy {
+        AiDriverRegistry(listOf(DeepSeekDriver()))
+    }
+
+    val aiWebSessionFactory: (AiWebDriver) -> AiWebSession = { WebViewAiSession(it) }
 }
