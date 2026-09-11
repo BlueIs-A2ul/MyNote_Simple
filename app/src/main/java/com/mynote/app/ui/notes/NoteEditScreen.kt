@@ -30,6 +30,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -58,6 +60,7 @@ import coil.compose.AsyncImage
 import com.mynote.app.data.backup.BackupManager
 import com.mynote.app.data.db.CategoryEntity
 import com.mynote.app.data.db.NoteEntity
+import com.mynote.app.data.db.NoteRevisionDao
 import com.mynote.app.data.export.ImageExportManager
 import com.mynote.app.data.export.NoteImageRenderer
 import com.mynote.app.data.image.ImageStore
@@ -109,10 +112,15 @@ class NoteEditViewModel(
         }
     }
 
-    fun save(title: String, content: String, categoryId: Long?, pinned: Boolean, color: Int?, onDone: () -> Unit) {
+    fun save(title: String, content: String, categoryId: Long?, pinned: Boolean, color: Int?, onDone: (String?) -> Unit) {
         viewModelScope.launch {
-            repository.saveNote(noteId, title, content, categoryId, pinned, color)
-            onDone()
+            val id = repository.saveNote(noteId, title, content, categoryId, pinned, color)
+            val warning = if (noteId != null && noteId != 0L && repository.countRevisions(id) == NoteRevisionDao.WARN_AT) {
+                HISTORY_WARNING
+            } else {
+                null
+            }
+            onDone(warning)
         }
     }
 
@@ -125,6 +133,9 @@ class NoteEditViewModel(
     }
 
     companion object {
+        const val HISTORY_WARNING =
+            "该笔记历史已 ${NoteRevisionDao.WARN_AT} 条，满 ${NoteRevisionDao.MAX_PER_NOTE} 条后最旧记录会自动清理"
+
         fun factory(repo: NoteRepository, imageStore: ImageStore, noteId: Long?): ViewModelProvider.Factory =
             viewModelFactory { initializer { NoteEditViewModel(repo, imageStore, noteId) } }
     }
@@ -184,7 +195,10 @@ fun NoteEditScreen(
         }
     }
 
+    val snackbarHostState = remember { SnackbarHostState() }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(if (noteId == null) "新建笔记" else "编辑笔记") },
@@ -208,7 +222,16 @@ fun NoteEditScreen(
                         )
                     }
                     IconButton(onClick = {
-                        vm.save(title, content, selectedCategoryId, pinned, note?.color, onBack)
+                        vm.save(title, content, selectedCategoryId, pinned, note?.color) { warning ->
+                            if (warning != null) {
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(warning)
+                                    onBack()
+                                }
+                            } else {
+                                onBack()
+                            }
+                        }
                     }) {
                         Icon(Icons.Default.Save, contentDescription = "保存")
                     }

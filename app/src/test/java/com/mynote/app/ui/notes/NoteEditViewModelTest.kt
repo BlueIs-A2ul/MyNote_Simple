@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.mynote.app.data.db.AppDatabase
+import com.mynote.app.data.db.NoteRevisionDao
 import com.mynote.app.data.image.ImageStore
 import com.mynote.app.data.repository.NoteRepository
 import kotlinx.coroutines.CompletableDeferred
@@ -79,5 +80,32 @@ class NoteEditViewModelTest {
         val createdId = CompletableDeferred<Long>()
         vm.addCategory("  工作  ") { createdId.complete(it) }
         assertEquals("工作", db.categoryDao().getById(createdId.await())?.name)
+    }
+
+    @Test
+    fun saveAt40RevisionsReportsWarningOnce() = runTest(dispatcher) {
+        val id = repo.saveNote(null, "t", "v0", null, false, null)
+        for (i in 1..38) repo.saveNote(id, "t", "v$i", null, false, null)
+        assertEquals(39, repo.countRevisions(id))
+
+        vm.viewModelScope.cancel()
+        vm = NoteEditViewModel(repo, ImageStore(ApplicationProvider.getApplicationContext()), noteId = id)
+        val warning = CompletableDeferred<String?>()
+        vm.save("t", "v39", null, false, null) { warning.complete(it) }
+        assertEquals(NoteEditViewModel.HISTORY_WARNING, warning.await())
+        assertEquals(40, repo.countRevisions(id))
+    }
+
+    @Test
+    fun saveBelowWarningThresholdDoesNotReport() = runTest(dispatcher) {
+        val id = repo.saveNote(null, "t", "v0", null, false, null)
+        for (i in 1..36) repo.saveNote(id, "t", "v$i", null, false, null)
+        assertEquals(37, repo.countRevisions(id))
+
+        vm.viewModelScope.cancel()
+        vm = NoteEditViewModel(repo, ImageStore(ApplicationProvider.getApplicationContext()), noteId = id)
+        val warning = CompletableDeferred<String?>()
+        vm.save("t", "v38", null, false, null) { warning.complete(it) }
+        assertEquals(null, warning.await())
     }
 }
