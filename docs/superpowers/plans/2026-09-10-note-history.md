@@ -1762,3 +1762,4 @@ git commit -m "docs: 笔记历史功能落地（README / AGENTS / 设计文档�
 - 2026-09-10（初稿）：依据设计文档 `2026-09-10-note-history-design.md` 拆分 7 个任务；快照存储选全量快照而非增量 delta；diff 采用行级 LCS + 配对行字符前后缀高亮；迁移测试用手工 v1 库文件而非引入 room-testing（零新增依赖）。
 - 2026-09-10（执行期修订，Task 2 质量审查）：`restoreRevision` 增加 `revision.noteId == noteId` 归属校验；`collectImageGarbage` 包 `withContext(Dispatchers.IO)`；GC 与并发写入的 TOCTOU 窗口在设计文档 §14 记为已接受风险。
 - 2026-09-10（执行期修订，Task 3 质量审查）：diff 改为先裁剪公共前后缀行再进 LCS（阈值按 `(n+1)*(m+1)`）；`pairAdjacent` 用配对标记数组，单侧前后缀变化不再把未变侧整行高亮；高亮区间对齐码点边界（emoji 不拆半）。
+- 2026-09-10（执行期修订，Task 5 质量审查）：首版历史详情隐藏「对比/全文」切换（无上一版可比）；详情被裁剪/关闭时自动收起恢复确认框；`DiffLineRow` 强调区间游标加固（重叠/越界安全）。
