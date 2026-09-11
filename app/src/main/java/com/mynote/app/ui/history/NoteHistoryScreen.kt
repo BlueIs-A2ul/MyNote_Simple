@@ -14,28 +14,18 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -54,6 +44,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mynote.app.data.db.NoteRevisionDao
 import com.mynote.app.data.repository.NoteRepository
+import com.mynote.app.ui.components.HairlineDivider
+import com.mynote.app.ui.components.PaperAlertDialog
+import com.mynote.app.ui.components.PaperTopBar
+import com.mynote.app.ui.components.TextTabRow
 import com.mynote.app.util.TimeFormat
 
 private val RemovedBg = Color(0x33EF5350)
@@ -95,14 +89,11 @@ fun NoteHistoryScreen(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = { Text("历史记录 (${state.count}/${NoteRevisionDao.MAX_PER_NOTE})") },
-                navigationIcon = {
-                    IconButton(onClick = { if (state.detail != null) vm.closeDetail() else onBack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
-                    }
-                }
+            PaperTopBar(
+                title = "历史记录 (${state.count}/${NoteRevisionDao.MAX_PER_NOTE})",
+                onBack = { if (state.detail != null) vm.closeDetail() else onBack() }
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -111,29 +102,50 @@ fun NoteHistoryScreen(
             val detail = state.detail
             if (detail == null) {
                 state.bannerText?.let { banner ->
-                    Surface(
-                        color = MaterialTheme.colorScheme.tertiaryContainer,
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth().padding(12.dp)
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                            .background(
+                                MaterialTheme.colorScheme.surfaceVariant,
+                                MaterialTheme.shapes.medium
+                            )
+                            .padding(12.dp)
                     ) {
                         Text(
                             banner,
-                            modifier = Modifier.padding(12.dp),
-                            style = MaterialTheme.typography.bodySmall
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
                 if (state.revisions.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("保存一次后开始记录")
+                        Text(
+                            "保存一次后开始记录",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 } else {
                     LazyColumn(Modifier.fillMaxSize()) {
-                        items(state.revisions, key = { it.revision.id }) { item ->
-                            ListItem(
-                                headlineContent = { Text(TimeFormat.dateTime(item.revision.savedAt)) },
-                                supportingContent = { Text(item.labels.joinToString(" · ")) },
-                                trailingContent = {
+                        itemsIndexed(
+                            state.revisions,
+                            key = { _, item -> item.revision.id }
+                        ) { index, item ->
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { vm.selectRevision(item.revision.id) }
+                                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        TimeFormat.dateTime(item.revision.savedAt),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onBackground,
+                                        modifier = Modifier.weight(1f)
+                                    )
                                     if (item.isCurrent) {
                                         Text(
                                             "当前版本",
@@ -141,23 +153,33 @@ fun NoteHistoryScreen(
                                             color = MaterialTheme.colorScheme.primary
                                         )
                                     }
-                                },
-                                modifier = Modifier.clickable { vm.selectRevision(item.revision.id) }
-                            )
-                            HorizontalDivider()
+                                }
+                                Text(
+                                    item.labels.joinToString(" · "),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
+                            if (index < state.revisions.lastIndex) HairlineDivider()
                         }
                     }
                 }
             } else {
-                DetailContent(state = state, detail = detail, vm = vm, onRestore = { showRestoreDialog = true })
+                DetailContent(
+                    state = state,
+                    detail = detail,
+                    vm = vm,
+                    onRestore = { showRestoreDialog = true }
+                )
             }
         }
     }
 
     if (showRestoreDialog) {
-        AlertDialog(
+        PaperAlertDialog(
             onDismissRequest = { showRestoreDialog = false },
-            title = { Text("恢复此版本？") },
+            title = "恢复此版本？",
             text = { Text("将用此版本覆盖当前内容，并生成一条新的历史记录。") },
             confirmButton = {
                 TextButton(
@@ -184,49 +206,57 @@ private fun DetailContent(
 ) {
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-            Text(TimeFormat.dateTime(detail.revision.savedAt), style = MaterialTheme.typography.titleMedium)
+            Text(
+                TimeFormat.dateTime(detail.revision.savedAt),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground
+            )
             Text(
                 detail.labels.joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(Modifier.height(8.dp))
             if (!detail.isFirst) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = !detail.showFullText,
-                        onClick = { if (detail.showFullText) vm.toggleFullText() },
-                        label = { Text("对比") }
-                    )
-                    FilterChip(
-                        selected = detail.showFullText,
-                        onClick = { if (!detail.showFullText) vm.toggleFullText() },
-                        label = { Text("全文") }
-                    )
-                }
+                Spacer(Modifier.height(8.dp))
+                TextTabRow(
+                    tabs = listOf(false, true),
+                    selected = detail.showFullText,
+                    onSelect = { fullText -> if (fullText != detail.showFullText) vm.toggleFullText() },
+                    label = { if (it) "全文" else "对比" }
+                )
             }
         }
-        HorizontalDivider()
+        HairlineDivider()
         if (detail.showFullText || detail.isFirst) {
             Column(
-                Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(12.dp)
+                Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp)
             ) {
-                Text(detail.revision.content, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    detail.revision.content,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
             }
         } else if (detail.loadingDiff) {
-            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
         } else {
             LazyColumn(Modifier.weight(1f)) {
                 items(detail.diffLines) { line -> DiffLineRow(line) }
             }
         }
-        HorizontalDivider()
+        HairlineDivider()
         Row(
             Modifier.fillMaxWidth().padding(16.dp),
             horizontalArrangement = Arrangement.End
         ) {
             if (!detail.isCurrent) {
-                Button(onClick = onRestore, enabled = !state.restoring) {
+                Button(
+                    onClick = onRestore,
+                    enabled = !state.restoring,
+                    shape = MaterialTheme.shapes.small
+                ) {
                     Text(if (state.restoring) "恢复中…" else "恢复此版本")
                 }
             }
@@ -263,7 +293,10 @@ private fun DiffLineRow(line: NoteDiff.Line) {
     }
     Text(
         text = text,
-        modifier = Modifier.fillMaxWidth().background(background).padding(horizontal = 12.dp, vertical = 2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(background)
+            .padding(horizontal = 16.dp, vertical = 2.dp),
         style = MaterialTheme.typography.bodyMedium,
         textDecoration = if (line.type == NoteDiff.Type.REMOVED) TextDecoration.LineThrough else null
     )
