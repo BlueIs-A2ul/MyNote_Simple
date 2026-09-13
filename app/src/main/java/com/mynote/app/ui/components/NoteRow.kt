@@ -1,7 +1,9 @@
 package com.mynote.app.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -35,6 +37,7 @@ import com.mynote.app.ui.notes.NoteContentParser
 import com.mynote.app.util.TimeFormat
 
 /** 纸感列表行：行首 3dp 分类色条 + 衬线标题 + 摘要 + 相对日期；可选显示分类名与搜索高亮。 */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun NoteRow(
     note: NoteEntity,
@@ -43,6 +46,8 @@ fun NoteRow(
     now: Long = System.currentTimeMillis(),
     categoryName: String? = null,
     highlightQuery: String? = null,
+    selected: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     // 高亮仅在查询词非空白时生效；背景色在此取主题色，保持纯函数可单测。
@@ -52,7 +57,14 @@ fun NoteRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .background(if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
+            .then(
+                if (onLongClick != null) {
+                    Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                } else {
+                    Modifier.clickable(onClick = onClick)
+                }
+            )
             .padding(horizontal = 16.dp, vertical = 12.dp)
             .height(IntrinsicSize.Min),
         verticalAlignment = Alignment.Top

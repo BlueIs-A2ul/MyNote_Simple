@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -26,6 +28,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.SnackbarHost
@@ -46,12 +49,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import com.mynote.app.data.backup.BackupManager
 import com.mynote.app.data.db.CategoryEntity
 import com.mynote.app.data.db.NoteSortMode
+import com.mynote.app.ui.components.CategoryDot
 import com.mynote.app.ui.components.EmptyState
 import com.mynote.app.ui.components.HairlineDivider
 import com.mynote.app.ui.components.NoteRow
@@ -79,11 +84,16 @@ fun NotesScreen(
     val query by viewModel.query.collectAsState()
     val selectedCategoryId by viewModel.selectedCategoryId.collectAsState()
     val sortMode by viewModel.sortMode.collectAsState()
+    val selectionMode by viewModel.selectionMode.collectAsState()
+    val selectedIds by viewModel.selectedIds.collectAsState()
 
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var menuOpen by remember { mutableStateOf(false) }
     var searchActive by rememberSaveable { mutableStateOf(false) }
+    // 多选模式下的批量操作弹层
+    var showBatchCategorySheet by remember { mutableStateOf(false) }
+    var showBatchDeleteDialog by remember { mutableStateOf(false) }
     // 选好文件后先弹确认框，确认后才执行导入（合并策略对用户可见，见 PaperAlertDialog）
     var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
     // 列表相对时间的基准：每分钟刷新一次，界面停留时「5 分钟前」等文案保持准确
@@ -99,6 +109,8 @@ fun NotesScreen(
     }
 
     BackHandler(enabled = searchActive) { closeSearch() }
+    // 多选模式：返回键退出多选（搜索收起优先）
+    BackHandler(enabled = selectionMode && !searchActive) { viewModel.exitSelection() }
 
     // 相对时间每分钟 tick 一次
     LaunchedEffect(Unit) {
@@ -148,64 +160,105 @@ fun NotesScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             PaperTopBar(
-                title = "备忘录",
+                title = if (selectionMode) "已选 ${selectedIds.size} 项" else "备忘录",
+                onBack = if (selectionMode) ({ viewModel.exitSelection() }) else null,
                 actions = {
-                    IconButton(onClick = { searchActive = true }) {
-                        Icon(Icons.Default.Search, contentDescription = "搜索")
-                    }
-                    PaperOverflowMenu(
-                        expanded = menuOpen,
-                        onExpandedChange = { menuOpen = it }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("分类管理") },
-                            onClick = { menuOpen = false; onManageCategories() }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("回收站") },
-                            onClick = { menuOpen = false; onOpenTrash() }
-                        )
-                        // 排序只作用于「全部」且非搜索态
-                        val sortEnabled = selectedCategoryId == null && query.isBlank()
-                        DropdownMenuItem(
-                            text = { Text(if (sortMode == NoteSortMode.UPDATED_DESC) "✓ 排序：最近更新" else "排序：最近更新") },
-                            onClick = { menuOpen = false; viewModel.onSortSelect(NoteSortMode.UPDATED_DESC) },
-                            enabled = sortEnabled
-                        )
-                        DropdownMenuItem(
-                            text = { Text(if (sortMode == NoteSortMode.CREATED_DESC) "✓ 排序：最早创建" else "排序：最早创建") },
-                            onClick = { menuOpen = false; viewModel.onSortSelect(NoteSortMode.CREATED_DESC) },
-                            enabled = sortEnabled
-                        )
-                        DropdownMenuItem(
-                            text = { Text(if (sortMode == NoteSortMode.TITLE_ASC) "✓ 排序：按标题" else "排序：按标题") },
-                            onClick = { menuOpen = false; viewModel.onSortSelect(NoteSortMode.TITLE_ASC) },
-                            enabled = sortEnabled
-                        )
-                        DropdownMenuItem(
-                            text = { Text("导出备份") },
-                            onClick = { menuOpen = false; exportLauncher.launch("mynote-backup.zip") }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("导入备份") },
-                            onClick = { menuOpen = false; importLauncher.launch(arrayOf("application/zip")) }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("设置") },
-                            onClick = { menuOpen = false; onOpenSettings() }
-                        )
+                    if (selectionMode) {
+                        PaperOverflowMenu(
+                            expanded = menuOpen,
+                            onExpandedChange = { menuOpen = it }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("全选") },
+                                onClick = { menuOpen = false; viewModel.selectAll() }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("置顶") },
+                                onClick = {
+                                    menuOpen = false
+                                    viewModel.batchSetPinned(true) { n ->
+                                        scope.launch { snackbarHostState.showSnackbar("已置顶 $n 条") }
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("取消置顶") },
+                                onClick = {
+                                    menuOpen = false
+                                    viewModel.batchSetPinned(false) { n ->
+                                        scope.launch { snackbarHostState.showSnackbar("已取消置顶 $n 条") }
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("移动到分类") },
+                                onClick = { menuOpen = false; showBatchCategorySheet = true }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("删除", color = MaterialTheme.colorScheme.error) },
+                                onClick = { menuOpen = false; showBatchDeleteDialog = true }
+                            )
+                        }
+                    } else {
+                        IconButton(onClick = { searchActive = true }) {
+                            Icon(Icons.Default.Search, contentDescription = "搜索")
+                        }
+                        PaperOverflowMenu(
+                            expanded = menuOpen,
+                            onExpandedChange = { menuOpen = it }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("分类管理") },
+                                onClick = { menuOpen = false; onManageCategories() }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("回收站") },
+                                onClick = { menuOpen = false; onOpenTrash() }
+                            )
+                            // 排序只作用于「全部」且非搜索态
+                            val sortEnabled = selectedCategoryId == null && query.isBlank()
+                            DropdownMenuItem(
+                                text = { Text(if (sortMode == NoteSortMode.UPDATED_DESC) "✓ 排序：最近更新" else "排序：最近更新") },
+                                onClick = { menuOpen = false; viewModel.onSortSelect(NoteSortMode.UPDATED_DESC) },
+                                enabled = sortEnabled
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (sortMode == NoteSortMode.CREATED_DESC) "✓ 排序：最早创建" else "排序：最早创建") },
+                                onClick = { menuOpen = false; viewModel.onSortSelect(NoteSortMode.CREATED_DESC) },
+                                enabled = sortEnabled
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (sortMode == NoteSortMode.TITLE_ASC) "✓ 排序：按标题" else "排序：按标题") },
+                                onClick = { menuOpen = false; viewModel.onSortSelect(NoteSortMode.TITLE_ASC) },
+                                enabled = sortEnabled
+                            )
+                            DropdownMenuItem(
+                                text = { Text("导出备份") },
+                                onClick = { menuOpen = false; exportLauncher.launch("mynote-backup.zip") }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("导入备份") },
+                                onClick = { menuOpen = false; importLauncher.launch(arrayOf("application/zip")) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("设置") },
+                                onClick = { menuOpen = false; onOpenSettings() }
+                            )
+                        }
                     }
                 }
             )
         },
         floatingActionButton = {
-            SmallFloatingActionButton(
-                onClick = { onNewNote(selectedCategoryId) },
-                shape = MaterialTheme.shapes.large,
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "新建笔记", modifier = Modifier.size(20.dp))
+            if (!selectionMode) {
+                SmallFloatingActionButton(
+                    onClick = { onNewNote(selectedCategoryId) },
+                    shape = MaterialTheme.shapes.large,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "新建笔记", modifier = Modifier.size(20.dp))
+                }
             }
         }
     ) { padding ->
@@ -281,7 +334,10 @@ fun NotesScreen(
                             note = note,
                             categoryColor = categories.firstOrNull { it.id == note.categoryId }
                                 ?.let { PaperPalette.nearest(it.color) },
-                            onClick = { onOpenNote(note.id) },
+                            onClick = {
+                                if (selectionMode) viewModel.toggleSelect(note.id) else onOpenNote(note.id)
+                            },
+                            onLongClick = { viewModel.enterSelection(note.id) },
                             now = now,
                             // 仅在「全部」tab 且非搜索态显示分类名，避免与顶部 tab 重复
                             categoryName = if (selectedCategoryId == null && query.isBlank()) {
@@ -291,6 +347,8 @@ fun NotesScreen(
                             },
                             // 搜索态给标题/摘要加关键词高亮
                             highlightQuery = query.takeIf { it.isNotBlank() },
+                            // 多选高亮
+                            selected = note.id in selectedIds,
                             modifier = Modifier.animateItem()
                         )
                         if (index < notes.lastIndex) HairlineDivider()
@@ -318,6 +376,84 @@ fun NotesScreen(
             dismissButton = {
                 TextButton(onClick = { pendingImportUri = null }) { Text("取消") }
             }
+        )
+    }
+
+    if (showBatchCategorySheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showBatchCategorySheet = false },
+            shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
+                BatchCategorySheetRow(
+                    label = "未分类",
+                    onClick = {
+                        showBatchCategorySheet = false
+                        viewModel.batchSetCategory(null) { n ->
+                            scope.launch { snackbarHostState.showSnackbar("已移动 $n 条") }
+                        }
+                    }
+                )
+                categories.forEach { cat ->
+                    BatchCategorySheetRow(
+                        label = cat.name,
+                        color = PaperPalette.nearest(cat.color),
+                        onClick = {
+                            showBatchCategorySheet = false
+                            viewModel.batchSetCategory(cat.id) { n ->
+                                scope.launch { snackbarHostState.showSnackbar("已移动 $n 条") }
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    if (showBatchDeleteDialog) {
+        PaperAlertDialog(
+            onDismissRequest = { showBatchDeleteDialog = false },
+            title = "删除所选笔记？",
+            text = { Text("将把所选 ${selectedIds.size} 条笔记移入回收站，30 天后自动清理，期间可恢复。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showBatchDeleteDialog = false
+                        viewModel.batchDelete { n ->
+                            scope.launch { snackbarHostState.showSnackbar("已删除 $n 条") }
+                        }
+                    }
+                ) { Text("删除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchDeleteDialog = false }) { Text("取消") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun BatchCategorySheetRow(
+    label: String,
+    onClick: () -> Unit,
+    color: Color? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (color != null) {
+            CategoryDot(color)
+            Spacer(Modifier.width(10.dp))
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface
         )
     }
 }

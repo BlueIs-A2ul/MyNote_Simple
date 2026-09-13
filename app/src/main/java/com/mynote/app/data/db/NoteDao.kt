@@ -54,6 +54,13 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE id = :id")
     suspend fun getById(id: Long): NoteEntity?
 
+    /** 按 id 集合取笔记（无 deletedAt 过滤，批量操作只对可见笔记调用）。 */
+    @Query("SELECT * FROM notes WHERE id IN (:ids)")
+    suspend fun getByIds(ids: List<Long>): List<NoteEntity>
+
+    @Update
+    suspend fun updateAll(notes: List<NoteEntity>)
+
     @Query("SELECT * FROM notes")
     suspend fun getAll(): List<NoteEntity>
 

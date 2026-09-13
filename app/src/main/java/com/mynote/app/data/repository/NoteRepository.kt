@@ -43,6 +43,8 @@ class NoteRepository(
 
     suspend fun getNote(id: Long): NoteEntity? = noteDao.getById(id)
 
+    suspend fun getNotesByIds(ids: List<Long>): List<NoteEntity> = noteDao.getByIds(ids)
+
     suspend fun countRevisions(noteId: Long): Int = revisionDao.countByNote(noteId)
 
     suspend fun saveNote(
@@ -100,6 +102,25 @@ class NoteRepository(
     /** 从回收站恢复：清除软删除标记，分类/置顶/历史全部还原。 */
     suspend fun restoreNote(note: NoteEntity) {
         noteDao.update(note.copy(deletedAt = null))
+    }
+
+    /** 批量删除 = 批量软删除（进回收站），不触发图片 GC。 */
+    suspend fun deleteNotes(notes: List<NoteEntity>) {
+        if (notes.isEmpty()) return
+        val now = System.currentTimeMillis()
+        noteDao.updateAll(notes.map { it.copy(deletedAt = now) })
+    }
+
+    /** 批量移动分类（null = 未分类）。 */
+    suspend fun moveNotesToCategory(notes: List<NoteEntity>, categoryId: Long?) {
+        if (notes.isEmpty()) return
+        noteDao.updateAll(notes.map { it.copy(categoryId = categoryId) })
+    }
+
+    /** 批量置顶/取消置顶。 */
+    suspend fun setNotesPinned(notes: List<NoteEntity>, pinned: Boolean) {
+        if (notes.isEmpty()) return
+        noteDao.updateAll(notes.map { it.copy(pinned = pinned) })
     }
 
     /** 彻底删除：物理删除并级联清历史，再回收孤儿图片。 */

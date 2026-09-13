@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class NotesViewModel(
@@ -54,6 +55,50 @@ class NotesViewModel(
 
     fun onSortSelect(mode: NoteSortMode) {
         sortStore.setMode(mode)
+    }
+
+    // ---------- 多选批量操作 ----------
+
+    val selectionMode = MutableStateFlow(false)
+    val selectedIds = MutableStateFlow<Set<Long>>(emptySet())
+
+    /** 长按进入多选，并选中该行。 */
+    fun enterSelection(noteId: Long) {
+        selectionMode.value = true
+        selectedIds.value = setOf(noteId)
+    }
+
+    fun toggleSelect(noteId: Long) {
+        selectedIds.value = selectedIds.value.let { if (noteId in it) it - noteId else it + noteId }
+    }
+
+    /** 全选当前列表可见笔记。 */
+    fun selectAll() {
+        selectedIds.value = notes.value.map { it.id }.toSet()
+    }
+
+    fun exitSelection() {
+        selectionMode.value = false
+        selectedIds.value = emptySet()
+    }
+
+    fun batchDelete(onDone: (Int) -> Unit) = runBatch(onDone) { repository.deleteNotes(it) }
+
+    fun batchSetCategory(categoryId: Long?, onDone: (Int) -> Unit) =
+        runBatch(onDone) { repository.moveNotesToCategory(it, categoryId) }
+
+    fun batchSetPinned(pinned: Boolean, onDone: (Int) -> Unit) =
+        runBatch(onDone) { repository.setNotesPinned(it, pinned) }
+
+    private fun runBatch(onDone: (Int) -> Unit, op: suspend (List<NoteEntity>) -> Unit) {
+        val ids = selectedIds.value
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            val notes = repository.getNotesByIds(ids.toList())
+            op(notes)
+            exitSelection()
+            onDone(notes.size)
+        }
     }
 
     companion object {

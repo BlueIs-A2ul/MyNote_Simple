@@ -147,4 +147,21 @@ class NoteDaoTest {
         val deleted = dao.observeDeleted().first()
         assertEquals(listOf("新删", "旧删"), deleted.map { it.title })
     }
+
+    @Test
+    fun getByIdsReturnsOnlyRequestedRows() = runTest {
+        val a = dao.insert(note(title = "a", updatedAt = 1L))
+        dao.insert(note(title = "b", updatedAt = 2L))
+        val c = dao.insert(note(title = "c", updatedAt = 3L))
+        val result = dao.getByIds(listOf(a, c))
+        assertEquals(setOf("a", "c"), result.map { it.title }.toSet())
+    }
+
+    @Test
+    fun updateAllUpdatesBatch() = runTest {
+        val a = dao.insert(note(title = "a", updatedAt = 1L))
+        val b = dao.insert(note(title = "b", updatedAt = 2L))
+        dao.updateAll(dao.getByIds(listOf(a, b)).map { it.copy(pinned = true) })
+        assertEquals(listOf(true, true), dao.getByIds(listOf(a, b)).map { it.pinned })
+    }
 }
