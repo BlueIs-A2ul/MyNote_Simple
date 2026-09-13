@@ -6,6 +6,7 @@ import com.mynote.app.data.db.CategoryDao
 import com.mynote.app.data.db.CategoryEntity
 import com.mynote.app.data.db.NoteDao
 import com.mynote.app.data.db.NoteEntity
+import com.mynote.app.data.db.NoteSortMode
 import com.mynote.app.data.db.NoteRevisionDao
 import com.mynote.app.data.db.NoteRevisionEntity
 import com.mynote.app.data.image.ImageStore
@@ -23,6 +24,8 @@ class NoteRepository(
 ) {
 
     fun observeNotes(): Flow<List<NoteEntity>> = noteDao.observeAll()
+
+    fun observeNotes(sort: NoteSortMode): Flow<List<NoteEntity>> = noteDao.observeAllBySort(sort)
 
     fun observeNote(id: Long): Flow<NoteEntity?> = noteDao.observeById(id)
 
@@ -94,8 +97,17 @@ class NoteRepository(
     suspend fun addCategory(name: String, color: Int): Long =
         categoryDao.getByName(name)?.id ?: categoryDao.insert(CategoryEntity(0, name, color))
 
-    suspend fun renameCategory(category: CategoryEntity, newName: String) =
-        categoryDao.update(category.copy(name = newName))
+    /** 重命名分类；撞名返回 false 且不更新，重命名为自身原名视为成功。 */
+    suspend fun renameCategory(category: CategoryEntity, newName: String): Boolean {
+        val trimmed = newName.trim()
+        val existing = categoryDao.getByName(trimmed)
+        return if (existing != null && existing.id != category.id) {
+            false
+        } else {
+            categoryDao.update(category.copy(name = trimmed))
+            true
+        }
+    }
 
     suspend fun deleteCategory(category: CategoryEntity) {
         noteDao.clearCategory(category.id)

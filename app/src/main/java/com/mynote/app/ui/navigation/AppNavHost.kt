@@ -4,9 +4,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.mynote.app.di.AppContainer
 import com.mynote.app.ui.ai.AiChatScreen
 import com.mynote.app.ui.categories.CategoriesScreen
@@ -30,25 +32,39 @@ fun AppNavHost(container: AppContainer) {
     val navController = rememberNavController()
     NavHost(navController = navController, startDestination = "notes") {
         composable("notes") {
-            val vm: NotesViewModel = viewModel(factory = NotesViewModel.factory(container.noteRepository))
+            val vm: NotesViewModel = viewModel(factory = NotesViewModel.factory(container.noteRepository, container.noteSortStore))
             NotesScreen(
                 viewModel = vm,
                 backupManager = container.backupManager,
-                onOpenNote = { id -> navController.navigate("edit/$id") },
-                onNewNote = { navController.navigate("edit/new") },
+                onOpenNote = { id -> navController.navigate("edit/$id") { launchSingleTop = true } },
+                onNewNote = { catId ->
+                    navController.navigate("edit/new?categoryId=${catId ?: -1L}") { launchSingleTop = true }
+                },
                 onManageCategories = { navController.navigate("categories") },
                 onOpenSettings = { navController.navigate("settings") }
             )
         }
-        composable("edit/{noteId}") { backStack ->
+        composable(
+            route = "edit/{noteId}?categoryId={categoryId}",
+            arguments = listOf(
+                navArgument("categoryId") {
+                    type = NavType.LongType
+                    defaultValue = -1L
+                }
+            )
+        ) { backStack ->
             val idArg = backStack.arguments?.getString("noteId")
             val id = idArg?.takeIf { it != "new" }?.toLongOrNull()
+            val initialCategoryId = backStack.arguments
+                ?.getLong("categoryId")
+                ?.takeIf { it >= 0L }
             val resultType by backStack.savedStateHandle
                 .getStateFlow<String?>(AiNavKeys.RESULT_TYPE, null).collectAsState()
             val resultText by backStack.savedStateHandle
                 .getStateFlow<String?>(AiNavKeys.RESULT_TEXT, null).collectAsState()
             NoteEditScreen(
                 noteId = id,
+                initialCategoryId = initialCategoryId,
                 repository = container.noteRepository,
                 imageStore = container.imageStore,
                 backupManager = container.backupManager,

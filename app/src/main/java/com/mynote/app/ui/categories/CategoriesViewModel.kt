@@ -27,9 +27,11 @@ class CategoriesViewModel(private val repository: NoteRepository) : ViewModel() 
         }
     }
 
-    fun rename(category: CategoryEntity, newName: String) {
+    fun rename(category: CategoryEntity, newName: String, onDone: (Boolean) -> Unit) {
         if (newName.isBlank()) return
-        viewModelScope.launch { repository.renameCategory(category, newName.trim()) }
+        viewModelScope.launch {
+            onDone(repository.renameCategory(category, newName))
+        }
     }
 
     fun delete(category: CategoryEntity) {

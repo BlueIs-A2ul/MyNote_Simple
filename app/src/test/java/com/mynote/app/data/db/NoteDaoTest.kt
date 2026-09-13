@@ -78,4 +78,41 @@ class NoteDaoTest {
         dao.delete(loaded)
         assertNull(dao.getById(id))
     }
+
+    @Test
+    fun observeAllBySortCreatedDescOrdersByCreatedAt() = runTest {
+        dao.insert(NoteEntity(0, "最旧", "c", 1L, 10L, null, false, null))
+        dao.insert(NoteEntity(0, "中间", "c", 2L, 20L, null, false, null))
+        dao.insert(NoteEntity(0, "最新", "c", 3L, 30L, null, false, null))
+        val all = dao.observeAllBySort(NoteSortMode.CREATED_DESC).first()
+        assertEquals(listOf("最新", "中间", "最旧"), all.map { it.title })
+    }
+
+    @Test
+    fun observeAllBySortTitleAscIsCaseInsensitive() = runTest {
+        dao.insert(NoteEntity(0, "Banana", "c", 0L, 1L, null, false, null))
+        dao.insert(NoteEntity(0, "cherry", "c", 0L, 2L, null, false, null))
+        dao.insert(NoteEntity(0, "apple", "c", 0L, 3L, null, false, null))
+        val all = dao.observeAllBySort(NoteSortMode.TITLE_ASC).first()
+        assertEquals(listOf("apple", "Banana", "cherry"), all.map { it.title })
+    }
+
+    @Test
+    fun observeAllBySortPutsPinnedFirstForAllModes() = runTest {
+        dao.insert(NoteEntity(0, "apple", "c", 1L, 1L, null, false, null))
+        dao.insert(NoteEntity(0, "pinned", "c", 2L, 2L, null, true, null))
+        dao.insert(NoteEntity(0, "zebra", "c", 3L, 3L, null, false, null))
+        assertEquals(
+            listOf("pinned", "zebra", "apple"),
+            dao.observeAllBySort(NoteSortMode.UPDATED_DESC).first().map { it.title }
+        )
+        assertEquals(
+            listOf("pinned", "zebra", "apple"),
+            dao.observeAllBySort(NoteSortMode.CREATED_DESC).first().map { it.title }
+        )
+        assertEquals(
+            listOf("pinned", "apple", "zebra"),
+            dao.observeAllBySort(NoteSortMode.TITLE_ASC).first().map { it.title }
+        )
+    }
 }

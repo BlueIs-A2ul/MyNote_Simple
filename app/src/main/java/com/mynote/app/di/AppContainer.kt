@@ -15,6 +15,7 @@ import com.mynote.app.data.export.NoteImageRenderer
 import com.mynote.app.data.image.ImageStore
 import com.mynote.app.data.repository.NoteRepository
 import com.mynote.app.data.settings.AiSettingsStore
+import com.mynote.app.data.settings.NoteSortStore
 import com.mynote.app.data.settings.ThemeSettingsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +32,8 @@ class AppContainer(context: Context) {
     val imageStore: ImageStore by lazy { ImageStore(context) }
 
     val themeSettingsStore: ThemeSettingsStore by lazy { ThemeSettingsStore(context) }
+
+    val noteSortStore: NoteSortStore by lazy { NoteSortStore(context) }
 
     val noteRepository: NoteRepository by lazy {
         NoteRepository(database.noteDao(), database.categoryDao(), database.noteRevisionDao(), imageStore, database)

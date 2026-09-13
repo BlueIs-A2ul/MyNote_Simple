@@ -20,6 +20,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -27,6 +29,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,17 +44,20 @@ import com.mynote.app.ui.components.HairlineDivider
 import com.mynote.app.ui.components.PaperAlertDialog
 import com.mynote.app.ui.components.PaperTopBar
 import com.mynote.app.ui.theme.PaperPalette
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CategoriesScreen(repository: NoteRepository, onBack: () -> Unit) {
     val vm: CategoriesViewModel = viewModel(factory = CategoriesViewModel.factory(repository))
     val categories by vm.categories.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     var showAddDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             PaperTopBar(
                 title = "分类管理",
@@ -75,7 +81,8 @@ fun CategoriesScreen(repository: NoteRepository, onBack: () -> Unit) {
                 itemsIndexed(categories, key = { _, cat -> cat.id }) { index, cat ->
                     CategoryRow(
                         cat = cat,
-                        onRename = { vm.rename(cat, it) },
+                        snackbarHostState = snackbarHostState,
+                        onRename = { newName, done -> vm.rename(cat, newName, done) },
                         onDelete = { vm.delete(cat) }
                     )
                     if (index < categories.lastIndex) HairlineDivider()
@@ -108,10 +115,16 @@ fun CategoriesScreen(repository: NoteRepository, onBack: () -> Unit) {
 }
 
 @Composable
-private fun CategoryRow(cat: CategoryEntity, onRename: (String) -> Unit, onDelete: () -> Unit) {
+private fun CategoryRow(
+    cat: CategoryEntity,
+    snackbarHostState: SnackbarHostState,
+    onRename: (String, (Boolean) -> Unit) -> Unit,
+    onDelete: () -> Unit
+) {
     var showDelete by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf(cat.name) }
+    val scope = rememberCoroutineScope()
 
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -138,7 +151,21 @@ private fun CategoryRow(cat: CategoryEntity, onRename: (String) -> Unit, onDelet
                     innerTextField()
                 }
             )
-            TextButton(onClick = { onRename(name); editing = false }) { Text("保存") }
+            TextButton(
+                onClick = {
+                    if (name.isBlank()) {
+                        editing = false
+                    } else {
+                        onRename(name) { success ->
+                            if (success) {
+                                editing = false
+                            } else {
+                                scope.launch { snackbarHostState.showSnackbar("该分类已存在") }
+                            }
+                        }
+                    }
+                }
+            ) { Text("保存") }
             TextButton(onClick = { name = cat.name; editing = false }) { Text("取消") }
         } else {
             Row(

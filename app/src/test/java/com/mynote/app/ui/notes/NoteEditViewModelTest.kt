@@ -10,6 +10,7 @@ import com.mynote.app.data.repository.NoteRepository
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -116,5 +117,32 @@ class NoteEditViewModelTest {
         val warning = CompletableDeferred<String?>()
         vm.save("t", "v38", null, false, null) { warning.complete(it) }
         assertEquals(null, warning.await())
+    }
+
+    @Test
+    fun doubleSaveCreatesOnlyOneNoteAndReportsOnce() = runTest(dispatcher) {
+        var doneCount = 0
+        val first = CompletableDeferred<Unit>()
+        vm.save("t", "c", null, false, null) { doneCount++; first.complete(Unit) }
+        vm.save("t", "c", null, false, null) { doneCount++ }
+        first.await()
+        assertEquals(1, db.noteDao().getAll().size)
+        assertEquals(1, doneCount)
+    }
+
+    @Test
+    fun doubleDeleteReportsOnce() = runTest(dispatcher) {
+        val id = repo.saveNote(null, "t", "c", null, false, null)
+        vm.viewModelScope.cancel()
+        vm = NoteEditViewModel(repo, ImageStore(ApplicationProvider.getApplicationContext()), noteId = id)
+        vm.note.first { it != null }
+
+        var doneCount = 0
+        val first = CompletableDeferred<Unit>()
+        vm.delete { doneCount++; first.complete(Unit) }
+        vm.delete { doneCount++ }
+        first.await()
+        assertEquals(1, doneCount)
+        assertEquals(0, db.noteDao().getAll().size)
     }
 }

@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -86,6 +87,29 @@ class NoteRepositoryTest {
         val second = repo.addCategory("工作", 1)
         assertEquals(first, second)
         assertEquals(1, db.categoryDao().getAll().size)
+    }
+
+    @Test
+    fun renameCategoryToUnusedNameSucceeds() = runTest {
+        val catId = repo.addCategory("工作", 0)
+        assertTrue(repo.renameCategory(db.categoryDao().getById(catId)!!, "生活"))
+        assertEquals("生活", db.categoryDao().getById(catId)?.name)
+    }
+
+    @Test
+    fun renameCategoryToExistingNameFailsAndKeepsOriginal() = runTest {
+        val a = repo.addCategory("工作", 0)
+        repo.addCategory("生活", 1)
+        assertFalse(repo.renameCategory(db.categoryDao().getById(a)!!, "生活"))
+        assertEquals("工作", db.categoryDao().getById(a)?.name)
+        assertEquals(2, db.categoryDao().getAll().size)
+    }
+
+    @Test
+    fun renameCategoryToItsOwnNameSucceeds() = runTest {
+        val catId = repo.addCategory("工作", 0)
+        assertTrue(repo.renameCategory(db.categoryDao().getById(catId)!!, "工作"))
+        assertEquals("工作", db.categoryDao().getById(catId)?.name)
     }
 
     @Test

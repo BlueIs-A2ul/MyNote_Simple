@@ -1,6 +1,8 @@
 package com.mynote.app.ui.notes
 
+import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -14,12 +16,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.PushPin
@@ -48,10 +53,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -78,10 +86,12 @@ import com.mynote.app.ui.export.NoteExportDialog
 import com.mynote.app.ui.notes.NoteContentParser.ContentBlock
 import com.mynote.app.ui.theme.NoteColors
 import com.mynote.app.ui.theme.PaperPalette
+import com.mynote.app.util.FileNameSanitizer
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import java.io.File
 
 class NoteEditViewModel(
     private val repository: NoteRepository,
@@ -94,6 +104,10 @@ class NoteEditViewModel(
 
     private val _note = MutableStateFlow<NoteEntity?>(null)
     val note: StateFlow<NoteEntity?> = _note
+
+    // 保存/删除在途标志：连点第二次调用直接忽略，防止重复插入与双重退出回调
+    private var saving = false
+    private var deleting = false
 
     init {
         viewModelScope.launch {
@@ -124,26 +138,38 @@ class NoteEditViewModel(
     }
 
     fun save(title: String, content: String, categoryId: Long?, pinned: Boolean, color: Int?, onDone: (String?) -> Unit) {
+        if (saving) return
+        saving = true
         viewModelScope.launch {
-            val before = if (noteId != null && noteId != 0L) repository.countRevisions(noteId) else 0
-            val id = repository.saveNote(noteId, title, content, categoryId, pinned, color)
-            val warning = if (noteId != null && noteId != 0L &&
-                before < NoteRevisionDao.WARN_AT &&
-                repository.countRevisions(id) == NoteRevisionDao.WARN_AT
-            ) {
-                HISTORY_WARNING
-            } else {
-                null
+            try {
+                val before = if (noteId != null && noteId != 0L) repository.countRevisions(noteId) else 0
+                val id = repository.saveNote(noteId, title, content, categoryId, pinned, color)
+                val warning = if (noteId != null && noteId != 0L &&
+                    before < NoteRevisionDao.WARN_AT &&
+                    repository.countRevisions(id) == NoteRevisionDao.WARN_AT
+                ) {
+                    HISTORY_WARNING
+                } else {
+                    null
+                }
+                onDone(warning)
+            } finally {
+                saving = false
             }
-            onDone(warning)
         }
     }
 
     fun delete(onDone: () -> Unit) {
+        if (deleting) return
         val n = _note.value ?: return
+        deleting = true
         viewModelScope.launch {
-            repository.deleteNote(n)
-            onDone()
+            try {
+                repository.deleteNote(n)
+                onDone()
+            } finally {
+                deleting = false
+            }
         }
     }
 
@@ -156,10 +182,33 @@ class NoteEditViewModel(
     }
 }
 
+/**
+ * 判断编辑页是否存在未保存变更。
+ * - 新建笔记：标题/正文非空，或分类/置顶相对进入时的初始状态有变化（分类页带入的预选分类不算变更）。
+ * - 已有笔记未加载完（saved 为 null）：标题/正文非空即视为有变更（保守防丢）。
+ * - 已有笔记已加载：标题/正文/分类/置顶与已保存值逐项比较。
+ */
+internal fun hasUnsavedChanges(
+    isNew: Boolean,
+    saved: NoteEntity?,
+    initialCategoryId: Long?,
+    title: String,
+    content: String,
+    categoryId: Long?,
+    pinned: Boolean
+): Boolean = when {
+    isNew -> title.isNotBlank() || content.isNotBlank() ||
+        categoryId != initialCategoryId || pinned
+    saved == null -> title.isNotBlank() || content.isNotBlank()
+    else -> title != saved.title || content != saved.content ||
+        categoryId != saved.categoryId || pinned != saved.pinned
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NoteEditScreen(
     noteId: Long?,
+    initialCategoryId: Long?,
     repository: NoteRepository,
     imageStore: ImageStore,
     backupManager: BackupManager,
@@ -185,26 +234,42 @@ fun NoteEditScreen(
     }
     var previewMode by rememberSaveable { mutableStateOf(false) }
     var pinned by rememberSaveable(noteId) { mutableStateOf(false) }
-    var selectedCategoryId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var selectedCategoryId by rememberSaveable(noteId) { mutableStateOf(initialCategoryId) }
     var menuOpen by remember { mutableStateOf(false) }
     var showCategorySheet by remember { mutableStateOf(false) }
     var showAddCategoryDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     var showImageExport by remember { mutableStateOf(false) }
+    var showUnsavedDialog by remember { mutableStateOf(false) }
+    var isSaving by remember { mutableStateOf(false) }
+    // 是否已从已保存笔记回填过字段：只回填一次，清空内容后旋转/重建不再被旧内容覆盖
+    var initialized by rememberSaveable(noteId) { mutableStateOf(false) }
+
+    // 正文焦点（插图后恢复用）与撤销/重做栈
+    val contentFocusRequester = remember { FocusRequester() }
+    val undoController = remember { NoteUndoController() }
 
     LaunchedEffect(note) {
-        if (note != null && title.isEmpty() && content.text.isEmpty()) {
-            title = note!!.title
-            content = TextFieldValue(note!!.content)
-            selectedCategoryId = note!!.categoryId
-            pinned = note!!.pinned
+        val n = note ?: return@LaunchedEffect
+        if (!initialized) {
+            initialized = true
+            if (title.isEmpty() && content.text.isEmpty()) {
+                title = n.title
+                content = TextFieldValue(n.content)
+                selectedCategoryId = n.categoryId
+                pinned = n.pinned
+            }
+            // 回填后的内容作为撤销基线，不回退到空文本
+            undoController.reset()
         }
     }
 
     LaunchedEffect(aiResultType, aiResultText) {
         val type = aiResultType ?: return@LaunchedEffect
         val text = aiResultText ?: return@LaunchedEffect
+        // 记录应用 AI 结果前的状态，使「贴入 AI 结果」也可撤销
+        undoController.record(content)
         content = AiResultApplier.apply(
             content,
             if (type == "replace") AiResultApplier.Type.REPLACE else AiResultApplier.Type.INSERT,
@@ -216,7 +281,15 @@ fun NoteEditScreen(
     val pickImage = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
     ) { uri ->
-        uri?.let { vm.insertImage(it) { markup -> content = AiResultApplier.apply(content, AiResultApplier.Type.INSERT, markup) } }
+        uri?.let {
+            vm.insertImage(it) { markup ->
+                // 记录插图前的状态，插图可撤销
+                undoController.record(content)
+                content = AiResultApplier.apply(content, AiResultApplier.Type.INSERT, markup)
+                // 选图返回后正文焦点已丢：恢复焦点，光标落在插入点之后
+                contentFocusRequester.requestFocus()
+            }
+        }
     }
 
     val scope = rememberCoroutineScope()
@@ -230,13 +303,38 @@ fun NoteEditScreen(
     }
 
     val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
+
+    val isNewNote = noteId == null || noteId == 0L
+    val dirty = hasUnsavedChanges(isNewNote, note, initialCategoryId, title, content.text, selectedCategoryId, pinned)
+
+    BackHandler(enabled = true) {
+        if (dirty) showUnsavedDialog = true else onBack()
+    }
+
+    val saveAndExit: () -> Unit = {
+        if (!isSaving) {
+            isSaving = true
+            vm.save(title, content.text, selectedCategoryId, pinned, note?.color) { warning ->
+                isSaving = false
+                if (warning != null) {
+                    scope.launch {
+                        snackbarHostState.showSnackbar(warning)
+                        onBack()
+                    }
+                } else {
+                    onBack()
+                }
+            }
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             PaperTopBar(
-                onBack = onBack,
+                onBack = { if (dirty) showUnsavedDialog = true else onBack() },
                 actions = {
                     if (noteId != null && noteId != 0L) {
                         IconButton(onClick = {
@@ -254,18 +352,7 @@ fun NoteEditScreen(
                             else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    TextButton(onClick = {
-                        vm.save(title, content.text, selectedCategoryId, pinned, note?.color) { warning ->
-                            if (warning != null) {
-                                scope.launch {
-                                    snackbarHostState.showSnackbar(warning)
-                                    onBack()
-                                }
-                            } else {
-                                onBack()
-                            }
-                        }
-                    }) {
+                    TextButton(onClick = saveAndExit, enabled = !isSaving) {
                         Text("保存", style = MaterialTheme.typography.labelLarge)
                     }
                     PaperOverflowMenu(
@@ -282,6 +369,22 @@ fun NoteEditScreen(
                             DropdownMenuItem(
                                 text = { Text("导出") },
                                 onClick = { menuOpen = false; showExportDialog = true }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("分享") },
+                                onClick = {
+                                    menuOpen = false
+                                    val shareText = buildString {
+                                        append(title.ifBlank { "无标题" })
+                                        append("\n\n")
+                                        append(NoteContentParser.plainText(content.text))
+                                    }
+                                    val send = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_TEXT, shareText)
+                                    }
+                                    context.startActivity(Intent.createChooser(send, "分享笔记"))
+                                }
                             )
                         }
                         if (noteId != null) {
@@ -301,26 +404,38 @@ fun NoteEditScreen(
                 .fillMaxSize()
                 .imePadding()
         ) {
-            BasicTextField(
-                value = title,
-                onValueChange = { title = it },
+            Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                textStyle = MaterialTheme.typography.titleLarge.copy(
-                    color = MaterialTheme.colorScheme.onBackground
-                ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                singleLine = true,
-                decorationBox = { innerTextField ->
-                    if (title.isEmpty()) {
-                        Text(
-                            "标题",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                BasicTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    modifier = Modifier.weight(1f),
+                    textStyle = MaterialTheme.typography.titleLarge.copy(
+                        color = MaterialTheme.colorScheme.onBackground
+                    ),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    singleLine = true,
+                    decorationBox = { innerTextField ->
+                        if (title.isEmpty()) {
+                            Text(
+                                "标题",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        innerTextField()
                     }
-                    innerTextField()
-                }
-            )
+                )
+                // 字数与列表摘要同口径：图片标记不计入
+                Text(
+                    "字数 ${NoteContentParser.plainText(content.text).length}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
+            }
 
             if (previewMode) {
                 LazyColumn(
@@ -348,8 +463,13 @@ fun NoteEditScreen(
             } else {
                 BasicTextField(
                     value = content,
-                    onValueChange = { content = it },
-                    modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp, vertical = 4.dp),
+                    onValueChange = {
+                        // 每次修改前记录旧值，供撤销
+                        undoController.record(content)
+                        content = it
+                    },
+                    modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp, vertical = 4.dp)
+                        .focusRequester(contentFocusRequester),
                     textStyle = MaterialTheme.typography.bodyLarge.copy(
                         color = MaterialTheme.colorScheme.onBackground
                     ),
@@ -373,32 +493,56 @@ fun NoteEditScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(
-                    onClick = {
-                        pickImage.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { undoController.undo(content)?.let { content = it } },
+                        enabled = undoController.canUndo
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Undo,
+                            contentDescription = "撤销",
+                            modifier = Modifier.size(18.dp)
                         )
-                    },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                ) { Text("图片") }
-                TextButton(
-                    onClick = { showCategorySheet = true },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                ) {
-                    Text(
-                        (categories.firstOrNull { it.id == selectedCategoryId }?.name ?: "分类") + " ▾"
-                    )
+                    }
+                    IconButton(
+                        onClick = { undoController.redo(content)?.let { content = it } },
+                        enabled = undoController.canRedo
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Redo,
+                            contentDescription = "重做",
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    TextButton(
+                        onClick = {
+                            pickImage.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    ) { Text("图片") }
                 }
-                TextButton(onClick = { previewMode = !previewMode }) {
-                    Text(
-                        "预览",
-                        color = if (previewMode) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(
+                        onClick = { showCategorySheet = true },
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    ) {
+                        Text(
+                            (categories.firstOrNull { it.id == selectedCategoryId }?.name ?: "分类") + " ▾"
+                        )
+                    }
+                    TextButton(onClick = { previewMode = !previewMode }) {
+                        Text(
+                            "预览",
+                            color = if (previewMode) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
@@ -464,6 +608,28 @@ fun NoteEditScreen(
         )
     }
 
+    if (showUnsavedDialog) {
+        PaperAlertDialog(
+            onDismissRequest = { showUnsavedDialog = false },
+            title = "尚未保存的更改",
+            text = { Text("当前内容尚未保存，要保存后再退出吗？") },
+            confirmButton = {
+                Row {
+                    TextButton(onClick = onBack) { Text("不保存") }
+                    TextButton(
+                        onClick = { showUnsavedDialog = false; saveAndExit() },
+                        enabled = !isSaving
+                    ) {
+                        Text("保存并退出")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUnsavedDialog = false }) { Text("取消") }
+            }
+        )
+    }
+
     if (showDeleteDialog) {
         PaperAlertDialog(
             onDismissRequest = { showDeleteDialog = false },
@@ -488,7 +654,7 @@ fun NoteEditScreen(
                     TextButton(
                         onClick = {
                             showExportDialog = false
-                            exportTxtLauncher.launch((note?.title ?: "note") + ".txt")
+                            exportTxtLauncher.launch(FileNameSanitizer.sanitize(note?.title ?: "note") + ".txt")
                         },
                         enabled = note != null,
                         modifier = Modifier.fillMaxWidth()

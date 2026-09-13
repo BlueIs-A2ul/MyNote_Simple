@@ -7,11 +7,27 @@ import androidx.room.Query
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
+/** 笔记列表排序方式。 */
+enum class NoteSortMode { UPDATED_DESC, CREATED_DESC, TITLE_ASC }
+
 @Dao
 interface NoteDao {
 
     @Query("SELECT * FROM notes ORDER BY pinned DESC, updatedAt DESC")
     fun observeAll(): Flow<List<NoteEntity>>
+
+    /** 按指定排序方式观察全部笔记。 */
+    fun observeAllBySort(mode: NoteSortMode): Flow<List<NoteEntity>> = when (mode) {
+        NoteSortMode.UPDATED_DESC -> observeAll()
+        NoteSortMode.CREATED_DESC -> observeAllByCreated()
+        NoteSortMode.TITLE_ASC -> observeAllByTitle()
+    }
+
+    @Query("SELECT * FROM notes ORDER BY pinned DESC, createdAt DESC")
+    fun observeAllByCreated(): Flow<List<NoteEntity>>
+
+    @Query("SELECT * FROM notes ORDER BY pinned DESC, title COLLATE NOCASE ASC")
+    fun observeAllByTitle(): Flow<List<NoteEntity>>
 
     @Query("SELECT * FROM notes WHERE id = :id")
     fun observeById(id: Long): Flow<NoteEntity?>
