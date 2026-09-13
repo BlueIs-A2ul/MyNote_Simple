@@ -634,7 +634,7 @@ fun NoteEditScreen(
         PaperAlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title = "删除笔记？",
-            text = { Text("删除后不可恢复。") },
+            text = { Text("删除后将移入回收站，30 天后自动清理，期间可随时恢复。") },
             confirmButton = {
                 TextButton(onClick = { vm.delete(onBack) }) { Text("删除") }
             },

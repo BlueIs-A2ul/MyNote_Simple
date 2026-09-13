@@ -58,7 +58,7 @@ class AppDatabaseMigrationTest {
         createV1Database()
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
             .allowMainThreadQueries()
             .build()
         try {
@@ -120,7 +120,7 @@ class AppDatabaseMigrationTest {
         createV2Database()
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
             .allowMainThreadQueries()
             .build()
         try {
@@ -145,6 +145,75 @@ class AppDatabaseMigrationTest {
             db.noteDao().delete(db.noteDao().getById(1)!!)
             assertEquals(0, db.aiSessionDao().observeByNote(1).first().size)
             assertEquals(0, db.aiMessageDao().getBySession(sessionId).size)
+        } finally {
+            db.close()
+        }
+    }
+
+    /** 按 Room v3 的精确 schema 手工建库（notes 无 deletedAt 列），再走 v3→v4。 */
+    private fun createV3Database() {
+        val v3 = context.openOrCreateDatabase(dbName, Context.MODE_PRIVATE, null)
+        v3.execSQL(
+            "CREATE TABLE IF NOT EXISTS `notes` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`title` TEXT NOT NULL, `content` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, " +
+                "`updatedAt` INTEGER NOT NULL, `categoryId` INTEGER, `pinned` INTEGER NOT NULL, `color` INTEGER)"
+        )
+        v3.execSQL(
+            "CREATE TABLE IF NOT EXISTS `categories` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`name` TEXT NOT NULL, `color` INTEGER NOT NULL)"
+        )
+        v3.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_categories_name` ON `categories` (`name`)")
+        v3.execSQL(
+            "CREATE TABLE IF NOT EXISTS `note_revisions` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `noteId` INTEGER NOT NULL, " +
+                "`title` TEXT NOT NULL, `content` TEXT NOT NULL, `categoryId` INTEGER, " +
+                "`pinned` INTEGER NOT NULL, `color` INTEGER, `savedAt` INTEGER NOT NULL, " +
+                "FOREIGN KEY(`noteId`) REFERENCES `notes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+        )
+        v3.execSQL("CREATE INDEX IF NOT EXISTS `index_note_revisions_noteId` ON `note_revisions` (`noteId`)")
+        v3.execSQL(
+            "CREATE TABLE IF NOT EXISTS `ai_sessions` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `noteId` INTEGER NOT NULL, " +
+                "`serviceId` TEXT NOT NULL, `title` TEXT NOT NULL, `remoteChatId` TEXT, " +
+                "`createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, " +
+                "FOREIGN KEY(`noteId`) REFERENCES `notes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+        )
+        v3.execSQL("CREATE INDEX IF NOT EXISTS `index_ai_sessions_noteId` ON `ai_sessions` (`noteId`)")
+        v3.execSQL(
+            "CREATE TABLE IF NOT EXISTS `ai_messages` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sessionId` INTEGER NOT NULL, " +
+                "`role` TEXT NOT NULL, `content` TEXT NOT NULL, `status` TEXT NOT NULL, " +
+                "`createdAt` INTEGER NOT NULL, " +
+                "FOREIGN KEY(`sessionId`) REFERENCES `ai_sessions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+        )
+        v3.execSQL("CREATE INDEX IF NOT EXISTS `index_ai_messages_sessionId` ON `ai_messages` (`sessionId`)")
+        v3.execSQL(
+            "INSERT INTO notes (title, content, createdAt, updatedAt, categoryId, pinned, color) " +
+                "VALUES ('老标题', '老内容', 111, 222, NULL, 0, NULL)"
+        )
+        v3.version = 3
+        v3.close()
+    }
+
+    @Test
+    fun migrate3To4AddsDeletedAtColumnKeepsData() = runTest {
+        createV3Database()
+
+        val db = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
+            .addMigrations(AppDatabase.MIGRATION_3_4)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val note = db.noteDao().getById(1)
+            assertEquals("老标题", note?.title)
+            // 迁移后 deletedAt 默认为 null（未删除）
+            assertEquals(null, note?.deletedAt)
+
+            // 新列可正常写软删除值并读回
+            db.noteDao().update(note!!.copy(deletedAt = 555L))
+            assertEquals(555L, db.noteDao().getById(1)?.deletedAt)
+            assertEquals(0, db.noteDao().observeAll().first().size)
+            assertEquals(1, db.noteDao().observeDeleted().first().size)
         } finally {
             db.close()
         }

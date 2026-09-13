@@ -148,10 +148,58 @@ class NoteRepositoryTest {
     }
 
     @Test
-    fun deleteNoteCascadesRevisions() = runTest {
+    fun deleteNoteMovesToTrashAndKeepsRevisions() = runTest {
         val id = repo.saveNote(null, "t", "c", null, false, null)
         repo.deleteNote(repo.getNote(id)!!)
+        // 软删除：笔记仍在库中但带删除标记，历史快照保留
+        assertNotNull(repo.getNote(id))
+        assertNotNull(repo.getNote(id)?.deletedAt)
+        assertEquals(1, repo.countRevisions(id))
+        assertEquals(1, repo.observeDeletedNotes().first().size)
+        assertEquals(0, repo.observeNotes().first().size)
+    }
+
+    @Test
+    fun restoreNoteClearsDeletedAt() = runTest {
+        val id = repo.saveNote(null, "t", "c", null, false, null)
+        repo.deleteNote(repo.getNote(id)!!)
+        repo.restoreNote(repo.getNote(id)!!)
+        assertNull(repo.getNote(id)?.deletedAt)
+        assertEquals(0, repo.observeDeletedNotes().first().size)
+        assertEquals(1, repo.observeNotes().first().size)
+    }
+
+    @Test
+    fun purgeNoteCascadesRevisions() = runTest {
+        val id = repo.saveNote(null, "t", "c", null, false, null)
+        repo.purgeNote(repo.getNote(id)!!)
         assertEquals(0, repo.countRevisions(id))
+        assertNull(repo.getNote(id))
+    }
+
+    @Test
+    fun purgeExpiredDeletedNotesOnlyRemovesNotesBeyondTtl() = runTest {
+        val oldId = repo.saveNote(null, "old", "c", null, false, null)
+        val freshId = repo.saveNote(null, "fresh", "c", null, false, null)
+        repo.deleteNote(repo.getNote(oldId)!!)
+        repo.deleteNote(repo.getNote(freshId)!!)
+        val now = System.currentTimeMillis()
+        db.noteDao().update(repo.getNote(oldId)!!.copy(deletedAt = now - 31L * 24 * 3600 * 1000))
+        db.noteDao().update(repo.getNote(freshId)!!.copy(deletedAt = now - 3600_000))
+        val purged = repo.purgeExpiredDeletedNotes(now = now)
+        assertEquals(1, purged)
+        assertNull(repo.getNote(oldId))
+        assertNotNull(repo.getNote(freshId))
+    }
+
+    @Test
+    fun softDeleteKeepsImagesUntilPurge() = runTest {
+        imageStore.writeFile("trash.webp", byteArrayOf(1))
+        val id = repo.saveNote(null, "t", "![](img/trash.webp)", null, false, null)
+        repo.deleteNote(repo.getNote(id)!!)
+        assertTrue(imageStore.physicalFile("trash.webp").exists())
+        repo.purgeNote(repo.getNote(id)!!)
+        assertFalse(imageStore.physicalFile("trash.webp").exists())
     }
 
     @Test
@@ -186,9 +234,9 @@ class NoteRepositoryTest {
         imageStore.writeFile("a.webp", byteArrayOf(1))
         val id = repo.saveNote(null, "t", "![](img/a.webp)", null, false, null)
         repo.saveNote(id, "t", "no image", null, false, null)
-        // 通过删除另一篇笔记触发 GC（GC 只在删除/裁剪后执行）
+        // 通过彻底删除另一篇笔记触发 GC（GC 只在彻底删除/裁剪后执行）
         val other = repo.saveNote(null, "other", "x", null, false, null)
-        repo.deleteNote(repo.getNote(other)!!)
+        repo.purgeNote(repo.getNote(other)!!)
         assertTrue(imageStore.physicalFile("a.webp").exists())
     }
 

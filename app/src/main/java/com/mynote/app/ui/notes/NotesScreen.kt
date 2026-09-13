@@ -71,6 +71,7 @@ fun NotesScreen(
     onOpenNote: (Long) -> Unit,
     onNewNote: (Long?) -> Unit,
     onManageCategories: () -> Unit,
+    onOpenTrash: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
     val notes by viewModel.notes.collectAsState()
@@ -159,6 +160,10 @@ fun NotesScreen(
                         DropdownMenuItem(
                             text = { Text("分类管理") },
                             onClick = { menuOpen = false; onManageCategories() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("回收站") },
+                            onClick = { menuOpen = false; onOpenTrash() }
                         )
                         // 排序只作用于「全部」且非搜索态
                         val sortEnabled = selectedCategoryId == null && query.isBlank()

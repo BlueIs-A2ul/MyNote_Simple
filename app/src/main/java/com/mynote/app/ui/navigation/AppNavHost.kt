@@ -17,6 +17,7 @@ import com.mynote.app.ui.notes.NoteEditScreen
 import com.mynote.app.ui.notes.NotesScreen
 import com.mynote.app.ui.notes.NotesViewModel
 import com.mynote.app.ui.settings.SettingsScreen
+import com.mynote.app.ui.trash.TrashScreen
 
 object AiNavKeys {
     const val SEL_START = "ai_sel_start"
@@ -41,6 +42,7 @@ fun AppNavHost(container: AppContainer) {
                     navController.navigate("edit/new?categoryId=${catId ?: -1L}") { launchSingleTop = true }
                 },
                 onManageCategories = { navController.navigate("categories") },
+                onOpenTrash = { navController.navigate("trash") },
                 onOpenSettings = { navController.navigate("settings") }
             )
         }
@@ -122,6 +124,12 @@ fun AppNavHost(container: AppContainer) {
         }
         composable("categories") {
             CategoriesScreen(
+                repository = container.noteRepository,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable("trash") {
+            TrashScreen(
                 repository = container.noteRepository,
                 onBack = { navController.popBackStack() }
             )

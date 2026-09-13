@@ -12,5 +12,7 @@ data class NoteEntity(
     val updatedAt: Long,
     val categoryId: Long?,
     val pinned: Boolean,
-    val color: Int?
+    val color: Int?,
+    /** 软删除时间戳：非空表示在回收站中，到期自动彻底清理。 */
+    val deletedAt: Long? = null
 )

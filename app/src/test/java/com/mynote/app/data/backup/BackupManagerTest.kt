@@ -5,6 +5,7 @@ import com.mynote.app.data.image.ImageStore
 import com.mynote.app.ui.notes.NoteContentParser
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -47,5 +48,20 @@ class BackupManagerTest {
         assertTrue(manager.incomingWins(1L, 2L))
         assertFalse(manager.incomingWins(2L, 1L))
         assertFalse(manager.incomingWins(1L, 1L))
+    }
+
+    @Test
+    fun backupNoteJsonRoundTripsWithDeletedAt() {
+        val note = BackupManager.BackupNote(1, "标题", "正文", 1L, 2L, null, true, 0, 12345L)
+        val data = BackupManager.BackupData(listOf(note), emptyList())
+        val decoded = manager.decode(manager.encode(data))
+        assertEquals(12345L, decoded.notes[0].deletedAt)
+    }
+
+    @Test
+    fun oldBackupJsonWithoutDeletedAtDecodesAsNull() {
+        val json = """{"notes":[{"id":1,"title":"旧","content":"c","createdAt":1,"updatedAt":2,"categoryId":null,"pinned":false,"color":null}],"categories":[]}"""
+        val decoded = manager.decode(json)
+        assertNull(decoded.notes[0].deletedAt)
     }
 }

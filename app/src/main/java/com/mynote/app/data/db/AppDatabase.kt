@@ -10,7 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         NoteEntity::class, CategoryEntity::class, NoteRevisionEntity::class,
         AiSessionEntity::class, AiMessageEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -64,6 +64,12 @@ abstract class AppDatabase : RoomDatabase() {
                         "FOREIGN KEY(`sessionId`) REFERENCES `ai_sessions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_ai_messages_sessionId` ON `ai_messages` (`sessionId`)")
+            }
+        }
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 回收站：软删除时间戳（NULL = 未删除）
+                db.execSQL("ALTER TABLE notes ADD COLUMN deletedAt INTEGER")
             }
         }
     }

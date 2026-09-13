@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -143,6 +144,8 @@ class NoteEditViewModelTest {
         vm.delete { doneCount++ }
         first.await()
         assertEquals(1, doneCount)
-        assertEquals(0, db.noteDao().getAll().size)
+        // 删除 = 软删除：仍在库中但带删除标记
+        assertEquals(1, db.noteDao().getAll().size)
+        assertNotNull(db.noteDao().getById(id)?.deletedAt)
     }
 }

@@ -115,4 +115,36 @@ class NoteDaoTest {
             dao.observeAllBySort(NoteSortMode.TITLE_ASC).first().map { it.title }
         )
     }
+
+    @Test
+    fun softDeletedNotesAreHiddenFromActiveQueries() = runTest {
+        dao.insert(note(title = "正常", updatedAt = 1L))
+        val deletedId = dao.insert(note(title = "已删", updatedAt = 2L))
+        dao.update(dao.getById(deletedId)!!.copy(deletedAt = 5L))
+
+        assertEquals(listOf("正常"), dao.observeAll().first().map { it.title })
+        assertEquals(listOf("正常"), dao.observeAllBySort(NoteSortMode.UPDATED_DESC).first().map { it.title })
+        assertEquals(0, dao.search("已删").first().size)
+    }
+
+    @Test
+    fun softDeletedNotesAreHiddenFromCategoryView() = runTest {
+        val catId = db.categoryDao().insert(CategoryEntity(0, "工作", 0))
+        dao.insert(NoteEntity(0, "正常", "c", 0L, 1L, catId, false, null))
+        val deletedId = dao.insert(NoteEntity(0, "已删", "c", 0L, 2L, catId, false, null))
+        dao.update(dao.getById(deletedId)!!.copy(deletedAt = 5L))
+        assertEquals(listOf("正常"), dao.observeByCategory(catId).first().map { it.title })
+    }
+
+    @Test
+    fun observeDeletedReturnsOnlyDeletedOrderedByDeletedAtDesc() = runTest {
+        dao.insert(note(title = "正常", updatedAt = 1L))
+        val older = dao.insert(note(title = "旧删", updatedAt = 2L))
+        val newer = dao.insert(note(title = "新删", updatedAt = 3L))
+        dao.update(dao.getById(older)!!.copy(deletedAt = 10L))
+        dao.update(dao.getById(newer)!!.copy(deletedAt = 20L))
+
+        val deleted = dao.observeDeleted().first()
+        assertEquals(listOf("新删", "旧删"), deleted.map { it.title })
+    }
 }

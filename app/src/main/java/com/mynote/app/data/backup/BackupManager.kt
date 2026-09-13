@@ -32,7 +32,9 @@ class BackupManager(
         val updatedAt: Long,
         val categoryId: Long?,
         val pinned: Boolean,
-        val color: Int?
+        val color: Int?,
+        /** 软删除时间戳；默认 null 保证旧备份 JSON 缺失该字段时仍可解码。 */
+        val deletedAt: Long? = null
     )
 
     @Serializable
@@ -57,18 +59,20 @@ class BackupManager(
     fun incomingWins(localUpdatedAt: Long?, incomingUpdatedAt: Long): Boolean =
         localUpdatedAt == null || incomingUpdatedAt > localUpdatedAt
 
-    fun NoteEntity.toBackup() = BackupNote(id, title, content, createdAt, updatedAt, categoryId, pinned, color)
+    fun NoteEntity.toBackup() =
+        BackupNote(id, title, content, createdAt, updatedAt, categoryId, pinned, color, deletedAt)
 
-    fun BackupNote.toEntity() = NoteEntity(id, title, content, createdAt, updatedAt, categoryId, pinned, color)
+    fun BackupNote.toEntity() =
+        NoteEntity(id, title, content, createdAt, updatedAt, categoryId, pinned, color, deletedAt)
 
     fun CategoryEntity.toBackup() = BackupCategory(id, name, color)
 
     fun BackupCategory.toEntity() = CategoryEntity(id, name, color)
 
-    /** 导出全量备份为 zip（notes.json + img/），返回笔记数。 */
+    /** 导出全量备份为 zip（notes.json + img/），返回笔记数；回收站中的笔记不导出。 */
     suspend fun exportZip(uri: Uri): Int = withContext(Dispatchers.IO) {
         val db = requireNotNull(database) { "导出需要数据库实例" }
-        val notes = db.noteDao().getAll().map { it.toBackup() }
+        val notes = db.noteDao().getAll().filter { it.deletedAt == null }.map { it.toBackup() }
         val categories = db.categoryDao().getAll().map { it.toBackup() }
         val data = BackupData(notes, categories)
         val jsonText = encode(data)

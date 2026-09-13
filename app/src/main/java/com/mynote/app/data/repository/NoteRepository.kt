@@ -34,6 +34,9 @@ class NoteRepository(
 
     fun observeByCategory(categoryId: Long): Flow<List<NoteEntity>> = noteDao.observeByCategory(categoryId)
 
+    /** 回收站列表（已软删除的笔记）。 */
+    fun observeDeletedNotes(): Flow<List<NoteEntity>> = noteDao.observeDeleted()
+
     fun observeCategories(): Flow<List<CategoryEntity>> = categoryDao.observeAll()
 
     fun observeRevisions(noteId: Long): Flow<List<NoteRevisionEntity>> = revisionDao.observeByNote(noteId)
@@ -89,9 +92,36 @@ class NoteRepository(
         return true
     }
 
+    /** 删除笔记 = 软删除（移入回收站）：保留历史快照与图片，30 天后自动清理。 */
     suspend fun deleteNote(note: NoteEntity) {
+        noteDao.update(note.copy(deletedAt = System.currentTimeMillis()))
+    }
+
+    /** 从回收站恢复：清除软删除标记，分类/置顶/历史全部还原。 */
+    suspend fun restoreNote(note: NoteEntity) {
+        noteDao.update(note.copy(deletedAt = null))
+    }
+
+    /** 彻底删除：物理删除并级联清历史，再回收孤儿图片。 */
+    suspend fun purgeNote(note: NoteEntity) {
         noteDao.delete(note)
         collectImageGarbage()
+    }
+
+    /** 清理回收站中超过 ttlMs 的笔记；返回清理条数。 */
+    suspend fun purgeExpiredDeletedNotes(
+        now: Long = System.currentTimeMillis(),
+        ttlMs: Long = TRASH_TTL_MS
+    ): Int {
+        val expired = noteDao.getAll().filter { note ->
+            val deletedAt = note.deletedAt ?: return@filter false
+            now - deletedAt > ttlMs
+        }
+        if (expired.isNotEmpty()) {
+            expired.forEach { noteDao.delete(it) }
+            collectImageGarbage()
+        }
+        return expired.size
     }
 
     suspend fun addCategory(name: String, color: Int): Long =
@@ -124,5 +154,10 @@ class NoteRepository(
         referenced += revisionDao.getContentsWithImageMarkup()
             .flatMap { NoteContentParser.extractImageNames(it) }
         imageStore.collectGarbage(referenced)
+    }
+
+    companion object {
+        /** 回收站保留时长：30 天。 */
+        const val TRASH_TTL_MS = 30L * 24 * 60 * 60 * 1000
     }
 }
