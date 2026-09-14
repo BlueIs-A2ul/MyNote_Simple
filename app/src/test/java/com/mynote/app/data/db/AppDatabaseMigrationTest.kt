@@ -58,7 +58,10 @@ class AppDatabaseMigrationTest {
         createV1Database()
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
+            .addMigrations(
+                AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3,
+                AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5
+            )
             .allowMainThreadQueries()
             .build()
         try {
@@ -120,7 +123,10 @@ class AppDatabaseMigrationTest {
         createV2Database()
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
+            .addMigrations(
+                AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3,
+                AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5
+            )
             .allowMainThreadQueries()
             .build()
         try {
@@ -200,7 +206,7 @@ class AppDatabaseMigrationTest {
         createV3Database()
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
-            .addMigrations(AppDatabase.MIGRATION_3_4)
+            .addMigrations(AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
             .allowMainThreadQueries()
             .build()
         try {
@@ -212,6 +218,84 @@ class AppDatabaseMigrationTest {
             // 新列可正常写软删除值并读回
             db.noteDao().update(note!!.copy(deletedAt = 555L))
             assertEquals(555L, db.noteDao().getById(1)?.deletedAt)
+            assertEquals(0, db.noteDao().observeAll().first().size)
+            assertEquals(1, db.noteDao().observeDeleted().first().size)
+        } finally {
+            db.close()
+        }
+    }
+
+    /** 按 Room v4 的精确 schema 手工建库（notes 含 deletedAt 列、无索引），再走 v4→v5。 */
+    private fun createV4Database() {
+        val v4 = context.openOrCreateDatabase(dbName, Context.MODE_PRIVATE, null)
+        v4.execSQL(
+            "CREATE TABLE IF NOT EXISTS `notes` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`title` TEXT NOT NULL, `content` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, " +
+                "`updatedAt` INTEGER NOT NULL, `categoryId` INTEGER, `pinned` INTEGER NOT NULL, " +
+                "`color` INTEGER, `deletedAt` INTEGER)"
+        )
+        v4.execSQL(
+            "CREATE TABLE IF NOT EXISTS `categories` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`name` TEXT NOT NULL, `color` INTEGER NOT NULL)"
+        )
+        v4.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_categories_name` ON `categories` (`name`)")
+        v4.execSQL(
+            "CREATE TABLE IF NOT EXISTS `note_revisions` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `noteId` INTEGER NOT NULL, " +
+                "`title` TEXT NOT NULL, `content` TEXT NOT NULL, `categoryId` INTEGER, " +
+                "`pinned` INTEGER NOT NULL, `color` INTEGER, `savedAt` INTEGER NOT NULL, " +
+                "FOREIGN KEY(`noteId`) REFERENCES `notes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+        )
+        v4.execSQL("CREATE INDEX IF NOT EXISTS `index_note_revisions_noteId` ON `note_revisions` (`noteId`)")
+        v4.execSQL(
+            "CREATE TABLE IF NOT EXISTS `ai_sessions` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `noteId` INTEGER NOT NULL, " +
+                "`serviceId` TEXT NOT NULL, `title` TEXT NOT NULL, `remoteChatId` TEXT, " +
+                "`createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, " +
+                "FOREIGN KEY(`noteId`) REFERENCES `notes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+        )
+        v4.execSQL("CREATE INDEX IF NOT EXISTS `index_ai_sessions_noteId` ON `ai_sessions` (`noteId`)")
+        v4.execSQL(
+            "CREATE TABLE IF NOT EXISTS `ai_messages` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sessionId` INTEGER NOT NULL, " +
+                "`role` TEXT NOT NULL, `content` TEXT NOT NULL, `status` TEXT NOT NULL, " +
+                "`createdAt` INTEGER NOT NULL, " +
+                "FOREIGN KEY(`sessionId`) REFERENCES `ai_sessions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+        )
+        v4.execSQL("CREATE INDEX IF NOT EXISTS `index_ai_messages_sessionId` ON `ai_messages` (`sessionId`)")
+        v4.execSQL(
+            "INSERT INTO notes (title, content, createdAt, updatedAt, categoryId, pinned, color, deletedAt) " +
+                "VALUES ('老标题', '老内容', 111, 222, NULL, 0, NULL, 333)"
+        )
+        v4.version = 4
+        v4.close()
+    }
+
+    @Test
+    fun migrate4To5AddsIndexesKeepsData() = runTest {
+        createV4Database()
+
+        val db = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
+            .addMigrations(AppDatabase.MIGRATION_4_5)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val note = db.noteDao().getById(1)
+            assertEquals("老标题", note?.title)
+            assertEquals(333L, note?.deletedAt)
+
+            // 三个索引已建立（软删过滤 / 分类过滤 / 置顶+更新时间默认排序）
+            val indexNames = mutableListOf<String>()
+            db.openHelper.readableDatabase.query(
+                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='notes'"
+            ).use { cursor ->
+                while (cursor.moveToNext()) indexNames += cursor.getString(0)
+            }
+            assertTrue(indexNames.contains("index_notes_deletedAt"))
+            assertTrue(indexNames.contains("index_notes_categoryId"))
+            assertTrue(indexNames.contains("index_notes_pinned_updatedAt"))
+
+            // 软删除语义保持：已删笔记从活跃列表消失
             assertEquals(0, db.noteDao().observeAll().first().size)
             assertEquals(1, db.noteDao().observeDeleted().first().size)
         } finally {

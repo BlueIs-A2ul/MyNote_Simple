@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
@@ -29,9 +31,9 @@ class ImageStore(private val context: Context) {
     fun newImageFile(extension: String): File =
         File(imageDir, "${UUID.randomUUID()}.${extension.removePrefix(".")}")
 
-    /** 采样压缩源图并写入目标文件，返回是否成功。 */
-    fun importAndCompress(source: Uri, target: File): Boolean {
-        return try {
+    /** 采样压缩源图并写入目标文件，返回是否成功。解码/压缩/缩略图全部在 IO 线程执行。 */
+    suspend fun importAndCompress(source: Uri, target: File): Boolean = withContext(Dispatchers.IO) {
+        try {
             val resolver = context.contentResolver
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             resolver.openInputStream(source)?.use { BitmapFactory.decodeStream(it, null, bounds) }

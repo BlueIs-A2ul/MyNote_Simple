@@ -33,7 +33,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import com.mynote.app.data.db.NoteEntity
+import com.mynote.app.data.db.NoteListItem
 import com.mynote.app.ui.notes.NoteContentParser
 import com.mynote.app.util.TimeFormat
 
@@ -41,7 +41,7 @@ import com.mynote.app.util.TimeFormat
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun NoteRow(
-    note: NoteEntity,
+    item: NoteListItem,
     categoryColor: Color?,
     onClick: () -> Unit,
     now: Long = System.currentTimeMillis(),
@@ -54,9 +54,9 @@ fun NoteRow(
     // 高亮仅在查询词非空白时生效；背景色在此取主题色，保持纯函数可单测。
     val query = highlightQuery?.takeIf { it.isNotBlank() }
     val highlightBackground = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
-    val title = note.title.ifBlank { "无标题" }
-    // 解析与高亮结果按输入缓存，避免每分钟 tick/滚动重组时重复全量正则与构造
-    val plainContent = remember(note.content) { NoteContentParser.plainText(note.content) }
+    val title = item.title.ifBlank { "无标题" }
+    // 解析与高亮结果按输入缓存，避免每分钟 tick/滚动重组时重复全量正则与构造（正文此处仅为 400 字投影摘要）
+    val plainContent = remember(item.summary) { NoteContentParser.plainText(item.summary) }
     val summary = remember(plainContent, query) {
         // 搜索态：命中在深处时展示命中位置附近的窗口（带省略号），而非盲目取开头
         if (query != null) snippetForHighlight(plainContent, query) else plainContent
@@ -92,7 +92,7 @@ fun NoteRow(
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (note.pinned) {
+                if (item.pinned) {
                     Icon(
                         Icons.Default.PushPin,
                         contentDescription = "置顶",
@@ -109,7 +109,7 @@ fun NoteRow(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            if (note.content.isNotBlank()) {
+            if (item.summary.isNotBlank()) {
                 Text(
                     text = highlightedSummary,
                     style = MaterialTheme.typography.bodySmall,
@@ -123,7 +123,7 @@ fun NoteRow(
         Spacer(Modifier.width(12.dp))
         Column(horizontalAlignment = Alignment.End) {
             Text(
-                text = TimeFormat.relativeDate(note.updatedAt, now),
+                text = TimeFormat.relativeDate(item.updatedAt, now),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

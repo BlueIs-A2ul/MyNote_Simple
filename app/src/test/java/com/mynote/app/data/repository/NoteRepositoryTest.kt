@@ -288,4 +288,38 @@ class NoteRepositoryTest {
         repo.saveNote(id, "t", "c", null, true, null)
         assertEquals(2, repo.countRevisions(id))
     }
+
+    @Test
+    fun purgeNotesBatchDeletesAndReclaimsOrphans() = runTest {
+        imageStore.writeFile("keep.webp", byteArrayOf(1))
+        imageStore.writeFile("orphan.webp", byteArrayOf(1))
+        val a = repo.saveNote(null, "a", "![](img/keep.webp)", null, false, null)
+        val b = repo.saveNote(null, "b", "x", null, false, null)
+        repo.deleteNote(repo.getNote(a)!!)
+        repo.deleteNote(repo.getNote(b)!!)
+        val inTrash = repo.observeDeletedNotes().first { it.size == 2 }
+
+        repo.purgeNotes(repo.getNotesByIds(inTrash.map { it.id }))
+
+        assertNull(db.noteDao().getById(a))
+        assertNull(db.noteDao().getById(b))
+        // 物理删除会级联清掉历史快照（图片引用链随之断开），两个文件都被一次 GC 回收
+        assertFalse(imageStore.physicalFile("keep.webp").exists())
+        assertFalse(imageStore.physicalFile("orphan.webp").exists())
+    }
+
+    @Test
+    fun purgeExpiredUsesSqlCutoff() = runTest {
+        val expired = repo.saveNote(null, "expired", "c", null, false, null)
+        val fresh = repo.saveNote(null, "fresh", "c", null, false, null)
+        repo.deleteNote(repo.getNote(expired)!!)
+        repo.deleteNote(repo.getNote(fresh)!!)
+        val now = System.currentTimeMillis()
+        db.noteDao().update(db.noteDao().getById(expired)!!.copy(deletedAt = now - 31L * 24 * 3600 * 1000))
+        db.noteDao().update(db.noteDao().getById(fresh)!!.copy(deletedAt = now - 3600_000L))
+
+        assertEquals(1, repo.purgeExpiredDeletedNotes())
+        assertNull(repo.getNote(expired))
+        assertNotNull(repo.getNote(fresh))
+    }
 }

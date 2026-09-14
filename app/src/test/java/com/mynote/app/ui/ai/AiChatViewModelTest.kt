@@ -235,7 +235,8 @@ class AiChatViewModelTest {
         vm.state.first { it.snackbar != null }
 
         val notes = noteRepo.observeNotes().first()
-        val created = notes.first { it.content == "第一行\n第二行" }
+        // 列表投影后元素为 NoteListItem，正文以 summary 呈现（正文很短，summary == content）
+        val created = notes.first { it.summary == "第一行\n第二行" }
         assertEquals("第一行", created.title)
     }
 

@@ -10,7 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         NoteEntity::class, CategoryEntity::class, NoteRevisionEntity::class,
         AiSessionEntity::class, AiMessageEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -70,6 +70,14 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // 回收站：软删除时间戳（NULL = 未删除）
                 db.execSQL("ALTER TABLE notes ADD COLUMN deletedAt INTEGER")
+            }
+        }
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 列表/回收站/搜索性能：补三组索引（与 NoteEntity 声明一致）
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_notes_deletedAt` ON `notes` (`deletedAt`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_notes_categoryId` ON `notes` (`categoryId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_notes_pinned_updatedAt` ON `notes` (`pinned`, `updatedAt`)")
             }
         }
     }

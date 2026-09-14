@@ -483,16 +483,23 @@ fun NoteEditScreen(
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onBackground
                             )
-                            is ContentBlock.Image -> AsyncImage(
-                                model = imageStore.physicalFile(block.name),
-                                contentDescription = "图片",
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(MaterialTheme.shapes.large)
-                                    // 点开全屏预览（NoteImagePreviewDialog 接线）
-                                    .clickable { previewFile = imageStore.physicalFile(block.name) },
-                                contentScale = ContentScale.FillWidth
-                            )
+                            is ContentBlock.Image -> {
+                                // 预览优先缩略图（省内存，约 1/20 体积），缺失回退原图；点开仍看原图
+                                val file = remember(block.name) {
+                                    imageStore.thumbFile(block.name).takeIf { it.exists() }
+                                        ?: imageStore.physicalFile(block.name)
+                                }
+                                AsyncImage(
+                                    model = file,
+                                    contentDescription = "图片",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(MaterialTheme.shapes.large)
+                                        // 点开全屏预览（NoteImagePreviewDialog 接线，用原图）
+                                        .clickable { previewFile = imageStore.physicalFile(block.name) },
+                                    contentScale = ContentScale.FillWidth
+                                )
+                            }
                         }
                     }
                 }

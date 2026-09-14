@@ -6,6 +6,7 @@ import com.mynote.app.data.db.CategoryDao
 import com.mynote.app.data.db.CategoryEntity
 import com.mynote.app.data.db.NoteDao
 import com.mynote.app.data.db.NoteEntity
+import com.mynote.app.data.db.NoteListItem
 import com.mynote.app.data.db.NoteSortMode
 import com.mynote.app.data.db.NoteRevisionDao
 import com.mynote.app.data.db.NoteRevisionEntity
@@ -23,30 +24,30 @@ class NoteRepository(
     private val database: AppDatabase
 ) {
 
-    fun observeNotes(): Flow<List<NoteEntity>> = noteDao.observeAll()
+    fun observeNotes(): Flow<List<NoteListItem>> = noteDao.observeAll()
 
-    fun observeNotes(sort: NoteSortMode): Flow<List<NoteEntity>> = noteDao.observeAllBySort(sort)
+    fun observeNotes(sort: NoteSortMode): Flow<List<NoteListItem>> = noteDao.observeAllBySort(sort)
 
     fun observeNote(id: Long): Flow<NoteEntity?> = noteDao.observeById(id)
 
-    fun search(query: String): Flow<List<NoteEntity>> =
+    fun search(query: String): Flow<List<NoteListItem>> =
         if (query.isBlank()) noteDao.observeAll() else noteDao.search(query.trim())
 
-    fun search(query: String, sort: NoteSortMode): Flow<List<NoteEntity>> =
+    fun search(query: String, sort: NoteSortMode): Flow<List<NoteListItem>> =
         if (query.isBlank()) noteDao.observeAllBySort(sort) else noteDao.search(query.trim(), sort)
 
-    fun observeByCategory(categoryId: Long): Flow<List<NoteEntity>> = noteDao.observeByCategory(categoryId)
+    fun observeByCategory(categoryId: Long): Flow<List<NoteListItem>> = noteDao.observeByCategory(categoryId)
 
-    fun observeByCategory(categoryId: Long, sort: NoteSortMode): Flow<List<NoteEntity>> =
+    fun observeByCategory(categoryId: Long, sort: NoteSortMode): Flow<List<NoteListItem>> =
         noteDao.observeByCategory(categoryId, sort)
 
     /** 未分类笔记（categoryId 为空）。 */
-    fun observeUncategorized(): Flow<List<NoteEntity>> = noteDao.observeUncategorized()
+    fun observeUncategorized(): Flow<List<NoteListItem>> = noteDao.observeUncategorized()
 
-    fun observeUncategorized(sort: NoteSortMode): Flow<List<NoteEntity>> = noteDao.observeUncategorized(sort)
+    fun observeUncategorized(sort: NoteSortMode): Flow<List<NoteListItem>> = noteDao.observeUncategorized(sort)
 
     /** 回收站列表（已软删除的笔记）。 */
-    fun observeDeletedNotes(): Flow<List<NoteEntity>> = noteDao.observeDeleted()
+    fun observeDeletedNotes(): Flow<List<NoteListItem>> = noteDao.observeDeleted()
 
     fun observeCategories(): Flow<List<CategoryEntity>> = categoryDao.observeAll()
 
@@ -144,19 +145,23 @@ class NoteRepository(
         collectImageGarbage()
     }
 
-    /** 清理回收站中超过 ttlMs 的笔记；返回清理条数。 */
+    /** 批量彻底删除（清空回收站）：单事务物理删除 + 只做一次图片 GC。 */
+    suspend fun purgeNotes(notes: List<NoteEntity>) {
+        if (notes.isEmpty()) return
+        database.withTransaction { notes.forEach { noteDao.delete(it) } }
+        collectImageGarbage()
+    }
+
+    /** 清理回收站中超过 ttlMs 的笔记；返回清理条数。SQL 过滤 + 事务批量删，避免全表读正文。 */
     suspend fun purgeExpiredDeletedNotes(
         now: Long = System.currentTimeMillis(),
         ttlMs: Long = TRASH_TTL_MS
     ): Int {
-        val expired = noteDao.getAll().filter { note ->
-            val deletedAt = note.deletedAt ?: return@filter false
-            now - deletedAt > ttlMs
+        val cutoff = now - ttlMs
+        val expired = database.withTransaction {
+            noteDao.getDeletedBefore(cutoff).also { list -> list.forEach { noteDao.delete(it) } }
         }
-        if (expired.isNotEmpty()) {
-            expired.forEach { noteDao.delete(it) }
-            collectImageGarbage()
-        }
+        if (expired.isNotEmpty()) collectImageGarbage()
         return expired.size
     }
 

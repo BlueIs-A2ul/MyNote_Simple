@@ -10,76 +10,85 @@ import kotlinx.coroutines.flow.Flow
 /** 笔记列表排序方式。 */
 enum class NoteSortMode { UPDATED_DESC, CREATED_DESC, TITLE_ASC }
 
+/**
+ * 列表类查询（全部/搜索/分类/未分类/回收站）一律走 [NoteListItem] 投影：
+ * 只取展示字段 + `substr(content, 1, 400) AS summary`，避免 Flow 每次写表整表重发全量正文。
+ * 单条查询（observeById/getById/getByIds/getAll）仍返回 [NoteEntity] 全字段。
+ */
 @Dao
 interface NoteDao {
 
-    @Query("SELECT * FROM notes WHERE deletedAt IS NULL ORDER BY pinned DESC, updatedAt DESC")
-    fun observeAll(): Flow<List<NoteEntity>>
+    @Query("SELECT id, title, categoryId, pinned, createdAt, updatedAt, deletedAt, substr(content, 1, 400) AS summary FROM notes WHERE deletedAt IS NULL ORDER BY pinned DESC, updatedAt DESC")
+    fun observeAll(): Flow<List<NoteListItem>>
 
     /** 按指定排序方式观察全部笔记。 */
-    fun observeAllBySort(mode: NoteSortMode): Flow<List<NoteEntity>> = when (mode) {
+    fun observeAllBySort(mode: NoteSortMode): Flow<List<NoteListItem>> = when (mode) {
         NoteSortMode.UPDATED_DESC -> observeAll()
         NoteSortMode.CREATED_DESC -> observeAllByCreated()
         NoteSortMode.TITLE_ASC -> observeAllByTitle()
     }
 
-    @Query("SELECT * FROM notes WHERE deletedAt IS NULL ORDER BY pinned DESC, createdAt DESC")
-    fun observeAllByCreated(): Flow<List<NoteEntity>>
+    @Query("SELECT id, title, categoryId, pinned, createdAt, updatedAt, deletedAt, substr(content, 1, 400) AS summary FROM notes WHERE deletedAt IS NULL ORDER BY pinned DESC, createdAt DESC")
+    fun observeAllByCreated(): Flow<List<NoteListItem>>
 
-    @Query("SELECT * FROM notes WHERE deletedAt IS NULL ORDER BY pinned DESC, title COLLATE NOCASE ASC")
-    fun observeAllByTitle(): Flow<List<NoteEntity>>
+    @Query("SELECT id, title, categoryId, pinned, createdAt, updatedAt, deletedAt, substr(content, 1, 400) AS summary FROM notes WHERE deletedAt IS NULL ORDER BY pinned DESC, title COLLATE NOCASE ASC")
+    fun observeAllByTitle(): Flow<List<NoteListItem>>
 
     /** 回收站列表：已软删除的笔记，按删除时间倒序。 */
-    @Query("SELECT * FROM notes WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC")
-    fun observeDeleted(): Flow<List<NoteEntity>>
+    @Query("SELECT id, title, categoryId, pinned, createdAt, updatedAt, deletedAt, substr(content, 1, 400) AS summary FROM notes WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC")
+    fun observeDeleted(): Flow<List<NoteListItem>>
+
+    /** 回收站中删除时间早于截止时刻的笔记（到期清理用，SQL 过滤避免全表读正文）。 */
+    @Query("SELECT * FROM notes WHERE deletedAt IS NOT NULL AND deletedAt < :cutoff")
+    suspend fun getDeletedBefore(cutoff: Long): List<NoteEntity>
 
     @Query("SELECT * FROM notes WHERE id = :id")
     fun observeById(id: Long): Flow<NoteEntity?>
 
-    @Query("SELECT * FROM notes WHERE deletedAt IS NULL AND (title LIKE '%' || :query || '%' OR content LIKE '%' || :query || '%') ORDER BY pinned DESC, updatedAt DESC")
-    fun search(query: String): Flow<List<NoteEntity>>
+    @Query("SELECT id, title, categoryId, pinned, createdAt, updatedAt, deletedAt, substr(content, 1, 400) AS summary FROM notes WHERE deletedAt IS NULL AND (title LIKE '%' || :query || '%' OR content LIKE '%' || :query || '%') ORDER BY pinned DESC, updatedAt DESC")
+    fun search(query: String): Flow<List<NoteListItem>>
 
-    @Query("SELECT * FROM notes WHERE deletedAt IS NULL AND (title LIKE '%' || :query || '%' OR content LIKE '%' || :query || '%') ORDER BY pinned DESC, createdAt DESC")
-    fun searchByCreated(query: String): Flow<List<NoteEntity>>
+    @Query("SELECT id, title, categoryId, pinned, createdAt, updatedAt, deletedAt, substr(content, 1, 400) AS summary FROM notes WHERE deletedAt IS NULL AND (title LIKE '%' || :query || '%' OR content LIKE '%' || :query || '%') ORDER BY pinned DESC, createdAt DESC")
+    fun searchByCreated(query: String): Flow<List<NoteListItem>>
 
-    @Query("SELECT * FROM notes WHERE deletedAt IS NULL AND (title LIKE '%' || :query || '%' OR content LIKE '%' || :query || '%') ORDER BY pinned DESC, title COLLATE NOCASE ASC")
-    fun searchByTitle(query: String): Flow<List<NoteEntity>>
+    @Query("SELECT id, title, categoryId, pinned, createdAt, updatedAt, deletedAt, substr(content, 1, 400) AS summary FROM notes WHERE deletedAt IS NULL AND (title LIKE '%' || :query || '%' OR content LIKE '%' || :query || '%') ORDER BY pinned DESC, title COLLATE NOCASE ASC")
+    fun searchByTitle(query: String): Flow<List<NoteListItem>>
 
     /** 按排序方式搜索。 */
-    fun search(query: String, mode: NoteSortMode): Flow<List<NoteEntity>> = when (mode) {
+    fun search(query: String, mode: NoteSortMode): Flow<List<NoteListItem>> = when (mode) {
         NoteSortMode.UPDATED_DESC -> search(query)
         NoteSortMode.CREATED_DESC -> searchByCreated(query)
         NoteSortMode.TITLE_ASC -> searchByTitle(query)
     }
 
-    @Query("SELECT * FROM notes WHERE deletedAt IS NULL AND categoryId = :categoryId ORDER BY pinned DESC, updatedAt DESC")
-    fun observeByCategory(categoryId: Long): Flow<List<NoteEntity>>
+    @Query("SELECT id, title, categoryId, pinned, createdAt, updatedAt, deletedAt, substr(content, 1, 400) AS summary FROM notes WHERE deletedAt IS NULL AND categoryId = :categoryId ORDER BY pinned DESC, updatedAt DESC")
+    fun observeByCategory(categoryId: Long): Flow<List<NoteListItem>>
 
-    @Query("SELECT * FROM notes WHERE deletedAt IS NULL AND categoryId = :categoryId ORDER BY pinned DESC, createdAt DESC")
-    fun observeByCategoryByCreated(categoryId: Long): Flow<List<NoteEntity>>
+    @Query("SELECT id, title, categoryId, pinned, createdAt, updatedAt, deletedAt, substr(content, 1, 400) AS summary FROM notes WHERE deletedAt IS NULL AND categoryId = :categoryId ORDER BY pinned DESC, createdAt DESC")
+    fun observeByCategoryByCreated(categoryId: Long): Flow<List<NoteListItem>>
 
-    @Query("SELECT * FROM notes WHERE deletedAt IS NULL AND categoryId = :categoryId ORDER BY pinned DESC, title COLLATE NOCASE ASC")
-    fun observeByCategoryByTitle(categoryId: Long): Flow<List<NoteEntity>>
+    @Query("SELECT id, title, categoryId, pinned, createdAt, updatedAt, deletedAt, substr(content, 1, 400) AS summary FROM notes WHERE deletedAt IS NULL AND categoryId = :categoryId ORDER BY pinned DESC, title COLLATE NOCASE ASC")
+    fun observeByCategoryByTitle(categoryId: Long): Flow<List<NoteListItem>>
 
     /** 按排序方式观察某分类笔记。 */
-    fun observeByCategory(categoryId: Long, mode: NoteSortMode): Flow<List<NoteEntity>> = when (mode) {
+    fun observeByCategory(categoryId: Long, mode: NoteSortMode): Flow<List<NoteListItem>> = when (mode) {
         NoteSortMode.UPDATED_DESC -> observeByCategory(categoryId)
         NoteSortMode.CREATED_DESC -> observeByCategoryByCreated(categoryId)
         NoteSortMode.TITLE_ASC -> observeByCategoryByTitle(categoryId)
     }
 
     /** 未分类笔记（categoryId 为空，未删除）：排序与 observeByCategory 保持一致。 */
-    @Query("SELECT * FROM notes WHERE deletedAt IS NULL AND categoryId IS NULL ORDER BY pinned DESC, updatedAt DESC")
-    fun observeUncategorized(): Flow<List<NoteEntity>>
+    @Query("SELECT id, title, categoryId, pinned, createdAt, updatedAt, deletedAt, substr(content, 1, 400) AS summary FROM notes WHERE deletedAt IS NULL AND categoryId IS NULL ORDER BY pinned DESC, updatedAt DESC")
+    fun observeUncategorized(): Flow<List<NoteListItem>>
 
-    @Query("SELECT * FROM notes WHERE deletedAt IS NULL AND categoryId IS NULL ORDER BY pinned DESC, createdAt DESC")
-    fun observeUncategorizedByCreated(): Flow<List<NoteEntity>>
+    @Query("SELECT id, title, categoryId, pinned, createdAt, updatedAt, deletedAt, substr(content, 1, 400) AS summary FROM notes WHERE deletedAt IS NULL AND categoryId IS NULL ORDER BY pinned DESC, createdAt DESC")
+    fun observeUncategorizedByCreated(): Flow<List<NoteListItem>>
 
-    @Query("SELECT * FROM notes WHERE deletedAt IS NULL AND categoryId IS NULL ORDER BY pinned DESC, title COLLATE NOCASE ASC")
-    fun observeUncategorizedByTitle(): Flow<List<NoteEntity>>
+    @Query("SELECT id, title, categoryId, pinned, createdAt, updatedAt, deletedAt, substr(content, 1, 400) AS summary FROM notes WHERE deletedAt IS NULL AND categoryId IS NULL ORDER BY pinned DESC, title COLLATE NOCASE ASC")
+    fun observeUncategorizedByTitle(): Flow<List<NoteListItem>>
 
     /** 按排序方式观察未分类笔记。 */
-    fun observeUncategorized(mode: NoteSortMode): Flow<List<NoteEntity>> = when (mode) {
+    fun observeUncategorized(mode: NoteSortMode): Flow<List<NoteListItem>> = when (mode) {
         NoteSortMode.UPDATED_DESC -> observeUncategorized()
         NoteSortMode.CREATED_DESC -> observeUncategorizedByCreated()
         NoteSortMode.TITLE_ASC -> observeUncategorizedByTitle()

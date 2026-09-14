@@ -2,6 +2,7 @@ package com.mynote.app.data.image
 
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -40,7 +41,7 @@ class ImageStoreTest {
     }
 
     @Test
-    fun failedImportDeletesHalfWrittenTarget() {
+    fun failedImportDeletesHalfWrittenTarget() = runTest {
         val dir = store.dir()
         dir.mkdirs()
         // 源文件不存在：读取阶段即失败（确定性失败路径）

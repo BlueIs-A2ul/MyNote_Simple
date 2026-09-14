@@ -369,32 +369,32 @@ fun NotesScreen(
                     // 分类 id → 实体映射缓存，避免每行 O(n) 线性查找（行数多时重复执行）
                     val categoriesById = remember(categories) { categories.associateBy { it.id } }
                     LazyColumn(Modifier.fillMaxSize()) {
-                        itemsIndexed(displayNotes, key = { _, note -> note.id }) { index, note ->
+                        itemsIndexed(displayNotes, key = { _, item -> item.id }) { index, item ->
                             val prevPinned = if (index > 0) displayNotes[index - 1].pinned else false
-                            if (note.pinned && !prevPinned) {
+                            if (item.pinned && !prevPinned) {
                                 NotesSectionHeader("置顶")
-                            } else if (!note.pinned && prevPinned) {
+                            } else if (!item.pinned && prevPinned) {
                                 NotesSectionHeader("其他")
                             }
                             NoteRow(
-                                note = note,
-                                categoryColor = categoriesById[note.categoryId]
+                                item = item,
+                                categoryColor = categoriesById[item.categoryId]
                                     ?.let { PaperPalette.nearest(it.color) },
                                 onClick = {
-                                    if (selectionMode) viewModel.toggleSelect(note.id) else onOpenNote(note.id)
+                                    if (selectionMode) viewModel.toggleSelect(item.id) else onOpenNote(item.id)
                                 },
-                                onLongClick = { viewModel.enterSelection(note.id) },
+                                onLongClick = { viewModel.enterSelection(item.id) },
                                 now = now,
                                 // 全部 tab 或搜索态显示分类名：搜索是全库检索，行内分类归属非常规信息
                                 categoryName = if (selectedFilter is CategoryFilter.All || query.isNotBlank()) {
-                                    categoriesById[note.categoryId]?.name
+                                    categoriesById[item.categoryId]?.name
                                 } else {
                                     null
                                 },
                                 // 搜索态给标题/摘要加关键词高亮
                                 highlightQuery = query.takeIf { it.isNotBlank() },
                                 // 多选高亮
-                                selected = note.id in selectedIds,
+                                selected = item.id in selectedIds,
                                 modifier = Modifier.animateItem()
                             )
                             if (index < displayNotes.lastIndex) HairlineDivider()

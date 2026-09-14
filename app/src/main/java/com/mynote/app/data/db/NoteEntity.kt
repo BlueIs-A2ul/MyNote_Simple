@@ -1,9 +1,23 @@
 package com.mynote.app.data.db
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "notes")
+/**
+ * 索引说明（Room v5）：
+ * - `deletedAt`：回收站列表/到期清理（软删除过滤）
+ * - `categoryId`：分类 tab 过滤
+ * - `pinned, updatedAt`：全部列表默认排序「置顶优先 + 更新时间倒序」
+ */
+@Entity(
+    tableName = "notes",
+    indices = [
+        Index("deletedAt"),
+        Index("categoryId"),
+        Index(value = ["pinned", "updatedAt"])
+    ]
+)
 data class NoteEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val title: String,

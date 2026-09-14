@@ -18,8 +18,10 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -118,5 +120,22 @@ class TrashViewModelTest {
         val store = TrashRetentionStore(ApplicationProvider.getApplicationContext())
         assertEquals(store.retentionDays.value, vm.retentionDays.value)
         assertEquals(30, vm.retentionDays.value)
+    }
+
+    @Test
+    fun purgeAllResetsPurgingState() = runTest(dispatcher) {
+        val a = repo.saveNote(null, "a", "c", null, false, null)
+        val b = repo.saveNote(null, "b", "c", null, false, null)
+        repo.deleteNote(repo.getNote(a)!!)
+        repo.deleteNote(repo.getNote(b)!!)
+        vm.notes.first { it.size == 2 }
+        assertFalse(vm.purging.value)
+
+        val done = CompletableDeferred<Int>()
+        vm.purgeAll { done.complete(it) }
+        assertEquals(2, done.await())
+        // 清空完成后在途标志复位（界面按钮恢复可用）
+        assertFalse(vm.purging.value)
+        assertEquals(0, db.noteDao().getAll().size)
     }
 }
