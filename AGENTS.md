@@ -36,7 +36,7 @@ MyNote 安卓备忘录（原生 Android，单模块 `:app`）。本文件只记�
 ## 数据与代码惯例
 
 - 笔记正文为纯文本，图片以 `![](img/<name>)` 标记内嵌：解析/生成必须走 `ui/notes/NoteContentParser.kt`，不要手写正则。图片文件在 `filesDir/notes_images/`、不存库；删除笔记时由 `ImageStore.collectGarbage` 回收孤儿文件。
-- Room `version = 3`、`exportSchema = false`；已有手写 `MIGRATION_1_2`（历史表）与 `MIGRATION_2_3`（AI 会话/消息表）。修改 Entity 需升版本并自行补迁移与迁移测试（v1 库手工建库模式见 `AppDatabaseMigrationTest`）。
+- Room `version = 4`、`exportSchema = false`；已有手写 `MIGRATION_1_2`（历史表）、`MIGRATION_2_3`（AI 会话/消息表）与 `MIGRATION_3_4`（软删除 `deletedAt` 列）。修改 Entity 需升版本并自行补迁移与迁移测试（v1 库手工建库模式见 `AppDatabaseMigrationTest`）。
 - 笔记历史：每次保存写一条 `note_revisions` 快照（无变化不写；每篇上限 50 条，超出自动裁最旧，`NoteRevisionDao.MAX_PER_NOTE/WARN_AT`）；保存事务在 `NoteRepository.saveNote`，图片 GC 的引用集 = 当前正文 ∪ 含图片标记的历史快照（`getContentsWithImageMarkup`），勿只统计正文。
 - 图片导出：`data/export/`（自绘渲染 + 流式缓存导出）+ `ui/export/`（全屏预览 Dialog）。产物为纯白 PNG、无任何品牌元素；渲染用 `NoteImageRenderer.renderPages` 逐页回调，调用方写盘后立即 `recycle()`，峰值内存 ≈ 一页——不要改回"先收集全部页位图"的写法。FileProvider authority 为 `com.mynote.app.fileprovider`，`res/xml/file_paths.xml` 只暴露 `cacheDir/exports`。
 - 导出图片固定纯白，不跟随深色模式/主题色；界面主题在 `ui/theme/`（8 档色板 + 动态取色），设置持久化在 `data/settings/ThemeSettingsStore`。
