@@ -268,8 +268,8 @@ fun NoteEditScreen(
     LaunchedEffect(aiResultType, aiResultText) {
         val type = aiResultType ?: return@LaunchedEffect
         val text = aiResultText ?: return@LaunchedEffect
-        // 记录应用 AI 结果前的状态，使「贴入 AI 结果」也可撤销
-        undoController.record(content)
+        // 记录应用 AI 结果前的状态，使「贴入 AI 结果」也可撤销；结构性变更强制新开一格
+        undoController.record(content, force = true)
         content = AiResultApplier.apply(
             content,
             if (type == "replace") AiResultApplier.Type.REPLACE else AiResultApplier.Type.INSERT,
@@ -283,8 +283,8 @@ fun NoteEditScreen(
     ) { uri ->
         uri?.let {
             vm.insertImage(it) { markup ->
-                // 记录插图前的状态，插图可撤销
-                undoController.record(content)
+                // 记录插图前的状态，插图可撤销；结构性变更强制新开一格
+                undoController.record(content, force = true)
                 content = AiResultApplier.apply(content, AiResultApplier.Type.INSERT, markup)
                 // 选图返回后正文焦点已丢：恢复焦点，光标落在插入点之后
                 contentFocusRequester.requestFocus()

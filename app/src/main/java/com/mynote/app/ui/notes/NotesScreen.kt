@@ -5,11 +5,13 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,6 +25,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -234,7 +237,7 @@ fun NotesScreen(
                                 enabled = sortEnabled
                             )
                             DropdownMenuItem(
-                                text = { Text(if (sortMode == NoteSortMode.CREATED_DESC) "✓ 排序：最早创建" else "排序：最早创建") },
+                                text = { Text(if (sortMode == NoteSortMode.CREATED_DESC) "✓ 排序：最新创建" else "排序：最新创建") },
                                 onClick = { menuOpen = false; viewModel.onSortSelect(NoteSortMode.CREATED_DESC) },
                                 enabled = sortEnabled
                             )
@@ -337,45 +340,61 @@ fun NotesScreen(
                 )
             }
 
-            if (notes.isEmpty()) {
-                val searching = query.isNotBlank()
-                val emptyText = when {
-                    searching -> "没有匹配的笔记"
-                    selectedFilter is CategoryFilter.Uncategorized -> "没有未分类的笔记"
-                    selectedFilter is CategoryFilter.Single -> "这个分类还没有笔记"
-                    else -> "还没有笔记"
-                }
-                EmptyState(
-                    icon = Icons.Outlined.Description,
-                    text = emptyText,
-                    actionLabel = if (searching) null else "写第一条",
-                    onAction = if (searching) null else ({ onNewNote(viewModel.newNoteCategoryId) })
-                )
-            } else {
-                LazyColumn(Modifier.fillMaxSize()) {
-                    itemsIndexed(notes, key = { _, note -> note.id }) { index, note ->
-                        NoteRow(
-                            note = note,
-                            categoryColor = categories.firstOrNull { it.id == note.categoryId }
-                                ?.let { PaperPalette.nearest(it.color) },
-                            onClick = {
-                                if (selectionMode) viewModel.toggleSelect(note.id) else onOpenNote(note.id)
-                            },
-                            onLongClick = { viewModel.enterSelection(note.id) },
-                            now = now,
-                            // 仅在「全部」tab 且非搜索态显示分类名，避免与顶部 tab 重复
-                            categoryName = if (selectedFilter is CategoryFilter.All && query.isBlank()) {
-                                categories.firstOrNull { it.id == note.categoryId }?.name
-                            } else {
-                                null
-                            },
-                            // 搜索态给标题/摘要加关键词高亮
-                            highlightQuery = query.takeIf { it.isNotBlank() },
-                            // 多选高亮
-                            selected = note.id in selectedIds,
-                            modifier = Modifier.animateItem()
+            if (notes == null) {
+                // 冷启动首帧：Room 结果未到，先显示轻量加载占位，避免「还没有笔记」闪屏乃至误点新建
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(Modifier.size(32.dp), strokeWidth = 3.dp)
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "加载中…",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        if (index < notes.lastIndex) HairlineDivider()
+                    }
+                }
+            } else {
+                val displayNotes = notes ?: emptyList()
+                if (displayNotes.isEmpty()) {
+                    val searching = query.isNotBlank()
+                    val emptyText = when {
+                        searching -> "没有匹配的笔记"
+                        selectedFilter is CategoryFilter.Uncategorized -> "没有未分类的笔记"
+                        selectedFilter is CategoryFilter.Single -> "这个分类还没有笔记"
+                        else -> "还没有笔记"
+                    }
+                    EmptyState(
+                        icon = Icons.Outlined.Description,
+                        text = emptyText,
+                        actionLabel = if (searching) null else "写第一条",
+                        onAction = if (searching) null else ({ onNewNote(viewModel.newNoteCategoryId) })
+                    )
+                } else {
+                    LazyColumn(Modifier.fillMaxSize()) {
+                        itemsIndexed(displayNotes, key = { _, note -> note.id }) { index, note ->
+                            NoteRow(
+                                note = note,
+                                categoryColor = categories.firstOrNull { it.id == note.categoryId }
+                                    ?.let { PaperPalette.nearest(it.color) },
+                                onClick = {
+                                    if (selectionMode) viewModel.toggleSelect(note.id) else onOpenNote(note.id)
+                                },
+                                onLongClick = { viewModel.enterSelection(note.id) },
+                                now = now,
+                                // 仅在「全部」tab 且非搜索态显示分类名，避免与顶部 tab 重复
+                                categoryName = if (selectedFilter is CategoryFilter.All && query.isBlank()) {
+                                    categories.firstOrNull { it.id == note.categoryId }?.name
+                                } else {
+                                    null
+                                },
+                                // 搜索态给标题/摘要加关键词高亮
+                                highlightQuery = query.takeIf { it.isNotBlank() },
+                                // 多选高亮
+                                selected = note.id in selectedIds,
+                                modifier = Modifier.animateItem()
+                            )
+                            if (index < displayNotes.lastIndex) HairlineDivider()
+                        }
                     }
                 }
             }

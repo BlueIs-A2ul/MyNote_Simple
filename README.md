@@ -24,7 +24,7 @@ Kotlin · Jetpack Compose + Material 3 · MVVM + 单向数据流（UDF） · Roo
 | minSdk / targetSdk | 24 / 34 |
 | JDK | 17 |
 | Gradle | 8.7（Wrapper） |
-| 版本 | 1.4.1；`versionName = major.minor.patch`、`versionCode = major*10000+minor*100+patch`，设置页可见 |
+| 版本 | 1.4.2；`versionName = major.minor.patch`、`versionCode = major*10000+minor*100+patch`，设置页可见 |
 | release 产物 | R8 混淆 + 资源压缩，约 1.7MB，`MyNote-<版本>-release.apk`（按 keystore.properties 签名） |
 
 ## 构建
@@ -37,14 +37,14 @@ Kotlin · Jetpack Compose + Material 3 · MVVM + 单向数据流（UDF） · Roo
 
 ```bat
 .\gradlew :app:assembleDebug          rem debug APK
-.\gradlew :app:testDebugUnitTest      rem 283 个单元测试
+.\gradlew :app:testDebugUnitTest      rem 295 个单元测试
 .\gradlew :app:assembleRelease        rem release（R8 + 资源压缩 + 签名）
 ```
 
 产物：
 
 - debug：`app/build/outputs/apk/debug/app-debug.apk`
-- release：`app/build/outputs/apk/release/MyNote-1.4.1-release.apk`（文件名随 versionName 变化）
+- release：`app/build/outputs/apk/release/MyNote-1.4.2-release.apk`（文件名随 versionName 变化）
 
 ## 项目结构
 

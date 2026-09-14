@@ -34,7 +34,8 @@ class NotesViewModel(
         repository.observeCategories()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val notes: StateFlow<List<NoteEntity>> =
+    /** 笔记列表；null 表示首帧加载中（Room 首个真实结果到达前），避免冷启动闪「还没有笔记」空态。 */
+    val notes: StateFlow<List<NoteEntity>?> =
         combine(query, selectedFilter, sortMode) { q, filter, _ -> q to filter }
             .flatMapLatest { (q, filter) ->
                 when {
@@ -44,7 +45,7 @@ class NotesViewModel(
                     else -> repository.observeNotes(sortMode.value)
                 }
             }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** 新建笔记的预选分类：仅「某个分类」筛选下有值，其余为 null（未分类）。 */
     val newNoteCategoryId: Long?
@@ -79,7 +80,7 @@ class NotesViewModel(
 
     /** 全选当前列表可见笔记。 */
     fun selectAll() {
-        selectedIds.value = notes.value.map { it.id }.toSet()
+        selectedIds.value = notes.value.orEmpty().map { it.id }.toSet()
     }
 
     fun exitSelection() {

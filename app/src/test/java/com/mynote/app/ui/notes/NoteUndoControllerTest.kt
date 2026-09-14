@@ -94,8 +94,9 @@ class NoteUndoControllerTest {
     @Test
     fun resetClearsBothStacks() {
         val controller = NoteUndoController()
-        controller.record(value("a"))
-        controller.record(value("ab"))
+        // 显式拉开记录时刻，避免命中 600ms 合并窗口（"a"→"ab" 是相邻插入会被合并）
+        controller.record(value("a"), atMillis = 0L)
+        controller.record(value("ab"), atMillis = 700L)
         controller.undo(value("abc"))
         assertTrue(controller.canUndo)
         assertTrue(controller.canRedo)
@@ -115,5 +116,95 @@ class NoteUndoControllerTest {
         // undo 用当前值压栈：undo("b") 之后 redo 应返回 "b"
         assertEquals(value("a"), controller.undo(value("b")))
         assertEquals(value("b"), controller.redo(value("a")))
+    }
+
+    // ---------- 连续输入合并/防抖（backlog 条目 22） ----------
+
+    private fun valueWithSelection(text: String, cursor: Int): TextFieldValue =
+        TextFieldValue(text, TextRange(cursor))
+
+    /** 构造带「记录时刻」的快捷调用，方便测试合并窗口。 */
+    private fun recordAt(controller: NoteUndoController, text: String, atMillis: Long, force: Boolean = false) {
+        controller.record(value(text), atMillis = atMillis, force = force)
+    }
+
+    @Test
+    fun typingChainMergesIntoSingleUndoStep() {
+        val controller = NoteUndoController()
+        recordAt(controller, "", 0L)
+        recordAt(controller, "a", 100L)
+        recordAt(controller, "ab", 200L)
+        recordAt(controller, "abc", 300L)
+
+        // 整段连打只占一格：一次撤销回退整段，再撤销无可用快照
+        assertEquals(value("abc"), controller.undo(value("abcd")))
+        assertNull(controller.undo(value("abc")))
+    }
+
+    @Test
+    fun deletionChainMerges() {
+        val controller = NoteUndoController()
+        recordAt(controller, "abc", 0L)
+        recordAt(controller, "ab", 100L)
+
+        assertEquals(value("ab"), controller.undo(value("a")))
+        assertNull(controller.undo(value("ab")))
+    }
+
+    @Test
+    fun windowElapsedBreaksMerge() {
+        val controller = NoteUndoController()
+        recordAt(controller, "a", 0L)
+        recordAt(controller, "ab", 700L) // 超过 600ms 窗口
+
+        // 两个独立快照：连撤两次各回退一格
+        assertEquals(value("ab"), controller.undo(value("abc")))
+        assertEquals(value("a"), controller.undo(value("ab")))
+        assertNull(controller.undo(value("a")))
+    }
+
+    @Test
+    fun forceBreaksMerge() {
+        val controller = NoteUndoController()
+        recordAt(controller, "a", 0L)
+        recordAt(controller, "ab", 100L, force = true) // 结构性变更强制新格：与「a」断开
+        recordAt(controller, "abc", 200L) // 其后普通输入照常合并进「ab」格
+
+        // 撤销依次回退「abc」与「a」两格（force 在「ab」处断开），而非三格
+        assertEquals(value("abc"), controller.undo(value("abcd")))
+        assertEquals(value("a"), controller.undo(value("abc")))
+        assertNull(controller.undo(value("a")))
+    }
+
+    @Test
+    fun middleInsertionMerges() {
+        val controller = NoteUndoController()
+        recordAt(controller, "ac", 0L)
+        recordAt(controller, "abc", 100L) // 中间插入一个字符
+
+        assertEquals(value("abc"), controller.undo(value("abcd")))
+        assertNull(controller.undo(value("abc")))
+    }
+
+    @Test
+    fun selectionOnlyChangeCollapses() {
+        val controller = NoteUndoController()
+        controller.record(valueWithSelection("a", 0), atMillis = 0L)
+        controller.record(valueWithSelection("a", 1), atMillis = 50L)
+
+        // 同文本仅选区变化：合并为一条
+        assertEquals(value("a"), controller.undo(valueWithSelection("a", 1)))
+        assertNull(controller.undo(value("a")))
+    }
+
+    @Test
+    fun replacementDoesNotMerge() {
+        val controller = NoteUndoController()
+        recordAt(controller, "ab", 0L)
+        recordAt(controller, "ax", 100L) // 替换不是单字符增删
+
+        assertEquals(value("ax"), controller.undo(value("axx")))
+        assertEquals(value("ab"), controller.undo(value("ax")))
+        assertNull(controller.undo(value("ab")))
     }
 }

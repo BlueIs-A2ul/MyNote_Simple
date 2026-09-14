@@ -74,7 +74,7 @@ class NotesViewModelTest {
     fun selectAllSelectsVisibleNotes() = runTest(dispatcher) {
         val a = repo.saveNote(null, "a", "c", null, false, null)
         val b = repo.saveNote(null, "b", "c", null, false, null)
-        vm.notes.first { it.isNotEmpty() }
+        vm.notes.first { it != null && it.isNotEmpty() }
         vm.selectAll()
         assertEquals(setOf(a, b), vm.selectedIds.value)
     }
@@ -161,8 +161,8 @@ class NotesViewModelTest {
         val catId = repo.addCategory("工作", 0)
         repo.saveNote(null, "a", "c", null, false, null)
         repo.saveNote(null, "b", "c", catId, false, null)
-        vm.notes.first { it.isNotEmpty() }
-        assertEquals(setOf("a", "b"), vm.notes.value.map { it.title }.toSet())
+        vm.notes.first { it != null && it.isNotEmpty() }
+        assertEquals(setOf("a", "b"), vm.notes.value.orEmpty().map { it.title }.toSet())
     }
 
     @Test
@@ -171,8 +171,8 @@ class NotesViewModelTest {
         repo.saveNote(null, "有分类", "c", catId, false, null)
         repo.saveNote(null, "未分类", "c", null, false, null)
         vm.onFilterSelect(CategoryFilter.Uncategorized)
-        vm.notes.first { it.isNotEmpty() }
-        assertEquals(listOf("未分类"), vm.notes.value.map { it.title })
+        vm.notes.first { it != null && it.isNotEmpty() }
+        assertEquals(listOf("未分类"), vm.notes.value.orEmpty().map { it.title })
     }
 
     @Test
@@ -182,8 +182,8 @@ class NotesViewModelTest {
         repo.saveNote(null, "工作笔记", "c", catA, false, null)
         repo.saveNote(null, "生活笔记", "c", catB, false, null)
         vm.onFilterSelect(CategoryFilter.Single(catA))
-        vm.notes.first { it.isNotEmpty() }
-        assertEquals(listOf("工作笔记"), vm.notes.value.map { it.title })
+        vm.notes.first { it != null && it.isNotEmpty() }
+        assertEquals(listOf("工作笔记"), vm.notes.value.orEmpty().map { it.title })
     }
 
     @Test
@@ -191,12 +191,12 @@ class NotesViewModelTest {
         val keep = repo.saveNote(null, "未分类", "c", null, false, null)
         val trash = repo.saveNote(null, "待删", "c", null, false, null)
         vm.onFilterSelect(CategoryFilter.Uncategorized)
-        vm.notes.first { it.any { n -> n.id == trash } }
+        vm.notes.first { it != null && it.any { n -> n.id == trash } }
 
         db.noteDao().update(db.noteDao().getById(trash)!!.copy(deletedAt = 9L))
 
-        vm.notes.first { list -> list.none { it.id == trash } }
-        assertEquals(listOf(keep), vm.notes.value.map { it.id })
+        vm.notes.first { it != null && it.none { n -> n.id == trash } }
+        assertEquals(listOf(keep), vm.notes.value.orEmpty().map { it.id })
     }
 
     @Test
@@ -207,5 +207,11 @@ class NotesViewModelTest {
         assertNull(vm.newNoteCategoryId)
         vm.onFilterSelect(CategoryFilter.Single(7L))
         assertEquals(7L, vm.newNoteCategoryId)
+    }
+
+    @Test
+    fun notesIsNullBeforeFirstEmission() {
+        // 冷启动首帧（尚未订阅）时 notes 初始为 null，供页面渲染「加载中」占位而非空态
+        assertNull(vm.notes.value)
     }
 }
