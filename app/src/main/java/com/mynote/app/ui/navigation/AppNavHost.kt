@@ -131,12 +131,15 @@ fun AppNavHost(container: AppContainer) {
         composable("trash") {
             TrashScreen(
                 repository = container.noteRepository,
+                retentionStore = container.trashRetentionStore,
                 onBack = { navController.popBackStack() }
             )
         }
         composable("settings") {
             SettingsScreen(
-                store = container.themeSettingsStore,
+                themeStore = container.themeSettingsStore,
+                sortStore = container.noteSortStore,
+                trashStore = container.trashRetentionStore,
                 onBack = { navController.popBackStack() }
             )
         }

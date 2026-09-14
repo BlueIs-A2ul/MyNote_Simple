@@ -22,6 +22,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,6 +55,18 @@ fun NoteRow(
     val query = highlightQuery?.takeIf { it.isNotBlank() }
     val highlightBackground = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
     val title = note.title.ifBlank { "无标题" }
+    // 解析与高亮结果按输入缓存，避免每分钟 tick/滚动重组时重复全量正则与构造
+    val plainContent = remember(note.content) { NoteContentParser.plainText(note.content) }
+    val summary = remember(plainContent, query) {
+        // 搜索态：命中在深处时展示命中位置附近的窗口（带省略号），而非盲目取开头
+        if (query != null) snippetForHighlight(plainContent, query) else plainContent
+    }
+    val highlightedTitle = remember(title, query, highlightBackground) {
+        if (query != null) buildHighlighted(title, query, highlightBackground) else AnnotatedString(title)
+    }
+    val highlightedSummary = remember(summary, query, highlightBackground) {
+        if (query != null) buildHighlighted(summary, query, highlightBackground) else AnnotatedString(summary)
+    }
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -83,17 +96,13 @@ fun NoteRow(
                     Icon(
                         Icons.Default.PushPin,
                         contentDescription = "置顶",
-                        modifier = Modifier.size(12.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.primary
                     )
                     Spacer(Modifier.width(4.dp))
                 }
                 Text(
-                    text = if (query != null) {
-                        buildHighlighted(title, query, highlightBackground)
-                    } else {
-                        AnnotatedString(title)
-                    },
+                    text = highlightedTitle,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 1,
@@ -101,13 +110,8 @@ fun NoteRow(
                 )
             }
             if (note.content.isNotBlank()) {
-                val plainContent = NoteContentParser.plainText(note.content)
                 Text(
-                    text = if (query != null) {
-                        buildHighlighted(plainContent, query, highlightBackground)
-                    } else {
-                        AnnotatedString(plainContent)
-                    },
+                    text = highlightedSummary,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
@@ -135,6 +139,22 @@ fun NoteRow(
             }
         }
     }
+}
+
+/**
+ * 搜索摘要窗口：命中在前 [maxChars] 内取前缀；命中在深处时取命中位置附近的窗口，
+ * 首尾用省略号标记截断。query 为空白或无命中时取前缀。
+ * 让「正文深处命中」的笔记在行内也能看到命中上下文与高亮线索。
+ */
+internal fun snippetForHighlight(text: String, query: String, maxChars: Int = 80): String {
+    if (query.isBlank()) return text.take(maxChars)
+    val idx = text.indexOf(query, ignoreCase = true)
+    if (idx < 0 || idx < maxChars) return text.take(maxChars)
+    val start = (idx - maxChars / 3).coerceAtLeast(0)
+    val end = (start + maxChars).coerceAtMost(text.length)
+    val prefix = if (start > 0) "…" else ""
+    val suffix = if (end < text.length) "…" else ""
+    return prefix + text.substring(start, end) + suffix
 }
 
 /**

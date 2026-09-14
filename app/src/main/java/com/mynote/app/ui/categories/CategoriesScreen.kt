@@ -1,15 +1,22 @@
 package com.mynote.app.ui.categories
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
@@ -33,7 +40,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mynote.app.data.db.CategoryEntity
@@ -43,6 +52,7 @@ import com.mynote.app.ui.components.EmptyState
 import com.mynote.app.ui.components.HairlineDivider
 import com.mynote.app.ui.components.PaperAlertDialog
 import com.mynote.app.ui.components.PaperTopBar
+import com.mynote.app.ui.theme.NoteColors
 import com.mynote.app.ui.theme.PaperPalette
 import kotlinx.coroutines.launch
 
@@ -83,7 +93,8 @@ fun CategoriesScreen(repository: NoteRepository, onBack: () -> Unit) {
                         cat = cat,
                         snackbarHostState = snackbarHostState,
                         onRename = { newName, done -> vm.rename(cat, newName, done) },
-                        onDelete = { vm.delete(cat) }
+                        onDelete = { vm.delete(cat) },
+                        onCycleColor = { vm.cycleColor(cat) }
                     )
                     if (index < categories.lastIndex) HairlineDivider()
                 }
@@ -93,19 +104,56 @@ fun CategoriesScreen(repository: NoteRepository, onBack: () -> Unit) {
 
     if (showAddDialog) {
         var name by remember { mutableStateOf("") }
+        // 默认选中「最少使用色」：在既有分类中出现次数最少的色板颜色
+        var selectedColor by remember { mutableStateOf(vm.leastUsedColor(categories)) }
         PaperAlertDialog(
             onDismissRequest = { showAddDialog = false },
             title = "新建分类",
             text = {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("名称") },
-                    singleLine = true
-                )
+                Column {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("名称") },
+                        singleLine = true
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "颜色",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        NoteColors.forEach { color ->
+                            val argb = color.toArgb()
+                            val selected = argb == selectedColor
+                            Box(
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clip(CircleShape)
+                                    .background(color)
+                                    .then(
+                                        if (selected) {
+                                            Modifier.border(
+                                                2.dp,
+                                                MaterialTheme.colorScheme.onSurface,
+                                                CircleShape
+                                            )
+                                        } else {
+                                            Modifier
+                                        }
+                                    )
+                                    .clickable { selectedColor = argb }
+                            )
+                        }
+                    }
+                }
             },
             confirmButton = {
-                TextButton(onClick = { vm.add(name) { showAddDialog = false } }) { Text("确定") }
+                TextButton(onClick = { vm.add(name, selectedColor) { showAddDialog = false } }) {
+                    Text("确定")
+                }
             },
             dismissButton = {
                 TextButton(onClick = { showAddDialog = false }) { Text("取消") }
@@ -119,7 +167,8 @@ private fun CategoryRow(
     cat: CategoryEntity,
     snackbarHostState: SnackbarHostState,
     onRename: (String, (Boolean) -> Unit) -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onCycleColor: () -> Unit
 ) {
     var showDelete by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
@@ -175,7 +224,16 @@ private fun CategoryRow(
                     .padding(vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                CategoryDot(PaperPalette.nearest(cat.color))
+                // 色点可点击：循环切到色板下一个颜色（独立于整行点击进入编辑）
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .clickable { onCycleColor() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    CategoryDot(PaperPalette.nearest(cat.color))
+                }
                 Spacer(Modifier.width(10.dp))
                 Text(
                     cat.name,

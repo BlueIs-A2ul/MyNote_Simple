@@ -113,6 +113,13 @@ class NoteRepositoryTest {
     }
 
     @Test
+    fun updateCategoryColorPersistsNewColor() = runTest {
+        val catId = repo.addCategory("工作", 0x111111)
+        repo.updateCategoryColor(db.categoryDao().getById(catId)!!, 0x222222)
+        assertEquals(0x222222, db.categoryDao().getById(catId)?.color)
+    }
+
+    @Test
     fun newNoteCreatesFirstRevision() = runTest {
         val id = repo.saveNote(null, "t", "c", null, false, null)
         val revisions = db.noteRevisionDao().getByNote(id)

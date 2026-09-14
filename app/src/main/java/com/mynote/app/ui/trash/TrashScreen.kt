@@ -1,12 +1,14 @@
 package com.mynote.app.ui.trash
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -32,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mynote.app.data.db.NoteEntity
 import com.mynote.app.data.repository.NoteRepository
+import com.mynote.app.data.settings.TrashRetentionStore
 import com.mynote.app.ui.components.HairlineDivider
 import com.mynote.app.ui.components.PaperAlertDialog
 import com.mynote.app.ui.components.PaperTopBar
@@ -44,17 +47,21 @@ import kotlinx.coroutines.launch
 @Composable
 fun TrashScreen(
     repository: NoteRepository,
+    retentionStore: TrashRetentionStore,
     onBack: () -> Unit
 ) {
     val vm: TrashViewModel = viewModel(
         key = "trash",
-        factory = TrashViewModel.factory(repository)
+        factory = TrashViewModel.factory(repository, retentionStore)
     )
     val notes by vm.notes.collectAsState()
+    val retentionDays by vm.retentionDays.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var purgeTarget by remember { mutableStateOf<NoteEntity?>(null) }
     var showPurgeAllDialog by remember { mutableStateOf(false) }
+    // 回收站条目只读预览：彻底删除前可核对内容
+    var previewTarget by remember { mutableStateOf<NoteEntity?>(null) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -83,7 +90,7 @@ fun TrashScreen(
                     .padding(12.dp)
             ) {
                 Text(
-                    "笔记删除后保留 30 天，到期自动清理。",
+                    "笔记删除后保留 $retentionDays 天，到期自动清理。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -101,6 +108,7 @@ fun TrashScreen(
                     itemsIndexed(notes, key = { _, note -> note.id }) { index, note ->
                         TrashRow(
                             note = note,
+                            onPreview = { previewTarget = note },
                             onRestore = {
                                 vm.restore(note) {
                                     scope.launch { snackbarHostState.showSnackbar("已恢复") }
@@ -119,7 +127,22 @@ fun TrashScreen(
         PaperAlertDialog(
             onDismissRequest = { purgeTarget = null },
             title = "彻底删除？",
-            text = { Text("彻底删除后不可恢复，历史记录也会一并清除。") },
+            text = {
+                Column {
+                    Text("彻底删除「${note.title.ifBlank { "无标题" }}」后不可恢复，历史记录也会一并清除。")
+                    val summary = NoteContentParser.plainText(note.content).take(60)
+                    if (summary.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            summary,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -132,6 +155,58 @@ fun TrashScreen(
             },
             dismissButton = {
                 TextButton(onClick = { purgeTarget = null }) { Text("取消") }
+            }
+        )
+    }
+
+    // 回收站条目只读预览：标题 + 摘要 + 图片数 + 剩余清理天数
+    previewTarget?.let { note ->
+        val summary = NoteContentParser.plainText(note.content)
+        val imageCount = NoteContentParser.extractImageNames(note.content).size
+        val deletedAt = note.deletedAt ?: 0L
+        val remainingDays = ((deletedAt + com.mynote.app.data.settings.TrashRetentionStore.ttlMs(retentionDays) -
+            System.currentTimeMillis()) / 86_400_000L).coerceAtLeast(0L)
+        PaperAlertDialog(
+            onDismissRequest = { previewTarget = null },
+            title = "回收站预览",
+            text = {
+                Column {
+                    Text(
+                        note.title.ifBlank { "无标题" },
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    if (summary.isNotBlank()) {
+                        Text(
+                            summary,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 6,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    Text(
+                        "图片 $imageCount 张${if (imageCount > 0) "" else "（无）"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        if (remainingDays > 0) "还有 $remainingDays 天自动清理" else "即将自动清理",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "删除于 ${TimeFormat.dateTime(deletedAt)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { previewTarget = null }) { Text("关闭") }
             }
         )
     }
@@ -161,6 +236,7 @@ fun TrashScreen(
 @Composable
 private fun TrashRow(
     note: NoteEntity,
+    onPreview: () -> Unit,
     onRestore: () -> Unit,
     onPurge: () -> Unit
 ) {
@@ -168,7 +244,11 @@ private fun TrashRow(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(Modifier.weight(1f)) {
+        Column(
+            Modifier
+                .weight(1f)
+                .clickable(onClick = onPreview)
+        ) {
             Text(
                 note.title.ifBlank { "无标题" },
                 style = MaterialTheme.typography.titleMedium,

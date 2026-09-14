@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -36,13 +38,15 @@ class NotesViewModel(
 
     /** 笔记列表；null 表示首帧加载中（Room 首个真实结果到达前），避免冷启动闪「还没有笔记」空态。 */
     val notes: StateFlow<List<NoteEntity>?> =
-        combine(query, selectedFilter, sortMode) { q, filter, _ -> q to filter }
-            .flatMapLatest { (q, filter) ->
+        // 搜索输入防抖 200ms + 去重，避免每敲一个键重启一次 LIKE 全表扫描
+        combine(query.debounce(200).distinctUntilChanged(), selectedFilter, sortMode) { q, filter, sort -> q to Pair(filter, sort) }
+            .flatMapLatest { (q, filterSort) ->
+                val (filter, sort) = filterSort
                 when {
-                    q.isNotBlank() -> repository.search(q)
-                    filter is CategoryFilter.Single -> repository.observeByCategory(filter.categoryId)
-                    filter is CategoryFilter.Uncategorized -> repository.observeUncategorized()
-                    else -> repository.observeNotes(sortMode.value)
+                    q.isNotBlank() -> repository.search(q, sort)
+                    filter is CategoryFilter.Single -> repository.observeByCategory(filter.categoryId, sort)
+                    filter is CategoryFilter.Uncategorized -> repository.observeUncategorized(sort)
+                    else -> repository.observeNotes(sort)
                 }
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)

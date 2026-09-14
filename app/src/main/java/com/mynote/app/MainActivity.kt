@@ -26,9 +26,13 @@ class MainActivity : ComponentActivity() {
                 DarkMode.LIGHT -> false
                 DarkMode.DARK -> true
             }
-            // 启动时清理回收站中已到期（超过 30 天）的笔记
+            // 启动时清理回收站中已到期（超过设置页所选保留期）的笔记
             LaunchedEffect(Unit) {
-                container.noteRepository.purgeExpiredDeletedNotes()
+                val ttlMs =
+                    com.mynote.app.data.settings.TrashRetentionStore.ttlMs(
+                        container.trashRetentionStore.retentionDays.value
+                    )
+                container.noteRepository.purgeExpiredDeletedNotes(ttlMs = ttlMs)
             }
             // edge-to-edge：让系统栏/IME insets 派发给 Compose，imePadding() 才生效。
             // 深色检测跟随应用内深色模式设置（而非仅系统配置），避免图标对比度错误；

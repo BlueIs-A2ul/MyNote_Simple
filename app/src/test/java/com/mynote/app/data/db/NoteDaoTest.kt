@@ -164,6 +164,56 @@ class NoteDaoTest {
     }
 
     @Test
+    fun observeByCategoryHonorsSortModes() = runTest {
+        val catId = db.categoryDao().insert(CategoryEntity(0, "工作", 0))
+        dao.insert(NoteEntity(0, "banana", "c", 3L, 3L, catId, false, null))
+        dao.insert(NoteEntity(0, "Apple", "c", 1L, 1L, catId, false, null))
+        dao.insert(NoteEntity(0, "cherry", "c", 2L, 2L, catId, false, null))
+
+        assertEquals(
+            listOf("banana", "cherry", "Apple"),
+            dao.observeByCategory(catId, NoteSortMode.CREATED_DESC).first().map { it.title }
+        )
+        assertEquals(
+            listOf("Apple", "banana", "cherry"),
+            dao.observeByCategory(catId, NoteSortMode.TITLE_ASC).first().map { it.title }
+        )
+    }
+
+    @Test
+    fun observeUncategorizedHonorsSortModes() = runTest {
+        val catId = db.categoryDao().insert(CategoryEntity(0, "工作", 0))
+        dao.insert(NoteEntity(0, "有分类", "c", 9L, 9L, catId, false, null))
+        dao.insert(NoteEntity(0, "banana", "c", 3L, 3L, null, false, null))
+        dao.insert(NoteEntity(0, "Apple", "c", 1L, 1L, null, false, null))
+        dao.insert(NoteEntity(0, "cherry", "c", 2L, 2L, null, false, null))
+
+        assertEquals(
+            listOf("banana", "cherry", "Apple"),
+            dao.observeUncategorized(NoteSortMode.CREATED_DESC).first().map { it.title }
+        )
+        assertEquals(
+            listOf("Apple", "banana", "cherry"),
+            dao.observeUncategorized(NoteSortMode.TITLE_ASC).first().map { it.title }
+        )
+    }
+
+    @Test
+    fun searchHonorsSortModes() = runTest {
+        dao.insert(NoteEntity(0, "banana", "正文里含 apple 一词", 3L, 1L, null, false, null))
+        dao.insert(NoteEntity(0, "Apple", "正文", 1L, 2L, null, false, null))
+
+        assertEquals(
+            listOf("banana", "Apple"),
+            dao.search("apple", NoteSortMode.CREATED_DESC).first().map { it.title }
+        )
+        assertEquals(
+            listOf("Apple", "banana"),
+            dao.search("apple", NoteSortMode.TITLE_ASC).first().map { it.title }
+        )
+    }
+
+    @Test
     fun observeDeletedReturnsOnlyDeletedOrderedByDeletedAtDesc() = runTest {
         dao.insert(note(title = "正常", updatedAt = 1L))
         val older = dao.insert(note(title = "旧删", updatedAt = 2L))

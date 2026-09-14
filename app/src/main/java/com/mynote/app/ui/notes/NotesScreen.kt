@@ -229,22 +229,18 @@ fun NotesScreen(
                                 text = { Text("回收站") },
                                 onClick = { menuOpen = false; onOpenTrash() }
                             )
-                            // 排序只作用于「全部」且非搜索态
-                            val sortEnabled = selectedFilter is CategoryFilter.All && query.isBlank()
+                            // 排序对所有视图生效（#11 口径；#16 的禁用说明已作废）
                             DropdownMenuItem(
                                 text = { Text(if (sortMode == NoteSortMode.UPDATED_DESC) "✓ 排序：最近更新" else "排序：最近更新") },
-                                onClick = { menuOpen = false; viewModel.onSortSelect(NoteSortMode.UPDATED_DESC) },
-                                enabled = sortEnabled
+                                onClick = { menuOpen = false; viewModel.onSortSelect(NoteSortMode.UPDATED_DESC) }
                             )
                             DropdownMenuItem(
                                 text = { Text(if (sortMode == NoteSortMode.CREATED_DESC) "✓ 排序：最新创建" else "排序：最新创建") },
-                                onClick = { menuOpen = false; viewModel.onSortSelect(NoteSortMode.CREATED_DESC) },
-                                enabled = sortEnabled
+                                onClick = { menuOpen = false; viewModel.onSortSelect(NoteSortMode.CREATED_DESC) }
                             )
                             DropdownMenuItem(
                                 text = { Text(if (sortMode == NoteSortMode.TITLE_ASC) "✓ 排序：按标题" else "排序：按标题") },
-                                onClick = { menuOpen = false; viewModel.onSortSelect(NoteSortMode.TITLE_ASC) },
-                                enabled = sortEnabled
+                                onClick = { menuOpen = false; viewModel.onSortSelect(NoteSortMode.TITLE_ASC) }
                             )
                             DropdownMenuItem(
                                 text = { Text("导出备份") },
@@ -370,20 +366,28 @@ fun NotesScreen(
                         onAction = if (searching) null else ({ onNewNote(viewModel.newNoteCategoryId) })
                     )
                 } else {
+                    // 分类 id → 实体映射缓存，避免每行 O(n) 线性查找（行数多时重复执行）
+                    val categoriesById = remember(categories) { categories.associateBy { it.id } }
                     LazyColumn(Modifier.fillMaxSize()) {
                         itemsIndexed(displayNotes, key = { _, note -> note.id }) { index, note ->
+                            val prevPinned = if (index > 0) displayNotes[index - 1].pinned else false
+                            if (note.pinned && !prevPinned) {
+                                NotesSectionHeader("置顶")
+                            } else if (!note.pinned && prevPinned) {
+                                NotesSectionHeader("其他")
+                            }
                             NoteRow(
                                 note = note,
-                                categoryColor = categories.firstOrNull { it.id == note.categoryId }
+                                categoryColor = categoriesById[note.categoryId]
                                     ?.let { PaperPalette.nearest(it.color) },
                                 onClick = {
                                     if (selectionMode) viewModel.toggleSelect(note.id) else onOpenNote(note.id)
                                 },
                                 onLongClick = { viewModel.enterSelection(note.id) },
                                 now = now,
-                                // 仅在「全部」tab 且非搜索态显示分类名，避免与顶部 tab 重复
-                                categoryName = if (selectedFilter is CategoryFilter.All && query.isBlank()) {
-                                    categories.firstOrNull { it.id == note.categoryId }?.name
+                                // 全部 tab 或搜索态显示分类名：搜索是全库检索，行内分类归属非常规信息
+                                categoryName = if (selectedFilter is CategoryFilter.All || query.isNotBlank()) {
+                                    categoriesById[note.categoryId]?.name
                                 } else {
                                     null
                                 },
@@ -474,6 +478,19 @@ fun NotesScreen(
             }
         )
     }
+}
+
+/** 列表分组标题（置顶 / 其他）。 */
+@Composable
+private fun NotesSectionHeader(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+    )
 }
 
 @Composable

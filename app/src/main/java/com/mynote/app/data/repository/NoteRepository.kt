@@ -32,10 +32,18 @@ class NoteRepository(
     fun search(query: String): Flow<List<NoteEntity>> =
         if (query.isBlank()) noteDao.observeAll() else noteDao.search(query.trim())
 
+    fun search(query: String, sort: NoteSortMode): Flow<List<NoteEntity>> =
+        if (query.isBlank()) noteDao.observeAllBySort(sort) else noteDao.search(query.trim(), sort)
+
     fun observeByCategory(categoryId: Long): Flow<List<NoteEntity>> = noteDao.observeByCategory(categoryId)
+
+    fun observeByCategory(categoryId: Long, sort: NoteSortMode): Flow<List<NoteEntity>> =
+        noteDao.observeByCategory(categoryId, sort)
 
     /** 未分类笔记（categoryId 为空）。 */
     fun observeUncategorized(): Flow<List<NoteEntity>> = noteDao.observeUncategorized()
+
+    fun observeUncategorized(sort: NoteSortMode): Flow<List<NoteEntity>> = noteDao.observeUncategorized(sort)
 
     /** 回收站列表（已软删除的笔记）。 */
     fun observeDeletedNotes(): Flow<List<NoteEntity>> = noteDao.observeDeleted()
@@ -165,6 +173,11 @@ class NoteRepository(
             categoryDao.update(category.copy(name = trimmed))
             true
         }
+    }
+
+    /** 修改分类颜色。 */
+    suspend fun updateCategoryColor(category: CategoryEntity, color: Int) {
+        categoryDao.update(category.copy(color = color))
     }
 
     suspend fun deleteCategory(category: CategoryEntity) {

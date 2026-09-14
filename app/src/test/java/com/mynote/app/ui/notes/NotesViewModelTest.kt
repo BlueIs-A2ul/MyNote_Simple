@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.mynote.app.data.db.AppDatabase
+import com.mynote.app.data.db.NoteSortMode
 import com.mynote.app.data.image.ImageStore
 import com.mynote.app.data.repository.NoteRepository
 import com.mynote.app.data.settings.NoteSortStore
@@ -13,7 +14,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -44,6 +47,8 @@ class NotesViewModelTest {
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries().build()
         repo = NoteRepository(db.noteDao(), db.categoryDao(), db.noteRevisionDao(), ImageStore(context), db)
+        // 排序偏好跨测试共享同一 SharedPreferences，显式复位避免顺序依赖
+        NoteSortStore(context).setMode(NoteSortMode.UPDATED_DESC)
         vm = NotesViewModel(repo, NoteSortStore(context))
     }
 
@@ -213,5 +218,46 @@ class NotesViewModelTest {
     fun notesIsNullBeforeFirstEmission() {
         // 冷启动首帧（尚未订阅）时 notes 初始为 null，供页面渲染「加载中」占位而非空态
         assertNull(vm.notes.value)
+    }
+
+    @Test
+    fun queryDebounceDelaysSearchResults() = runTest(dispatcher) {
+        repo.saveNote(null, "abc", "c", null, false, null)
+        repo.saveNote(null, "xyz", "c", null, false, null)
+        vm.notes.first { it != null && it.size == 2 }
+
+        vm.onQueryChange("abc")
+        // 防抖窗口（200ms）内：搜索结果尚未触发，列表仍是旧全量值
+        assertEquals(2, vm.notes.value.orEmpty().size)
+
+        advanceTimeBy(210)
+        runCurrent()
+        vm.notes.first { it != null && it.size == 1 && it[0].title == "abc" }
+        assertEquals(1, vm.notes.value.orEmpty().size)
+    }
+
+    @Test
+    fun sortModeAppliesToUncategorizedFilter() = runTest(dispatcher) {
+        repo.saveNote(null, "banana", "c", null, false, null)
+        repo.saveNote(null, "Apple", "c", null, false, null)
+        vm.onFilterSelect(CategoryFilter.Uncategorized)
+        vm.notes.first { it != null && it.isNotEmpty() }
+
+        vm.onSortSelect(NoteSortMode.TITLE_ASC)
+        vm.notes.first { it != null && it.size == 2 && it[0].title == "Apple" }
+        assertEquals(listOf("Apple", "banana"), vm.notes.value.orEmpty().map { it.title })
+    }
+
+    @Test
+    fun sortModeAppliesToCategoryFilter() = runTest(dispatcher) {
+        val catId = repo.addCategory("工作", 0)
+        repo.saveNote(null, "banana", "c", catId, false, null)
+        repo.saveNote(null, "Apple", "c", catId, false, null)
+        vm.onFilterSelect(CategoryFilter.Single(catId))
+        vm.notes.first { it != null && it.isNotEmpty() }
+
+        vm.onSortSelect(NoteSortMode.TITLE_ASC)
+        vm.notes.first { it != null && it.size == 2 && it[0].title == "Apple" }
+        assertEquals(listOf("Apple", "banana"), vm.notes.value.orEmpty().map { it.title })
     }
 }

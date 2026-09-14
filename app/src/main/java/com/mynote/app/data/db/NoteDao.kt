@@ -39,12 +39,51 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE deletedAt IS NULL AND (title LIKE '%' || :query || '%' OR content LIKE '%' || :query || '%') ORDER BY pinned DESC, updatedAt DESC")
     fun search(query: String): Flow<List<NoteEntity>>
 
+    @Query("SELECT * FROM notes WHERE deletedAt IS NULL AND (title LIKE '%' || :query || '%' OR content LIKE '%' || :query || '%') ORDER BY pinned DESC, createdAt DESC")
+    fun searchByCreated(query: String): Flow<List<NoteEntity>>
+
+    @Query("SELECT * FROM notes WHERE deletedAt IS NULL AND (title LIKE '%' || :query || '%' OR content LIKE '%' || :query || '%') ORDER BY pinned DESC, title COLLATE NOCASE ASC")
+    fun searchByTitle(query: String): Flow<List<NoteEntity>>
+
+    /** 按排序方式搜索。 */
+    fun search(query: String, mode: NoteSortMode): Flow<List<NoteEntity>> = when (mode) {
+        NoteSortMode.UPDATED_DESC -> search(query)
+        NoteSortMode.CREATED_DESC -> searchByCreated(query)
+        NoteSortMode.TITLE_ASC -> searchByTitle(query)
+    }
+
     @Query("SELECT * FROM notes WHERE deletedAt IS NULL AND categoryId = :categoryId ORDER BY pinned DESC, updatedAt DESC")
     fun observeByCategory(categoryId: Long): Flow<List<NoteEntity>>
+
+    @Query("SELECT * FROM notes WHERE deletedAt IS NULL AND categoryId = :categoryId ORDER BY pinned DESC, createdAt DESC")
+    fun observeByCategoryByCreated(categoryId: Long): Flow<List<NoteEntity>>
+
+    @Query("SELECT * FROM notes WHERE deletedAt IS NULL AND categoryId = :categoryId ORDER BY pinned DESC, title COLLATE NOCASE ASC")
+    fun observeByCategoryByTitle(categoryId: Long): Flow<List<NoteEntity>>
+
+    /** 按排序方式观察某分类笔记。 */
+    fun observeByCategory(categoryId: Long, mode: NoteSortMode): Flow<List<NoteEntity>> = when (mode) {
+        NoteSortMode.UPDATED_DESC -> observeByCategory(categoryId)
+        NoteSortMode.CREATED_DESC -> observeByCategoryByCreated(categoryId)
+        NoteSortMode.TITLE_ASC -> observeByCategoryByTitle(categoryId)
+    }
 
     /** 未分类笔记（categoryId 为空，未删除）：排序与 observeByCategory 保持一致。 */
     @Query("SELECT * FROM notes WHERE deletedAt IS NULL AND categoryId IS NULL ORDER BY pinned DESC, updatedAt DESC")
     fun observeUncategorized(): Flow<List<NoteEntity>>
+
+    @Query("SELECT * FROM notes WHERE deletedAt IS NULL AND categoryId IS NULL ORDER BY pinned DESC, createdAt DESC")
+    fun observeUncategorizedByCreated(): Flow<List<NoteEntity>>
+
+    @Query("SELECT * FROM notes WHERE deletedAt IS NULL AND categoryId IS NULL ORDER BY pinned DESC, title COLLATE NOCASE ASC")
+    fun observeUncategorizedByTitle(): Flow<List<NoteEntity>>
+
+    /** 按排序方式观察未分类笔记。 */
+    fun observeUncategorized(mode: NoteSortMode): Flow<List<NoteEntity>> = when (mode) {
+        NoteSortMode.UPDATED_DESC -> observeUncategorized()
+        NoteSortMode.CREATED_DESC -> observeUncategorizedByCreated()
+        NoteSortMode.TITLE_ASC -> observeUncategorizedByTitle()
+    }
 
     @Insert
     suspend fun insert(note: NoteEntity): Long

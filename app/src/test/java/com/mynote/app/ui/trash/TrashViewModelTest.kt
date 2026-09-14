@@ -7,6 +7,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.mynote.app.data.db.AppDatabase
 import com.mynote.app.data.image.ImageStore
 import com.mynote.app.data.repository.NoteRepository
+import com.mynote.app.data.settings.TrashRetentionStore
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
@@ -41,7 +42,7 @@ class TrashViewModelTest {
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries().build()
         repo = NoteRepository(db.noteDao(), db.categoryDao(), db.noteRevisionDao(), ImageStore(context), db)
-        vm = TrashViewModel(repo)
+        vm = TrashViewModel(repo, TrashRetentionStore(context))
     }
 
     @After
@@ -104,10 +105,18 @@ class TrashViewModelTest {
 
         // 新 VM 的 init 触发到期清理；等待真实 DB 流收敛到只剩 fresh
         vm.viewModelScope.cancel()
-        vm = TrashViewModel(repo)
+        vm = TrashViewModel(repo, TrashRetentionStore(ApplicationProvider.getApplicationContext()))
         vm.notes.first { it.size == 1 && it.first().title == "fresh" }
 
         assertNull(db.noteDao().getById(expired))
         assertNotNull(db.noteDao().getById(fresh))
+    }
+
+    @Test
+    fun retentionDaysComesFromStore() {
+        // VM 暴露的保留期与新建 store 的默认值一致（30 天）
+        val store = TrashRetentionStore(ApplicationProvider.getApplicationContext())
+        assertEquals(store.retentionDays.value, vm.retentionDays.value)
+        assertEquals(30, vm.retentionDays.value)
     }
 }

@@ -64,4 +64,44 @@ class HighlightTextTest {
         assertEquals(0, result.spanStyles[0].start)
         assertEquals(4, result.spanStyles[0].end)
     }
+
+    // ---------- snippetForHighlight 搜索摘要窗口 ----------
+
+    /** 命中在开头附近（< maxChars）：直接取前缀，不截断。 */
+    @Test
+    fun snippet_hitNearStart_takesPlainPrefix() {
+        val text = "abcdefghij" + "填充".repeat(50)
+        assertEquals(text.take(80), snippetForHighlight(text, "abc", 80))
+    }
+
+    /** 命中在深处：取命中位置附近窗口，首尾省略号标记截断。 */
+    @Test
+    fun snippet_hitDeep_takesWindowAroundHit() {
+        val text = "x".repeat(100) + "QUERY" + "y".repeat(100)
+        val result = snippetForHighlight(text, "QUERY", 80)
+        val start = 100 - 80 / 3
+        assertEquals("…" + text.substring(start, start + 80) + "…", result)
+        assertTrue(result.contains("QUERY"))
+        assertTrue(result.length <= 80 + 2)
+    }
+
+    /** 无命中：取前缀。 */
+    @Test
+    fun snippet_noHit_takesPrefix() {
+        assertEquals("x".repeat(80), snippetForHighlight("x".repeat(200), "zzz", 80))
+    }
+
+    /** 空白 query：取前缀（与搜索态外行为一致）。 */
+    @Test
+    fun snippet_blankQuery_takesPrefix() {
+        assertEquals("x".repeat(80), snippetForHighlight("x".repeat(200), "", 80))
+    }
+
+    /** 命中恰好越过前缀边界：仍走窗口分支；文本不足 maxChars 时无省略号。 */
+    @Test
+    fun snippet_shortText_noEllipsis() {
+        val text = "y".repeat(30) + "HIT"
+        val result = snippetForHighlight(text, "HIT", 80)
+        assertEquals(text, result)
+    }
 }

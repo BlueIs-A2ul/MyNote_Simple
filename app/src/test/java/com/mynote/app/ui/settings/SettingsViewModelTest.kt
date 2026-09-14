@@ -2,8 +2,11 @@ package com.mynote.app.ui.settings
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.mynote.app.data.db.NoteSortMode
 import com.mynote.app.data.settings.DarkMode
+import com.mynote.app.data.settings.NoteSortStore
 import com.mynote.app.data.settings.ThemeSettingsStore
+import com.mynote.app.data.settings.TrashRetentionStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Before
@@ -17,6 +20,8 @@ import org.robolectric.annotation.Config
 class SettingsViewModelTest {
 
     private lateinit var store: ThemeSettingsStore
+    private lateinit var sortStore: NoteSortStore
+    private lateinit var trashStore: TrashRetentionStore
     private lateinit var vm: SettingsViewModel
 
     @Before
@@ -24,8 +29,12 @@ class SettingsViewModelTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         context.getSharedPreferences("theme_settings", Context.MODE_PRIVATE)
             .edit().clear().commit()
+        context.getSharedPreferences("trash_retention_settings", Context.MODE_PRIVATE)
+            .edit().clear().commit()
         store = ThemeSettingsStore(context)
-        vm = SettingsViewModel(store)
+        sortStore = NoteSortStore(context)
+        trashStore = TrashRetentionStore(context)
+        vm = SettingsViewModel(store, sortStore, trashStore)
     }
 
     @Test
@@ -45,5 +54,19 @@ class SettingsViewModelTest {
     fun setThemeColorIndexDelegatesToStore() {
         vm.setThemeColorIndex(5)
         assertEquals(5, store.settings.value.themeColorIndex)
+    }
+
+    @Test
+    fun setDefaultSortDelegatesToSortStore() {
+        vm.setDefaultSort(NoteSortMode.TITLE_ASC)
+        assertEquals(NoteSortMode.TITLE_ASC, sortStore.mode.value)
+        assertEquals(NoteSortMode.TITLE_ASC, vm.defaultSort.value)
+    }
+
+    @Test
+    fun setRetentionDaysDelegatesToTrashStore() {
+        vm.setRetentionDays(7)
+        assertEquals(7, trashStore.retentionDays.value)
+        assertEquals(7, vm.retentionDays.value)
     }
 }

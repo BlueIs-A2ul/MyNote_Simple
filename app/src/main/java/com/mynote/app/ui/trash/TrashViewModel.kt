@@ -7,6 +7,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.mynote.app.data.db.NoteEntity
 import com.mynote.app.data.repository.NoteRepository
+import com.mynote.app.data.settings.TrashRetentionStore
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -14,16 +15,22 @@ import kotlinx.coroutines.launch
 
 /** 回收站：恢复 / 彻底删除 / 清空 / 打开时清理到期笔记。 */
 class TrashViewModel(
-    private val repository: NoteRepository
+    private val repository: NoteRepository,
+    private val retentionStore: TrashRetentionStore
 ) : ViewModel() {
 
     val notes: StateFlow<List<NoteEntity>> =
         repository.observeDeletedNotes()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** 当前保留期（天），随设置即时生效。 */
+    val retentionDays: StateFlow<Int> = retentionStore.retentionDays
+
     init {
-        // 打开回收站即清理已到期（超过 30 天）的笔记
-        viewModelScope.launch { repository.purgeExpiredDeletedNotes() }
+        // 打开回收站即清理已到期（超过设置保留期）的笔记
+        viewModelScope.launch {
+            repository.purgeExpiredDeletedNotes(ttlMs = TrashRetentionStore.ttlMs(retentionStore.retentionDays.value))
+        }
     }
 
     fun restore(note: NoteEntity, onDone: () -> Unit) {
@@ -49,8 +56,7 @@ class TrashViewModel(
     }
 
     companion object {
-        fun factory(repository: NoteRepository): ViewModelProvider.Factory = viewModelFactory {
-            initializer { TrashViewModel(repository) }
-        }
+        fun factory(repository: NoteRepository, retentionStore: TrashRetentionStore): ViewModelProvider.Factory =
+            viewModelFactory { initializer { TrashViewModel(repository, retentionStore) } }
     }
 }

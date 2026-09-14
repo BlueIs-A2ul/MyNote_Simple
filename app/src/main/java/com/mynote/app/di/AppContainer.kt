@@ -17,6 +17,7 @@ import com.mynote.app.data.repository.NoteRepository
 import com.mynote.app.data.settings.AiSettingsStore
 import com.mynote.app.data.settings.NoteSortStore
 import com.mynote.app.data.settings.ThemeSettingsStore
+import com.mynote.app.data.settings.TrashRetentionStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,6 +35,8 @@ class AppContainer(context: Context) {
     val themeSettingsStore: ThemeSettingsStore by lazy { ThemeSettingsStore(context) }
 
     val noteSortStore: NoteSortStore by lazy { NoteSortStore(context) }
+
+    val trashRetentionStore: TrashRetentionStore by lazy { TrashRetentionStore(context) }
 
     val noteRepository: NoteRepository by lazy {
         NoteRepository(database.noteDao(), database.categoryDao(), database.noteRevisionDao(), imageStore, database)
