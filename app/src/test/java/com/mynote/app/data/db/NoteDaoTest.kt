@@ -137,6 +137,33 @@ class NoteDaoTest {
     }
 
     @Test
+    fun observeUncategorizedReturnsOnlyNotesWithoutCategory() = runTest {
+        val catId = db.categoryDao().insert(CategoryEntity(0, "工作", 0))
+        dao.insert(NoteEntity(0, "有分类", "c", 0L, 1L, catId, false, null))
+        dao.insert(note(title = "未分类", updatedAt = 2L))
+        val deletedId = dao.insert(note(title = "已删未分类", updatedAt = 3L))
+        dao.update(dao.getById(deletedId)!!.copy(deletedAt = 5L))
+
+        assertEquals(listOf("未分类"), dao.observeUncategorized().first().map { it.title })
+        // 有分类的笔记即使更新时间更新也不出现在未分类列表
+        assertEquals(1, dao.observeUncategorized().first().size)
+    }
+
+    @Test
+    fun observeUncategorizedOrdersPinnedFirstThenUpdatedDesc() = runTest {
+        val catId = db.categoryDao().insert(CategoryEntity(0, "工作", 0))
+        dao.insert(NoteEntity(0, "有分类-新", "c", 0L, 30L, catId, false, null))
+        dao.insert(note(title = "未分类-旧", updatedAt = 1L))
+        dao.insert(note(title = "未分类-置顶", updatedAt = 2L, pinned = true))
+        dao.insert(note(title = "未分类-新", updatedAt = 3L))
+
+        assertEquals(
+            listOf("未分类-置顶", "未分类-新", "未分类-旧"),
+            dao.observeUncategorized().first().map { it.title }
+        )
+    }
+
+    @Test
     fun observeDeletedReturnsOnlyDeletedOrderedByDeletedAtDesc() = runTest {
         dao.insert(note(title = "正常", updatedAt = 1L))
         val older = dao.insert(note(title = "旧删", updatedAt = 2L))

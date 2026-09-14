@@ -34,6 +34,9 @@ class NoteRepository(
 
     fun observeByCategory(categoryId: Long): Flow<List<NoteEntity>> = noteDao.observeByCategory(categoryId)
 
+    /** 未分类笔记（categoryId 为空）。 */
+    fun observeUncategorized(): Flow<List<NoteEntity>> = noteDao.observeUncategorized()
+
     /** 回收站列表（已软删除的笔记）。 */
     fun observeDeletedNotes(): Flow<List<NoteEntity>> = noteDao.observeDeleted()
 

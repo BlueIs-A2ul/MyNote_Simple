@@ -42,6 +42,10 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE deletedAt IS NULL AND categoryId = :categoryId ORDER BY pinned DESC, updatedAt DESC")
     fun observeByCategory(categoryId: Long): Flow<List<NoteEntity>>
 
+    /** 未分类笔记（categoryId 为空，未删除）：排序与 observeByCategory 保持一致。 */
+    @Query("SELECT * FROM notes WHERE deletedAt IS NULL AND categoryId IS NULL ORDER BY pinned DESC, updatedAt DESC")
+    fun observeUncategorized(): Flow<List<NoteEntity>>
+
     @Insert
     suspend fun insert(note: NoteEntity): Long
 

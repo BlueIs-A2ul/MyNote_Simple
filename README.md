@@ -7,7 +7,7 @@
 - 笔记：创建 / 编辑 / 删除 / 置顶，列表按「置顶优先 + 更新时间倒序」排列
 - 搜索：标题与正文全文搜索
 - 图文混排：正文以纯文本存储、图片用 `![](img/<name>)` 标记内嵌，查看时文本/图片交错渲染，图片懒加载
-- 分类：单维度分类（增/改/删，删除后笔记移入未分类，同名幂等）
+- 分类：单维度分类（增/改/删，删除后笔记移入未分类，同名幂等）；主页「未分类」筛选入口可查看全部未分类笔记，配合多选批量分类即可整体归类
 - 主题：浅色/深色/跟随系统三态、8 档预设主题色、Android 12+ 动态取色开关（Material You；点选主题色自动关闭动态取色）
 - 设置：主页 ⋮ → 设置，主题修改即时生效、重启保持
 - 备份：zip 全量备份 / 导入（按 id 去重、冲突保留更新者）
@@ -24,7 +24,7 @@ Kotlin · Jetpack Compose + Material 3 · MVVM + 单向数据流（UDF） · Roo
 | minSdk / targetSdk | 24 / 34 |
 | JDK | 17 |
 | Gradle | 8.7（Wrapper） |
-| 版本 | 1.4.0；`versionName = major.minor.patch`、`versionCode = major*10000+minor*100+patch`，设置页可见 |
+| 版本 | 1.4.1；`versionName = major.minor.patch`、`versionCode = major*10000+minor*100+patch`，设置页可见 |
 | release 产物 | R8 混淆 + 资源压缩，约 1.7MB，`MyNote-<版本>-release.apk`（按 keystore.properties 签名） |
 
 ## 构建
@@ -37,14 +37,14 @@ Kotlin · Jetpack Compose + Material 3 · MVVM + 单向数据流（UDF） · Roo
 
 ```bat
 .\gradlew :app:assembleDebug          rem debug APK
-.\gradlew :app:testDebugUnitTest      rem 276 个单元测试
+.\gradlew :app:testDebugUnitTest      rem 283 个单元测试
 .\gradlew :app:assembleRelease        rem release（R8 + 资源压缩 + 签名）
 ```
 
 产物：
 
 - debug：`app/build/outputs/apk/debug/app-debug.apk`
-- release：`app/build/outputs/apk/release/MyNote-1.4.0-release.apk`（文件名随 versionName 变化）
+- release：`app/build/outputs/apk/release/MyNote-1.4.1-release.apk`（文件名随 versionName 变化）
 
 ## 项目结构
 

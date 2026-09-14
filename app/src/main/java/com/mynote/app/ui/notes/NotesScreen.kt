@@ -54,7 +54,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import com.mynote.app.data.backup.BackupManager
-import com.mynote.app.data.db.CategoryEntity
+
 import com.mynote.app.data.db.NoteSortMode
 import com.mynote.app.ui.components.CategoryDot
 import com.mynote.app.ui.components.EmptyState
@@ -82,7 +82,7 @@ fun NotesScreen(
     val notes by viewModel.notes.collectAsState()
     val categories by viewModel.categories.collectAsState()
     val query by viewModel.query.collectAsState()
-    val selectedCategoryId by viewModel.selectedCategoryId.collectAsState()
+    val selectedFilter by viewModel.selectedFilter.collectAsState()
     val sortMode by viewModel.sortMode.collectAsState()
     val selectionMode by viewModel.selectionMode.collectAsState()
     val selectedIds by viewModel.selectedIds.collectAsState()
@@ -150,9 +150,20 @@ fun NotesScreen(
         if (searchActive) focusRequester.requestFocus()
     }
 
-    val tabs = remember(categories) { listOf<CategoryEntity?>(null) + categories }
-    val selectedTab = remember(categories, selectedCategoryId) {
-        categories.firstOrNull { it.id == selectedCategoryId }
+    val tabs = remember(categories) {
+        listOf(CategoryFilter.All, CategoryFilter.Uncategorized) + categories.map { CategoryFilter.Single(it.id) }
+    }
+    // 分类列表首次非空后才校验：categories 初始为 emptyList()，等 Room 首次真实数据到了再判定
+    // 「所选分类已删除」，命中则自动回落「全部」，避免列表恒空且 tab 高亮错位。
+    var categoriesLoaded by remember { mutableStateOf(false) }
+    LaunchedEffect(categories) {
+        if (categories.isNotEmpty()) categoriesLoaded = true
+        val filter = selectedFilter
+        if (categoriesLoaded && filter is CategoryFilter.Single &&
+            categories.none { it.id == filter.categoryId }
+        ) {
+            viewModel.onFilterSelect(CategoryFilter.All)
+        }
     }
 
     Scaffold(
@@ -216,7 +227,7 @@ fun NotesScreen(
                                 onClick = { menuOpen = false; onOpenTrash() }
                             )
                             // 排序只作用于「全部」且非搜索态
-                            val sortEnabled = selectedCategoryId == null && query.isBlank()
+                            val sortEnabled = selectedFilter is CategoryFilter.All && query.isBlank()
                             DropdownMenuItem(
                                 text = { Text(if (sortMode == NoteSortMode.UPDATED_DESC) "✓ 排序：最近更新" else "排序：最近更新") },
                                 onClick = { menuOpen = false; viewModel.onSortSelect(NoteSortMode.UPDATED_DESC) },
@@ -252,7 +263,7 @@ fun NotesScreen(
         floatingActionButton = {
             if (!selectionMode) {
                 SmallFloatingActionButton(
-                    onClick = { onNewNote(selectedCategoryId) },
+                    onClick = { onNewNote(viewModel.newNoteCategoryId) },
                     shape = MaterialTheme.shapes.large,
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary
@@ -312,20 +323,33 @@ fun NotesScreen(
             } else {
                 TextTabRow(
                     tabs = tabs,
-                    selected = selectedTab,
-                    onSelect = { viewModel.onCategorySelect(it?.id) },
-                    label = { it?.name ?: "全部" },
+                    selected = selectedFilter,
+                    onSelect = viewModel::onFilterSelect,
+                    label = { filter ->
+                        when (filter) {
+                            CategoryFilter.All -> "全部"
+                            CategoryFilter.Uncategorized -> "未分类"
+                            is CategoryFilter.Single ->
+                                categories.firstOrNull { it.id == filter.categoryId }?.name ?: "未知分类"
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
                 )
             }
 
             if (notes.isEmpty()) {
                 val searching = query.isNotBlank()
+                val emptyText = when {
+                    searching -> "没有匹配的笔记"
+                    selectedFilter is CategoryFilter.Uncategorized -> "没有未分类的笔记"
+                    selectedFilter is CategoryFilter.Single -> "这个分类还没有笔记"
+                    else -> "还没有笔记"
+                }
                 EmptyState(
                     icon = Icons.Outlined.Description,
-                    text = if (searching) "没有匹配的笔记" else "还没有笔记",
+                    text = emptyText,
                     actionLabel = if (searching) null else "写第一条",
-                    onAction = if (searching) null else ({ onNewNote(selectedCategoryId) })
+                    onAction = if (searching) null else ({ onNewNote(viewModel.newNoteCategoryId) })
                 )
             } else {
                 LazyColumn(Modifier.fillMaxSize()) {
@@ -340,7 +364,7 @@ fun NotesScreen(
                             onLongClick = { viewModel.enterSelection(note.id) },
                             now = now,
                             // 仅在「全部」tab 且非搜索态显示分类名，避免与顶部 tab 重复
-                            categoryName = if (selectedCategoryId == null && query.isBlank()) {
+                            categoryName = if (selectedFilter is CategoryFilter.All && query.isBlank()) {
                                 categories.firstOrNull { it.id == note.categoryId }?.name
                             } else {
                                 null

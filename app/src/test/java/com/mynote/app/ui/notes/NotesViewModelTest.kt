@@ -153,4 +153,59 @@ class NotesViewModelTest {
         vm.batchSetCategory(null) { called = true }
         assertFalse(called)
     }
+
+    // ---------- 分类筛选（全部 / 未分类 / 某个分类） ----------
+
+    @Test
+    fun filterAllObservesAllNotes() = runTest(dispatcher) {
+        val catId = repo.addCategory("工作", 0)
+        repo.saveNote(null, "a", "c", null, false, null)
+        repo.saveNote(null, "b", "c", catId, false, null)
+        vm.notes.first { it.isNotEmpty() }
+        assertEquals(setOf("a", "b"), vm.notes.value.map { it.title }.toSet())
+    }
+
+    @Test
+    fun filterUncategorizedObservesOnlyUncategorizedNotes() = runTest(dispatcher) {
+        val catId = repo.addCategory("工作", 0)
+        repo.saveNote(null, "有分类", "c", catId, false, null)
+        repo.saveNote(null, "未分类", "c", null, false, null)
+        vm.onFilterSelect(CategoryFilter.Uncategorized)
+        vm.notes.first { it.isNotEmpty() }
+        assertEquals(listOf("未分类"), vm.notes.value.map { it.title })
+    }
+
+    @Test
+    fun filterSingleObservesOnlyThatCategoryNotes() = runTest(dispatcher) {
+        val catA = repo.addCategory("工作", 0)
+        val catB = repo.addCategory("生活", 0)
+        repo.saveNote(null, "工作笔记", "c", catA, false, null)
+        repo.saveNote(null, "生活笔记", "c", catB, false, null)
+        vm.onFilterSelect(CategoryFilter.Single(catA))
+        vm.notes.first { it.isNotEmpty() }
+        assertEquals(listOf("工作笔记"), vm.notes.value.map { it.title })
+    }
+
+    @Test
+    fun filterUncategorizedIgnoresDeletedNotes() = runTest(dispatcher) {
+        val keep = repo.saveNote(null, "未分类", "c", null, false, null)
+        val trash = repo.saveNote(null, "待删", "c", null, false, null)
+        vm.onFilterSelect(CategoryFilter.Uncategorized)
+        vm.notes.first { it.any { n -> n.id == trash } }
+
+        db.noteDao().update(db.noteDao().getById(trash)!!.copy(deletedAt = 9L))
+
+        vm.notes.first { list -> list.none { it.id == trash } }
+        assertEquals(listOf(keep), vm.notes.value.map { it.id })
+    }
+
+    @Test
+    fun newNoteCategoryIdFollowsFilter() {
+        vm.onFilterSelect(CategoryFilter.All)
+        assertNull(vm.newNoteCategoryId)
+        vm.onFilterSelect(CategoryFilter.Uncategorized)
+        assertNull(vm.newNoteCategoryId)
+        vm.onFilterSelect(CategoryFilter.Single(7L))
+        assertEquals(7L, vm.newNoteCategoryId)
+    }
 }

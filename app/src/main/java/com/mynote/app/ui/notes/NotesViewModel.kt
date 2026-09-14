@@ -26,7 +26,7 @@ class NotesViewModel(
 ) : ViewModel() {
 
     val query = MutableStateFlow("")
-    val selectedCategoryId = MutableStateFlow<Long?>(null)
+    val selectedFilter = MutableStateFlow<CategoryFilter>(CategoryFilter.All)
 
     val sortMode: StateFlow<NoteSortMode> = sortStore.mode
 
@@ -35,22 +35,27 @@ class NotesViewModel(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val notes: StateFlow<List<NoteEntity>> =
-        combine(query, selectedCategoryId, sortMode) { q, cat, _ -> q to cat }
-            .flatMapLatest { (q, cat) ->
+        combine(query, selectedFilter, sortMode) { q, filter, _ -> q to filter }
+            .flatMapLatest { (q, filter) ->
                 when {
                     q.isNotBlank() -> repository.search(q)
-                    cat != null -> repository.observeByCategory(cat)
+                    filter is CategoryFilter.Single -> repository.observeByCategory(filter.categoryId)
+                    filter is CategoryFilter.Uncategorized -> repository.observeUncategorized()
                     else -> repository.observeNotes(sortMode.value)
                 }
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** 新建笔记的预选分类：仅「某个分类」筛选下有值，其余为 null（未分类）。 */
+    val newNoteCategoryId: Long?
+        get() = (selectedFilter.value as? CategoryFilter.Single)?.categoryId
+
     fun onQueryChange(value: String) {
         query.value = value
     }
 
-    fun onCategorySelect(id: Long?) {
-        selectedCategoryId.value = id
+    fun onFilterSelect(filter: CategoryFilter) {
+        selectedFilter.value = filter
     }
 
     fun onSortSelect(mode: NoteSortMode) {
