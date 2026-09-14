@@ -1,5 +1,6 @@
 package com.mynote.app.data.image
 
+import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -36,5 +37,20 @@ class ImageStoreTest {
         assertTrue(keep.exists())
         assertFalse(drop.exists())
         assertFalse(dropThumb.exists())
+    }
+
+    @Test
+    fun failedImportDeletesHalfWrittenTarget() {
+        val dir = store.dir()
+        dir.mkdirs()
+        // 源文件不存在：读取阶段即失败（确定性失败路径）
+        val missingSource = java.io.File(dir, "missing-source.webp")
+        val target = store.newImageFile("webp")
+        target.writeText("半成品")
+
+        val ok = store.importAndCompress(Uri.fromFile(missingSource), target)
+
+        assertFalse(ok)
+        assertFalse(target.exists())
     }
 }

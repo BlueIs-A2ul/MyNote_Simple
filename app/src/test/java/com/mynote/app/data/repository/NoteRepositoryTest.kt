@@ -249,6 +249,23 @@ class NoteRepositoryTest {
     }
 
     @Test
+    fun removingImageMarkersTriggersGarbageCollection() = runTest {
+        // 磁盘上有一个没有任何引用的孤儿文件
+        imageStore.writeFile("orphan.webp", byteArrayOf(1))
+        val orphanFile = imageStore.physicalFile("orphan.webp")
+        assertTrue(orphanFile.exists())
+
+        // 笔记 A 先带图保存（历史快照引用 a.webp），随后保存移除图片标记 → 应触发 GC
+        val id = repo.saveNote(null, "t", "![](img/a.webp)", null, false, null)
+        imageStore.writeFile("a.webp", byteArrayOf(1))
+        repo.saveNote(id, "t", "no image", null, false, null)
+
+        // 无引用的孤儿被回收；仍被历史快照引用的 a.webp 保留（恢复旧版所需）
+        assertFalse(orphanFile.exists())
+        assertTrue(imageStore.physicalFile("a.webp").exists())
+    }
+
+    @Test
     fun restoreRevisionRejectsRevisionFromAnotherNote() = runTest {
         val a = repo.saveNote(null, "a", "va", null, false, null)
         val b = repo.saveNote(null, "b", "vb", null, false, null)

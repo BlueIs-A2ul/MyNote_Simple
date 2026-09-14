@@ -60,6 +60,7 @@ class NoteRepository(
     ): Long {
         val now = System.currentTimeMillis()
         var trimmed = false
+        var imagesRemoved = false
         val resultId = database.withTransaction {
             if (id == null || id == 0L) {
                 val newId = noteDao.insert(NoteEntity(0, title, content, now, now, categoryId, pinned, color))
@@ -77,15 +78,18 @@ class NoteRepository(
                     val changed = existing.title != title || existing.content != content ||
                         existing.categoryId != categoryId || existing.pinned != pinned || existing.color != color
                     if (changed) {
+                        // 记录本次变更是否移除了图片标记，事务外统一触发 GC（引用集含历史快照，不会误删）
+                        val oldImages = NoteContentParser.extractImageNames(existing.content).toSet()
                         noteDao.update(NoteEntity(id, title, content, existing.createdAt, now, categoryId, pinned, color))
                         revisionDao.insert(NoteRevisionEntity(0, id, title, content, categoryId, pinned, color, now))
                         trimmed = revisionDao.trimTo(id, NoteRevisionDao.MAX_PER_NOTE) > 0
+                        imagesRemoved = (oldImages - NoteContentParser.extractImageNames(content).toSet()).isNotEmpty()
                     }
                     id
                 }
             }
         }
-        if (trimmed) collectImageGarbage()
+        if (trimmed || imagesRemoved) collectImageGarbage()
         return resultId
     }
 

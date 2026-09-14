@@ -84,7 +84,16 @@ class NoteImageRenderer(private val imageStore: ImageStore) {
 
     data class NoteData(val title: String, val content: String, val dateText: String)
 
-    data class Measurement(val totalHeightPx: Int, val pageCount: Int)
+    data class Measurement(
+        val totalHeightPx: Int,
+        val pageCount: Int,
+        /**
+         * 无法读取的图片名（文件缺失或尺寸解码失败），按图片名去重、按出现顺序。
+         * 与渲染建块判定同一口径（[buildBlocks] 内 [imageDimensions]），
+         * 这些图不会出现在渲染/导出结果中。
+         */
+        val unreadableImages: List<String> = emptyList()
+    )
 
     internal sealed interface Block {
         val spaceBefore: Float
@@ -124,6 +133,12 @@ class NoteImageRenderer(private val imageStore: ImageStore) {
 
     internal data class PagePlan(val items: List<PlacedItem>, val contentHeight: Float)
 
+    /** 建块结果：分好的块列表 + 无法读取的图片名（缺图统计，去重按图片名）。 */
+    internal data class BlockBuild(
+        val blocks: List<Block>,
+        val unreadableImages: List<String>
+    )
+
     /** 只测量不绘制：用于预览比例决策与页数展示。 */
     suspend fun measure(note: NoteData, scale: Float, measurer: TextMeasurer): Measurement =
         withContext(Dispatchers.Default) {
@@ -132,11 +147,12 @@ class NoteImageRenderer(private val imageStore: ImageStore) {
             val padding = PADDING_DP * scale
             val contentWidth = width - 2 * padding
             val usableHeight = pageHeightPx(scale) - 2 * padding
-            val blocks = buildBlocks(note, scale, contentWidth, usableHeight, measurer, density)
+            val build = buildBlocks(note, scale, contentWidth, usableHeight, measurer, density)
             coroutineContext.ensureActive()
             Measurement(
-                totalHeightPx = ceil(plan(blocks, Float.MAX_VALUE).first().contentHeight + 2 * padding).toInt(),
-                pageCount = plan(blocks, usableHeight).size
+                totalHeightPx = ceil(plan(build.blocks, Float.MAX_VALUE).first().contentHeight + 2 * padding).toInt(),
+                pageCount = plan(build.blocks, usableHeight).size,
+                unreadableImages = build.unreadableImages
             )
         }
 
@@ -190,11 +206,11 @@ class NoteImageRenderer(private val imageStore: ImageStore) {
         val contentWidth = width - 2 * padding
         val pageHeight = pageHeightPx(scale).toFloat()
         val usableHeight = pageHeight - 2 * padding
-        val blocks = buildBlocks(note, scale, contentWidth, usableHeight, measurer, density)
+        val build = buildBlocks(note, scale, contentWidth, usableHeight, measurer, density)
         val plans = if (mode == PageMode.SINGLE) {
-            listOf(plan(blocks, Float.MAX_VALUE).first())
+            listOf(plan(build.blocks, Float.MAX_VALUE).first())
         } else {
-            plan(blocks, usableHeight)
+            plan(build.blocks, usableHeight)
         }
         return RenderPlan(plans, width, padding, contentWidth, pageHeight)
     }
@@ -206,8 +222,10 @@ class NoteImageRenderer(private val imageStore: ImageStore) {
         usableHeight: Float,
         measurer: TextMeasurer,
         density: Density
-    ): List<Block> {
+    ): BlockBuild {
         val blocks = mutableListOf<Block>()
+        // 缺图统计：文件缺失或尺寸解码失败都计入，重复引用（同名标记）只计一次
+        val unreadable = LinkedHashSet<String>()
         if (note.title.isNotBlank()) {
             blocks += Block.TextBlock(
                 spaceBefore = 0f,
@@ -233,7 +251,11 @@ class NoteImageRenderer(private val imageStore: ImageStore) {
 
                 is NoteContentParser.ContentBlock.Image -> {
                     val file = imageStore.physicalFile(contentBlock.name)
-                    val dimensions = imageDimensions(file) ?: return@forEach
+                    // 与渲染跳图判定同一口径：读不出尺寸（文件缺失或损坏）即跳过并计入统计
+                    val dimensions = imageDimensions(file) ?: run {
+                        unreadable += contentBlock.name
+                        return@forEach
+                    }
                     val fit = fitImage(dimensions.first, dimensions.second, contentWidth, usableHeight)
                     blocks += Block.ImageBlock(
                         spaceBefore = contentSpace(firstContent, scale),
@@ -246,7 +268,7 @@ class NoteImageRenderer(private val imageStore: ImageStore) {
                 }
             }
         }
-        return blocks
+        return BlockBuild(blocks, unreadable.toList())
     }
 
     /**

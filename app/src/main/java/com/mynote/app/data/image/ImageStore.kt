@@ -42,7 +42,7 @@ class ImageStore(private val context: Context) {
             }
             val opts = BitmapFactory.Options().apply { inSampleSize = sample }
             val bitmap = resolver.openInputStream(source)?.use { BitmapFactory.decodeStream(it, null, opts) }
-                ?: return false
+                ?: throw java.io.IOException("图片解码失败")
 
             FileOutputStream(target).use { out ->
                 bitmap.compress(Bitmap.CompressFormat.WEBP, 85, out)
@@ -51,6 +51,8 @@ class ImageStore(private val context: Context) {
             generateThumbnail(target.name)
             true
         } catch (e: Exception) {
+            // 失败时清理半成品文件，避免残留占用空间
+            target.delete()
             false
         }
     }

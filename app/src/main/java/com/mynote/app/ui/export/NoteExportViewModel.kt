@@ -36,7 +36,9 @@ class NoteExportViewModel(
             val pages: List<RenderedPage>,
             val pageCount: Int,
             val mode: PageMode,
-            val longWarning: Boolean
+            val longWarning: Boolean,
+            /** 无法读取（文件缺失或损坏）的图片张数，这些图不会出现在导出成品中。 */
+            val unreadableImageCount: Int = 0
         ) : State
 
         data class Error(val message: String) : State
@@ -138,7 +140,8 @@ class NoteExportViewModel(
                     pageCount = measurement.pageCount,
                     mode = targetMode,
                     longWarning = targetMode == PageMode.SINGLE &&
-                        exportHeight >= NoteImageRenderer.SINGLE_WARN_HEIGHT_PX
+                        exportHeight >= NoteImageRenderer.SINGLE_WARN_HEIGHT_PX,
+                    unreadableImageCount = measurement.unreadableImages.size
                 )
             } catch (e: CancellationException) {
                 throw e
@@ -188,3 +191,10 @@ class NoteExportViewModel(
         }
     }
 }
+
+/**
+ * Ready 界面的缺图提示文案：有 N 张图片无法读取，导出结果不含它们。
+ * N=0 时返回 null，界面不显示该行。
+ */
+internal fun unreadableImagesHint(count: Int): String? =
+    if (count > 0) "有 $count 张图片无法读取，导出结果不含它们" else null

@@ -22,6 +22,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
@@ -60,6 +62,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -120,11 +123,13 @@ class NoteEditViewModel(
         }
     }
 
-    fun insertImage(uri: Uri, onInserted: (markup: String) -> Unit) {
+    fun insertImage(uri: Uri, onInserted: (markup: String) -> Unit, onFailed: () -> Unit) {
         viewModelScope.launch {
             val target = imageStore.newImageFile("webp")
             if (imageStore.importAndCompress(uri, target)) {
                 onInserted(NoteContentParser.makeImageMarkup(target.name))
+            } else {
+                onFailed()
             }
         }
     }
@@ -242,12 +247,15 @@ fun NoteEditScreen(
     var showExportDialog by remember { mutableStateOf(false) }
     var showImageExport by remember { mutableStateOf(false) }
     var showUnsavedDialog by remember { mutableStateOf(false) }
+    // 全屏图片预览：记录被点开的图片文件，非空即渲染 NoteImagePreviewDialog
+    var previewFile by remember { mutableStateOf<File?>(null) }
     var isSaving by remember { mutableStateOf(false) }
     // 是否已从已保存笔记回填过字段：只回填一次，清空内容后旋转/重建不再被旧内容覆盖
     var initialized by rememberSaveable(noteId) { mutableStateOf(false) }
 
-    // 正文焦点（插图后恢复用）与撤销/重做栈
+    // 正文焦点（插图后恢复用）与撤销/重做栈；标题焦点（新建笔记自动聚焦用）
     val contentFocusRequester = remember { FocusRequester() }
+    val titleFocusRequester = remember { FocusRequester() }
     val undoController = remember { NoteUndoController() }
 
     LaunchedEffect(note) {
@@ -265,6 +273,13 @@ fun NoteEditScreen(
         }
     }
 
+    // 新建笔记（无已保存内容）自动聚焦标题；进程重建恢复出内容则不抢焦点
+    LaunchedEffect(noteId, initialized) {
+        if (noteId == null && title.isEmpty() && content.text.isEmpty() && !initialized) {
+            titleFocusRequester.requestFocus()
+        }
+    }
+
     LaunchedEffect(aiResultType, aiResultText) {
         val type = aiResultType ?: return@LaunchedEffect
         val text = aiResultText ?: return@LaunchedEffect
@@ -275,24 +290,34 @@ fun NoteEditScreen(
             if (type == "replace") AiResultApplier.Type.REPLACE else AiResultApplier.Type.INSERT,
             text
         )
+        // 贴入结果后恢复正文焦点，与插图路径一致
+        contentFocusRequester.requestFocus()
         onAiResultConsumed()
     }
+
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     val pickImage = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         uri?.let {
-            vm.insertImage(it) { markup ->
-                // 记录插图前的状态，插图可撤销；结构性变更强制新开一格
-                undoController.record(content, force = true)
-                content = AiResultApplier.apply(content, AiResultApplier.Type.INSERT, markup)
-                // 选图返回后正文焦点已丢：恢复焦点，光标落在插入点之后
-                contentFocusRequester.requestFocus()
-            }
+            vm.insertImage(
+                uri = it,
+                onInserted = { markup ->
+                    // 记录插图前的状态，插图可撤销；结构性变更强制新开一格
+                    undoController.record(content, force = true)
+                    content = AiResultApplier.apply(content, AiResultApplier.Type.INSERT, markup)
+                    // 选图返回后正文焦点已丢：恢复焦点，光标落在插入点之后
+                    contentFocusRequester.requestFocus()
+                },
+                onFailed = {
+                    scope.launch { snackbarHostState.showSnackbar("图片插入失败，请换一张") }
+                }
+            )
         }
     }
 
-    val scope = rememberCoroutineScope()
     val exportTxtLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/plain")
     ) { uri ->
@@ -302,7 +327,6 @@ fun NoteEditScreen(
         }
     }
 
-    val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
 
     val isNewNote = noteId == null || noteId == 0L
@@ -374,10 +398,15 @@ fun NoteEditScreen(
                                 text = { Text("分享") },
                                 onClick = {
                                     menuOpen = false
+                                    // 分享走纯文本：图片标记剥掉，文案里说明含图数量
+                                    val imageCount = NoteContentParser.extractImageNames(content.text).size
                                     val shareText = buildString {
                                         append(title.ifBlank { "无标题" })
                                         append("\n\n")
                                         append(NoteContentParser.plainText(content.text))
+                                        if (imageCount > 0) {
+                                            append("\n\n（含 $imageCount 张图片，未包含在文本中）")
+                                        }
                                     }
                                     val send = Intent(Intent.ACTION_SEND).apply {
                                         type = "text/plain"
@@ -411,12 +440,17 @@ fun NoteEditScreen(
                 BasicTextField(
                     value = title,
                     onValueChange = { title = it },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(titleFocusRequester),
                     textStyle = MaterialTheme.typography.titleLarge.copy(
                         color = MaterialTheme.colorScheme.onBackground
                     ),
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     singleLine = true,
+                    // 「下一项」直接跳到正文，避免标题写完再手动点正文
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { contentFocusRequester.requestFocus() }),
                     decorationBox = { innerTextField ->
                         if (title.isEmpty()) {
                             Text(
@@ -454,7 +488,9 @@ fun NoteEditScreen(
                                 contentDescription = "图片",
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(MaterialTheme.shapes.large),
+                                    .clip(MaterialTheme.shapes.large)
+                                    // 点开全屏预览（NoteImagePreviewDialog 接线）
+                                    .clickable { previewFile = imageStore.physicalFile(block.name) },
                                 contentScale = ContentScale.FillWidth
                             )
                         }
@@ -691,6 +727,10 @@ fun NoteEditScreen(
             exportManager = exportManager,
             onDismiss = { showImageExport = false }
         )
+    }
+
+    previewFile?.let { file ->
+        NoteImagePreviewDialog(file = file, onDismiss = { previewFile = null })
     }
 }
 

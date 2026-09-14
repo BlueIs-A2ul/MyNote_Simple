@@ -23,6 +23,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -131,5 +132,29 @@ class NoteExportViewModelTest {
         assertTrue(state.pageCount > 16)
         assertTrue(state.pages.first().bitmap.width < 360)
         longVm.viewModelScope.cancel()
+    }
+
+    @Test
+    fun readyStateCarriesUnreadableImageCount() = runTest(dispatcher) {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val ghostVm = NoteExportViewModel(
+            renderer = NoteImageRenderer(ImageStore(context)),
+            exportManager = ImageExportManager(context),
+            measurer = measurer,
+            note = NoteImageRenderer.NoteData("标题", "![](img/ghost.webp) 缺失图", "2026-09-10")
+        )
+        val state = ghostVm.state.filterIsInstance<NoteExportViewModel.State.Ready>().first()
+        assertEquals(1, state.unreadableImageCount)
+        ghostVm.viewModelScope.cancel()
+    }
+
+    @Test
+    fun unreadableImagesHintIsNullWhenZero() {
+        assertNull(unreadableImagesHint(0))
+    }
+
+    @Test
+    fun unreadableImagesHintMentionsCountWhenMissing() {
+        assertEquals("有 3 张图片无法读取，导出结果不含它们", unreadableImagesHint(3))
     }
 }

@@ -258,6 +258,15 @@ fun NoteExportDialog(
                                     )
                                     Spacer(Modifier.height(8.dp))
                                 }
+                                // 缺图提示：有 N 张图片无法读取，导出结果不含它们（N=0 不显示）
+                                unreadableImagesHint(current.unreadableImageCount)?.let { hint ->
+                                    Text(
+                                        hint,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                }
                                 if (current.longWarning) {
                                     Text(
                                         "长图较大，生成可能需要几秒",

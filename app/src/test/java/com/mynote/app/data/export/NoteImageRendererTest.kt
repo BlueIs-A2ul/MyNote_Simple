@@ -42,7 +42,7 @@ class NoteImageRendererTest {
         val padding = 24f * scale
         val contentWidth = width - 2 * padding
         val usable = 1365f * scale - 2 * padding
-        return renderer.buildBlocks(note, scale, contentWidth, usable, measurer, Density(scale, 1f))
+        return renderer.buildBlocks(note, scale, contentWidth, usable, measurer, Density(scale, 1f)).blocks
     }
 
     @Test
@@ -53,6 +53,21 @@ class NoteImageRendererTest {
         assertEquals(360, bitmap.width)
         assertTrue(bitmap.height in 49..1365)
         assertEquals(android.graphics.Color.WHITE, bitmap.getPixel(0, 0))
+    }
+
+    @Test
+    fun measureReportsUnreadableImages() = runTest {
+        // 真实可解码的图片与缺失的图片混用；缺失图片重复引用只计一次
+        val bmp = Bitmap.createBitmap(10, 10, Bitmap.Config.ARGB_8888)
+        val bos = ByteArrayOutputStream()
+        bmp.compress(Bitmap.CompressFormat.PNG, 100, bos)
+        imageStore.writeFile("ok.webp", bos.toByteArray())
+
+        val noteData = note(content = "![](img/ok.webp) 图1\n![](img/missing.webp) 图2\n![](img/missing.webp) 重复")
+        val measurement = renderer.measure(noteData, 1f, measurer)
+
+        // 仅缺失图片计入统计（文件存在且可解码的不算），按图片名去重
+        assertEquals(listOf("missing.webp"), measurement.unreadableImages)
     }
 
     @Test
@@ -172,6 +187,68 @@ class NoteImageRendererTest {
         val blocks = blocksOf(note(content = "正文" + NoteContentParser.makeImageMarkup("missing.webp")))
         assertTrue(blocks.none { it is NoteImageRenderer.Block.ImageBlock })
         assertTrue(blocks.any { it is NoteImageRenderer.Block.TextBlock })
+    }
+
+    @Test
+    fun measureCountsMissingImage() = runTest {
+        val measurement = renderer.measure(
+            note(content = "正文" + NoteContentParser.makeImageMarkup("missing.webp")),
+            1f,
+            measurer
+        )
+        assertEquals(listOf("missing.webp"), measurement.unreadableImages)
+    }
+
+    @Test
+    fun measureCountsCorruptImage() = runTest {
+        // 损坏的假图片：文件存在但内容不是合法图片，尺寸/解码失败
+        imageStore.writeFile("broken.webp", ByteArray(128) { (it * 13 % 251).toByte() })
+        val measurement = renderer.measure(
+            note(content = NoteContentParser.makeImageMarkup("broken.webp")),
+            1f,
+            measurer
+        )
+        assertEquals(listOf("broken.webp"), measurement.unreadableImages)
+    }
+
+    @Test
+    fun duplicateUnreadableImageCountedOnce() = runTest {
+        writeImage("ok.webp", 100, 100)
+        val content = "前文" +
+            NoteContentParser.makeImageMarkup("missing.webp") +
+            NoteContentParser.makeImageMarkup("ok.webp") +
+            NoteContentParser.makeImageMarkup("missing.webp")
+        val note = note(content = content)
+        val measurement = renderer.measure(note, 1f, measurer)
+        // 同一张缺图引用两次只计一次
+        assertEquals(listOf("missing.webp"), measurement.unreadableImages)
+        // 统计口径与渲染建块一致：同一内容只建成 1 个图片块（缺图不成块）
+        assertEquals(1, blocksOf(note).count { it is NoteImageRenderer.Block.ImageBlock })
+    }
+
+    @Test
+    fun measureCountsMissingAndCorruptSeparately() = runTest {
+        imageStore.writeFile("broken.webp", ByteArray(64) { 0x00 })
+        val measurement = renderer.measure(
+            note(
+                content = NoteContentParser.makeImageMarkup("missing.webp") +
+                    NoteContentParser.makeImageMarkup("broken.webp")
+            ),
+            1f,
+            measurer
+        )
+        assertEquals(setOf("missing.webp", "broken.webp"), measurement.unreadableImages.toSet())
+    }
+
+    @Test
+    fun measureReportsNoUnreadableWhenAllImagesReadable() = runTest {
+        writeImage("ok.webp", 80, 80)
+        val measurement = renderer.measure(
+            note(content = NoteContentParser.makeImageMarkup("ok.webp")),
+            1f,
+            measurer
+        )
+        assertTrue(measurement.unreadableImages.isEmpty())
     }
 
     @Test
