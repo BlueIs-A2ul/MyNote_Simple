@@ -52,6 +52,10 @@ class WebViewAiSession(initialDriver: AiWebDriver) : AiWebSession {
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
         webView.settings.databaseEnabled = true
+        // 默认 WebView UA 含 "Android"：DeepSeek 前端按 UA 判定移动端，
+        // 移动端分支回车不发送且按钮无文字标签，驱动脚本会全部落空。
+        // 固定桌面 Chrome UA，走桌面分支（回车兜底可用 + 结构定位点击发送按钮）。
+        webView.settings.userAgentString = DESKTOP_USER_AGENT
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
         webView.addJavascriptInterface(bridge, BRIDGE_NAME)
         webView.webViewClient = object : WebViewClient() {
@@ -167,9 +171,15 @@ class WebViewAiSession(initialDriver: AiWebDriver) : AiWebSession {
         }, 300)
     }
 
-    private companion object {
-        const val BRIDGE_NAME = "MyNoteJsBridge"
-        val BOOTSTRAP_JS = """
+    companion object {
+        /** 桌面 Chrome UA：避免 DeepSeek 把 WebView 判为移动端（移动端回车不发送）。公开给测试断言。 */
+        const val DESKTOP_USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+
+        private const val BRIDGE_NAME = "MyNoteJsBridge"
+
+        private val BOOTSTRAP_JS = """
             window.__mynote = window.__mynote || {};
             window.__mynote.emit = function (type, payload) {
               try { MyNoteJsBridge.emit(JSON.stringify({ type: type, payload: payload || {} })); } catch (e) {}

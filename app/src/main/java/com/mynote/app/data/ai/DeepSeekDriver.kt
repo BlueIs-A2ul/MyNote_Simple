@@ -34,6 +34,53 @@ class DeepSeekDriver : AiWebDriver {
     private companion object {
         val CHAT_ID_REGEX = Regex("""/a/chat/s/([\w-]+)""")
 
+        /**
+         * 结构定位辅助（内嵌进各脚本，经 $ACTION_BUTTON_HELPERS 插值）：
+         * DeepSeek 当前页面的发送/停止按钮是无文字、无 aria-label 的 SVG 图标按钮
+         * （文案只存在于 hover 才渲染的 Tooltip），且页面按 UA 判移动端时回车不发送。
+         * 发送/停止共用一个槽位，是输入框祖先容器内唯一圆形（ds-button--circle）图标按钮。
+         * 选择器来源：chat.deepseek.com 线上 bundle（main.*.js 的 Button/f2 组件）。
+         */
+        val ACTION_BUTTON_HELPERS = """
+            function __mnFindInput() {
+              var list = document.querySelectorAll('textarea');
+              for (var i = 0; i < list.length; i++) {
+                var el = list[i];
+                if (el.offsetParent !== null && !el.disabled) return el;
+              }
+              return null;
+            }
+            function __mnIconButtons(scope) {
+              var out = [];
+              var list = scope.querySelectorAll('button, [role="button"]');
+              for (var i = 0; i < list.length; i++) {
+                var el = list[i];
+                if (el.offsetParent === null) continue;
+                if (el.getAttribute('aria-disabled') === 'true' || el.disabled) continue;
+                var cls = typeof el.className === 'string' ? el.className : '';
+                if (cls.indexOf('ds-button') < 0 || cls.indexOf('ds-button--disabled') >= 0) continue;
+                if (!el.querySelector('svg')) continue;
+                out.push(el);
+              }
+              return out;
+            }
+            function __mnActionButton(input) {
+              if (!input) return null;
+              var container = input.parentElement;
+              for (var i = 0; i < 12 && container; i++) {
+                var list = __mnIconButtons(container);
+                if (list.length) {
+                  for (var k = list.length - 1; k >= 0; k--) {
+                    if (String(list[k].className || '').indexOf('circle') >= 0) return list[k];
+                  }
+                  return list[list.length - 1];
+                }
+                container = container.parentElement;
+              }
+              return null;
+            }
+        """.trimIndent()
+
         val LOGIN_CHECK_JS = """
             (function () {
               function __emit(type, payload) { try { if (window.__mynote && window.__mynote.emit) window.__mynote.emit(type, payload); } catch (e) {} }
@@ -72,17 +119,10 @@ class DeepSeekDriver : AiWebDriver {
         val SEND_MESSAGE_JS = """
             (function () {
               function __emit(type, payload) { try { if (window.__mynote && window.__mynote.emit) window.__mynote.emit(type, payload); } catch (e) {} }
+              $ACTION_BUTTON_HELPERS
               var payload = window.__mynoteText;
               window.__mynoteText = null;
-              function findInput() {
-                var list = document.querySelectorAll('textarea');
-                for (var i = 0; i < list.length; i++) {
-                  var el = list[i];
-                  if (el.offsetParent !== null && !el.disabled) return el;
-                }
-                return null;
-              }
-              function findSend(input) {
+              function findSendByLabel(input) {
                 var container = input.parentElement;
                 for (var i = 0; i < 8 && container; i++) {
                   var btns = container.querySelectorAll('button, [role="button"]');
@@ -99,7 +139,7 @@ class DeepSeekDriver : AiWebDriver {
                 }
                 return null;
               }
-              var input = findInput();
+              var input = __mnFindInput();
               if (!input) {
                 __emit('replyError', { reason: '未找到输入框，请显示网页手动发送' });
                 return;
@@ -115,12 +155,12 @@ class DeepSeekDriver : AiWebDriver {
                 return;
               }
               setTimeout(function () {
-                var current = findInput();
+                var current = __mnFindInput();
                 if (!current) {
                   __emit('replyError', { reason: '输入框已消失，请显示网页手动发送' });
                   return;
                 }
-                var btn = findSend(current);
+                var btn = findSendByLabel(current) || __mnActionButton(current);
                 if (btn) { btn.click(); return; }
                 current.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
               }, 500);
@@ -130,6 +170,7 @@ class DeepSeekDriver : AiWebDriver {
         val OBSERVE_REPLY_JS = """
             (function () {
               function __emit(type, payload) { try { if (window.__mynote && window.__mynote.emit) window.__mynote.emit(type, payload); } catch (e) {} }
+              $ACTION_BUTTON_HELPERS
               if (window.__mynoteObserver) { window.__mynoteObserver.disconnect(); window.__mynoteObserver = null; }
               if (window.__mynoteTimer) { clearInterval(window.__mynoteTimer); window.__mynoteTimer = null; }
               function findStop() {
@@ -139,7 +180,7 @@ class DeepSeekDriver : AiWebDriver {
                   var a = (nodes[i].getAttribute('aria-label') || '').toLowerCase();
                   if (t.indexOf('停止') >= 0 || a.indexOf('停止') >= 0 || t.indexOf('stop') >= 0 || a.indexOf('stop') >= 0) return nodes[i];
                 }
-                return null;
+                return __mnActionButton(__mnFindInput());
               }
               function targets() {
                 return document.querySelectorAll('[class*="markdown"]');
@@ -213,12 +254,15 @@ class DeepSeekDriver : AiWebDriver {
         val STOP_GENERATING_JS = """
             (function () {
               function __emit(type, payload) { try { if (window.__mynote && window.__mynote.emit) window.__mynote.emit(type, payload); } catch (e) {} }
+              $ACTION_BUTTON_HELPERS
               var nodes = document.querySelectorAll('[role="button"], button');
               for (var i = 0; i < nodes.length; i++) {
                 var t = (nodes[i].textContent || '').trim().toLowerCase();
                 var a = (nodes[i].getAttribute('aria-label') || '').toLowerCase();
                 if (t.indexOf('停止') >= 0 || a.indexOf('停止') >= 0 || t.indexOf('stop') >= 0 || a.indexOf('stop') >= 0) { nodes[i].click(); return; }
               }
+              var btn = __mnActionButton(__mnFindInput());
+              if (btn) btn.click();
             })();
         """.trimIndent()
     }

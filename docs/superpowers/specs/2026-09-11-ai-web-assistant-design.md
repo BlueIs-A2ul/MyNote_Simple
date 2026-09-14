@@ -360,3 +360,8 @@ AndroidManifest.xml           # 修改：INTERNET 权限
 | `TextFieldValue` 改造触碰编辑页核心逻辑 | 改动点局限（初始化 / 保存 / 预览 / 插图 / 输入框 / 字数统计），现有测试 + 新增纯逻辑测试兜底 |
 | JS 注入转义（引号 / 换行 / emoji） | 统一走 `JSONObject.quote` 构造脚本参数，`DeepSeekDriverTest` 覆盖 |
 | 流式事件高频刷新导致卡顿 | chunk 节流约 100ms + `LazyColumn` 单条消息原地更新；事件流有溢出丢弃策略，最终以 `replyDone` 全文为准 |
+
+## 修订记录
+
+- 2026-09-14（修复）：「发送完全失效」真机问题定位与修复。根因：DeepSeek 改版后（a）发送/停止按钮变为无文字、无 aria-label 的 SVG 图标按钮（文案只在 hover 才渲染的 Tooltip 里），原按 "send/发送" 标签定位必然落空；（b）前端按 UA 判定移动端（`isMobile` = UA 含 "Android"），移动端分支回车不发送，WebView 默认 UA 必中 → 消息从未发出，观察器 60s 超时后消息按 `failed` 落库。修复：`WebViewAiSession` 固定桌面 Chrome UA（`DESKTOP_USER_AGENT`）；`DeepSeekDriver` 新增结构定位（输入框祖先容器内最后一个未禁用的 `ds-button` 图标按钮，`ds-button--circle` 圆形槽位优先，选择器依据线上 bundle `main.*.js` 的 Button/f2 组件），并保留标签搜索与回车双兜底；`findStop`/`stopGeneratingJs` 同步改用结构定位。新增 `WebViewAiSessionTest` 与 `DeepSeekDriverTest` 结构断言（脚本为字符串，仍只能测生成不能测真实页面，真机验证见 §12 清单）。
+

@@ -73,6 +73,30 @@ class DeepSeekDriverTest {
     }
 
     @Test
+    fun sendScriptLocatesIconSendButtonStructurally() {
+        // DeepSeek 改版后发送按钮无文字/aria-label：结构定位 ds 图标按钮，
+        // 优先圆形槽位（发送/停止共用），禁用态排除。
+        val js = driver.sendMessageJs("x")
+        assertTrue(js.contains("__mnActionButton"))
+        assertTrue(js.contains("__mnFindInput"))
+        assertTrue(js.contains("ds-button--disabled"))
+        assertTrue(js.contains("indexOf('circle') >= 0"))
+    }
+
+    @Test
+    fun observeScriptUsesStructuralStopButtonDetection() {
+        val js = driver.observeReplyJs()
+        assertTrue(js.contains("__mnActionButton"))
+        assertTrue(js.contains("__mnActionButton(__mnFindInput())"))
+    }
+
+    @Test
+    fun stopGeneratingScriptUsesStructuralStopButton() {
+        val js = driver.stopGeneratingJs()
+        assertTrue(js.contains("__mnActionButton"))
+    }
+
+    @Test
     fun observeScriptThrottlesHeavyScanAndTracksInitialText() {
         val js = driver.observeReplyJs()
         assertTrue(js.contains("initialText"))
