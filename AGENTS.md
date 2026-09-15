@@ -8,6 +8,7 @@ MyNote 安卓备忘录（原生 Android，单模块 `:app`）。本文件只记�
 - 硬约束（设计文档反复强调）：内存占用小、**零新增第三方依赖**、零敏感存储权限（只用 SAF / Photo Picker / FileProvider）。
 - 远程 `origin` = GitHub `BlueIs-A2ul/MyNote_Simple`；历史在 `master` 线性推进；不要主动 push（仅用户明确要求时执行）。提交信息用中文 + `feat|fix|docs|chore|refactor:` 前缀（与现有历史一致）。
 - 版本规则：`versionName` 语义化 `major.minor.patch`；`versionCode = major*10000 + minor*100 + patch`（定义在 `app/build.gradle.kts` 顶部）；release 产物名 `MyNote-<versionName>-release.apk`；设置页底部显示版本号。发 release 前先递增 minor（功能）/ patch（修复），并同步 README 的版本行。
+- Release 发布流程：`assembleRelease` 后创建注解 tag `v<versionName>` 并推送，再用 `gh release create v<versionName> --title "MyNote v<versionName>" --notes-file <说明> app/build/outputs/apk/release/MyNote-<versionName>-release.apk`；说明沿用累积式 changelog（自上一个 tag 起逐版本列要点）+ 末尾附 APK 的 SHA-256（格式参照 v1.4.0 / v1.5.0）。
 
 ## 命令（Windows PowerShell，统一 `.\gradlew`）
 
@@ -25,6 +26,7 @@ MyNote 安卓备忘录（原生 Android，单模块 `:app`）。本文件只记�
 - `settings.gradle.kts` 里阿里云镜像**刻意置前** + `RepositoriesMode.PREFER_SETTINGS`：本机全局 init 脚本会向 project 注入仓库（`FAIL_ON_PROJECT_REPOS` 会冲突），且 dl.google.com TLS 不稳定，镜像置前保证解析不中断。
 - 没有 `local.properties`，依赖环境变量 `ANDROID_HOME`。
 - 根目录 `keystore.properties` 与 `*.keystore` 已 gitignore，但 release 在配置阶段强制读取（缺失即失败）；debug/单测不受影响。
+- 本机直连 `github.com:443` TLS 会被重置（`SSL_ERROR_SYSCALL`）：push / `ls-remote` 需走本机代理，单命令加 `-c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897`（gh 则设置进程环境变量 `HTTPS_PROXY`/`HTTP_PROXY`）；勿在全局 git 配置里固化代理。
 - `app/build.gradle.kts` 单测 JVM 参数 `--add-opens=java.base/java.io=ALL-UNNAMED` 是 Robolectric + JDK 17 关闭文件流所必需，勿删。
 
 ## 测试约定
