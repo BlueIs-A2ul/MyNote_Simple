@@ -20,6 +20,7 @@ fun EmptyState(
     icon: ImageVector,
     text: String,
     modifier: Modifier = Modifier,
+    hint: String? = null,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null
 ) {
@@ -40,6 +41,14 @@ fun EmptyState(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 12.dp)
         )
+        if (hint != null) {
+            Text(
+                text = hint,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+        }
         if (actionLabel != null && onAction != null) {
             TextButton(onClick = onAction, modifier = Modifier.padding(top = 4.dp)) {
                 Text(actionLabel, style = MaterialTheme.typography.labelLarge)

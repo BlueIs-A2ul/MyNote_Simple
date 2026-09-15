@@ -8,6 +8,7 @@
 - 搜索：标题与正文全文搜索
 - 图文混排：正文以纯文本存储、图片用 `![](img/<name>)` 标记内嵌，查看时文本/图片交错渲染，图片懒加载
 - 分类：单维度分类（增/改/删，删除后笔记移入未分类，同名幂等）；主页「未分类」筛选入口可查看全部未分类笔记，配合多选批量分类即可整体归类
+- 日期与日历：编辑页底部可给笔记手动标记归属日期（可清除）；主页 ⋮ → 日历按月浏览，有笔记的日子带圆点，点选日期查看当天笔记
 - 主题：浅色/深色/跟随系统三态、8 档预设主题色、Android 12+ 动态取色开关（Material You；点选主题色自动关闭动态取色）
 - 设置：主页 ⋮ → 设置，主题修改即时生效、重启保持
 - 备份：zip 全量备份 / 导入（按 id 去重、冲突保留更新者）
@@ -24,7 +25,7 @@ Kotlin · Jetpack Compose + Material 3 · MVVM + 单向数据流（UDF） · Roo
 | minSdk / targetSdk | 24 / 34 |
 | JDK | 17 |
 | Gradle | 8.7（Wrapper） |
-| 版本 | 1.7.2；`versionName = major.minor.patch`、`versionCode = major*10000+minor*100+patch`，设置页可见 |
+| 版本 | 1.8.0；`versionName = major.minor.patch`、`versionCode = major*10000+minor*100+patch`，设置页可见 |
 | release 产物 | R8 混淆 + 资源压缩，约 1.7MB，`MyNote-<版本>-release.apk`（按 keystore.properties 签名） |
 
 ## 构建
@@ -37,14 +38,14 @@ Kotlin · Jetpack Compose + Material 3 · MVVM + 单向数据流（UDF） · Roo
 
 ```bat
 .\gradlew :app:assembleDebug          rem debug APK
-.\gradlew :app:testDebugUnitTest      rem 463 个单元测试
+.\gradlew :app:testDebugUnitTest      rem 547 个单元测试
 .\gradlew :app:assembleRelease        rem release（R8 + 资源压缩 + 签名）
 ```
 
 产物：
 
 - debug：`app/build/outputs/apk/debug/app-debug.apk`
-- release：`app/build/outputs/apk/release/MyNote-1.7.2-release.apk`（文件名随 versionName 变化）
+- release：`app/build/outputs/apk/release/MyNote-1.8.0-release.apk`（文件名随 versionName 变化）
 
 ## 项目结构
 
@@ -54,7 +55,7 @@ app/src/main/java/com/mynote/app/
 ├── MainActivity.kt           # 唯一 Activity
 ├── di/AppContainer.kt        # 手写依赖注入（database/imageStore/repository/backup）
 ├── data/
-│   ├── db/                   # NoteEntity / CategoryEntity / NoteRevisionEntity / AiSessionEntity / AiMessageEntity / DAO / AppDatabase（Room v5 + 迁移）
+│   ├── db/                   # NoteEntity / CategoryEntity / NoteRevisionEntity / AiSessionEntity / AiMessageEntity / DAO / AppDatabase（Room v6 + 迁移）
 │   ├── repository/           # NoteRepository（业务逻辑 + 图片垃圾回收）
 │   ├── settings/             # ThemeSettingsStore（SharedPreferences + StateFlow）
 │   ├── ai/                   # DeepSeek API 客户端（SSE）/ 会话 / 消息组装 / 会话仓库
@@ -64,6 +65,7 @@ app/src/main/java/com/mynote/app/
 ├── ui/
 │   ├── theme/                # 主题（8 档色板 / 动态取色应用）
 │   ├── notes/                # 列表 / 编辑 / 解析器 / ViewModel
+│   ├── calendar/             # 日历视图（月网格 / 当日笔记 / ViewModel）
 │   ├── categories/           # 分类管理
 │   ├── settings/             # 主题与通用设置页 / ViewModel（含 AI 助手 Key / 模型配置）
 │   ├── export/               # 导出图片预览页 / ViewModel
@@ -81,6 +83,8 @@ app/src/main/java/com/mynote/app/
 - 主题设置设计：[`docs/superpowers/specs/2026-09-10-theme-settings-design.md`](docs/superpowers/specs/2026-09-10-theme-settings-design.md)
 - 图片导出设计：[`docs/superpowers/specs/2026-09-10-note-image-export-design.md`](docs/superpowers/specs/2026-09-10-note-image-export-design.md)
 - 历史修改记录设计：[`docs/superpowers/specs/2026-09-10-note-history-design.md`](docs/superpowers/specs/2026-09-10-note-history-design.md)
+- 日期与日历设计：[`docs/superpowers/specs/2026-09-15-note-calendar-design.md`](docs/superpowers/specs/2026-09-15-note-calendar-design.md)
+- 日期与日历计划（含修订记录）：[`docs/superpowers/plans/2026-09-15-note-calendar.md`](docs/superpowers/plans/2026-09-15-note-calendar.md)
 - AI 助手（DeepSeek 官方 API）设计：[`docs/superpowers/specs/2026-09-15-deepseek-api-assistant-design.md`](docs/superpowers/specs/2026-09-15-deepseek-api-assistant-design.md)
 - AI 助手（DeepSeek 官方 API）计划（含修订记录）：[`docs/superpowers/plans/2026-09-15-deepseek-api-assistant.md`](docs/superpowers/plans/2026-09-15-deepseek-api-assistant.md)
 - AI 网页端助手设计（已被 API 方案替换）：[`docs/superpowers/specs/2026-09-11-ai-web-assistant-design.md`](docs/superpowers/specs/2026-09-11-ai-web-assistant-design.md)

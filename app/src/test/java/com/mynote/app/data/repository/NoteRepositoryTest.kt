@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.mynote.app.data.db.AppDatabase
 import com.mynote.app.data.db.NoteEntity
 import com.mynote.app.data.image.ImageStore
+import com.mynote.app.util.CalendarDates
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -344,5 +345,51 @@ class NoteRepositoryTest {
         assertEquals(1, repo.purgeExpiredDeletedNotes())
         assertNull(repo.getNote(expired))
         assertNotNull(repo.getNote(fresh))
+    }
+
+    @Test
+    fun dateOnlyChangeCreatesRevision() = runTest {
+        val day = CalendarDates.dayStart(2026, 9, 15)
+        val id = repo.saveNote(null, "t", "c", null, false, null)
+        repo.saveNote(id, "t", "c", null, false, null, day)
+
+        assertEquals(day, repo.getNote(id)?.noteDate)
+        // 仅日期变化也算一次变更：与置顶/颜色一致，写一条历史快照
+        assertEquals(2, repo.countRevisions(id))
+    }
+
+    @Test
+    fun sameDateDoesNotAddRevision() = runTest {
+        val day = CalendarDates.dayStart(2026, 9, 15)
+        val id = repo.saveNote(null, "t", "c", null, false, null, day)
+        repo.saveNote(id, "t", "c", null, false, null, day)
+
+        assertEquals(1, repo.countRevisions(id))
+    }
+
+    @Test
+    fun updateDraftPersistsNoteDateWithoutAddingRevision() = runTest {
+        val id = repo.saveNote(null, "t", "c", null, false, null)
+        val day = CalendarDates.dayStart(2026, 9, 15)
+
+        repo.updateDraft(id, "t", "c", null, false, null, day)
+
+        assertEquals(day, repo.getNote(id)?.noteDate)
+        assertEquals(1, repo.countRevisions(id))
+    }
+
+    @Test
+    fun restoreRevisionKeepsCurrentNoteDate() = runTest {
+        val id = repo.saveNote(null, "t", "v1", null, false, null)
+        repo.saveNote(id, "t", "v2", null, false, null)
+        val day = CalendarDates.dayStart(2026, 9, 15)
+        repo.saveNote(id, "t", "v2", null, false, null, day)
+        val firstRevision = db.noteRevisionDao().getByNote(id).last()
+
+        assertTrue(repo.restoreRevision(id, firstRevision.id))
+
+        // 历史快照不含日期：恢复旧版正文时保留当前归属日期
+        assertEquals("v1", repo.getNote(id)?.content)
+        assertEquals(day, repo.getNote(id)?.noteDate)
     }
 }

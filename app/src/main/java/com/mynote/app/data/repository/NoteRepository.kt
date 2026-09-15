@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.mynote.app.data.db.AppDatabase
 import com.mynote.app.data.db.CategoryDao
 import com.mynote.app.data.db.CategoryEntity
+import com.mynote.app.data.db.DateMark
 import com.mynote.app.data.db.NoteDao
 import com.mynote.app.data.db.NoteEntity
 import com.mynote.app.data.db.NoteListItem
@@ -49,6 +50,14 @@ class NoteRepository(
     /** 回收站列表（已软删除的笔记）。 */
     fun observeDeletedNotes(): Flow<List<NoteListItem>> = noteDao.observeDeleted()
 
+    /** 日历：某日期范围（含起不含止）内的笔记。 */
+    fun observeNotesByDateRange(startInclusive: Long, endExclusive: Long): Flow<List<NoteListItem>> =
+        noteDao.observeByDateRange(startInclusive, endExclusive)
+
+    /** 日历圆点：范围内每天各有多少篇已标记日期的笔记。 */
+    fun observeDateMarks(startInclusive: Long, endExclusive: Long): Flow<List<DateMark>> =
+        noteDao.observeDateMarks(startInclusive, endExclusive)
+
     fun observeCategories(): Flow<List<CategoryEntity>> = categoryDao.observeAll()
 
     fun observeRevisions(noteId: Long): Flow<List<NoteRevisionEntity>> = revisionDao.observeByNote(noteId)
@@ -65,14 +74,17 @@ class NoteRepository(
         content: String,
         categoryId: Long?,
         pinned: Boolean,
-        color: Int?
+        color: Int?,
+        noteDate: Long? = null
     ): Long {
         val now = System.currentTimeMillis()
         var trimmed = false
         var imagesRemoved = false
         val resultId = database.withTransaction {
             if (id == null || id == 0L) {
-                val newId = noteDao.insert(NoteEntity(0, title, content, now, now, categoryId, pinned, color))
+                val newId = noteDao.insert(
+                    NoteEntity(0, title, content, now, now, categoryId, pinned, color, deletedAt = null, noteDate = noteDate)
+                )
                 revisionDao.insert(NoteRevisionEntity(0, newId, title, content, categoryId, pinned, color, now))
                 newId
             } else {
@@ -85,11 +97,14 @@ class NoteRepository(
                         revisionDao.insert(existing.toRevision(existing.updatedAt))
                     }
                     val changed = existing.title != title || existing.content != content ||
-                        existing.categoryId != categoryId || existing.pinned != pinned || existing.color != color
+                        existing.categoryId != categoryId || existing.pinned != pinned ||
+                        existing.color != color || existing.noteDate != noteDate
                     if (changed) {
                         // 记录本次变更是否移除了图片标记，事务外统一触发 GC（引用集含历史快照，不会误删）
                         val oldImages = NoteContentParser.extractImageNames(existing.content).toSet()
-                        noteDao.update(NoteEntity(id, title, content, existing.createdAt, now, categoryId, pinned, color))
+                        noteDao.update(
+                            NoteEntity(id, title, content, existing.createdAt, now, categoryId, pinned, color, existing.deletedAt, noteDate)
+                        )
                         revisionDao.insert(NoteRevisionEntity(0, id, title, content, categoryId, pinned, color, now))
                         trimmed = revisionDao.trimTo(id, NoteRevisionDao.MAX_PER_NOTE) > 0
                         imagesRemoved = (oldImages - NoteContentParser.extractImageNames(content).toSet()).isNotEmpty()
@@ -112,7 +127,8 @@ class NoteRepository(
         content: String,
         categoryId: Long?,
         pinned: Boolean,
-        color: Int?
+        color: Int?,
+        noteDate: Long? = null
     ) {
         database.withTransaction {
             val existing = noteDao.getById(id) ?: return@withTransaction
@@ -123,6 +139,7 @@ class NoteRepository(
                     categoryId = categoryId,
                     pinned = pinned,
                     color = color,
+                    noteDate = noteDate,
                     updatedAt = System.currentTimeMillis()
                 )
             )
@@ -133,7 +150,8 @@ class NoteRepository(
         val revision = revisionDao.getById(revisionId) ?: return false
         if (revision.noteId != noteId) return false
         val categoryId = revision.categoryId?.takeIf { categoryDao.getById(it) != null }
-        saveNote(noteId, revision.title, revision.content, categoryId, revision.pinned, revision.color)
+        // 历史快照不含日期：恢复旧版正文/字段时保留当前归属日期
+        saveNote(noteId, revision.title, revision.content, categoryId, revision.pinned, revision.color, noteDao.getById(noteId)?.noteDate)
         return true
     }
 

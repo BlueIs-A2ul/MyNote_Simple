@@ -9,6 +9,7 @@ import com.mynote.app.data.db.CategoryEntity
 import com.mynote.app.data.db.NoteEntity
 import com.mynote.app.data.image.ImageStore
 import com.mynote.app.ui.notes.NoteContentParser
+import com.mynote.app.util.CalendarDates
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -123,6 +124,29 @@ class BackupManagerTest {
         val json = """{"notes":[{"id":1,"title":"旧","content":"c","createdAt":1,"updatedAt":2,"categoryId":null,"pinned":false,"color":null}],"categories":[]}"""
         val decoded = manager.decode(json)
         assertNull(decoded.notes[0].deletedAt)
+        assertNull(decoded.notes[0].noteDate)
+    }
+
+    @Test
+    fun backupNoteJsonRoundTripsWithNoteDate() {
+        val note = BackupManager.BackupNote(1, "标题", "正文", 1L, 2L, null, false, null, null, 777L)
+        val data = BackupManager.BackupData(listOf(note), emptyList())
+        val decoded = manager.decode(manager.encode(data))
+        assertEquals(777L, decoded.notes[0].noteDate)
+    }
+
+    @Test
+    fun exportZipRoundTripsNoteDate() = runTest {
+        val day = CalendarDates.dayStart(2026, 9, 15)
+        db.noteDao().insert(NoteEntity(1, "t", "c", 1, 1, null, false, null, noteDate = day))
+        val out = ByteArrayOutputStream()
+        assertEquals(1, managerWith(output = out).exportZip(exportUri))
+
+        // 清空本地后用导出的备份导入：归属日期原样回来
+        db.noteDao().delete(db.noteDao().getById(1)!!)
+        managerWith(input = out.toByteArray()).importZip(backupUri)
+
+        assertEquals(day, db.noteDao().getById(1)?.noteDate)
     }
 
     @Test

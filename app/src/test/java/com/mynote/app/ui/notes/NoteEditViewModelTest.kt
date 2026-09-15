@@ -7,6 +7,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.mynote.app.data.db.AppDatabase
 import com.mynote.app.data.image.ImageStore
 import com.mynote.app.data.repository.NoteRepository
+import com.mynote.app.util.CalendarDates
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -98,16 +99,16 @@ class NoteEditViewModelTest {
         vm = NoteEditViewModel(repo, ImageStore(ApplicationProvider.getApplicationContext()), noteId = id)
 
         val crossing = CompletableDeferred<String?>()
-        vm.save("t", "v39", null, false, null) { crossing.complete(it) }
+        vm.save("t", "v39", null, false, null, null) { crossing.complete(it) }
         assertEquals(NoteEditViewModel.HISTORY_WARNING, crossing.await())
         assertEquals(40, repo.countRevisions(id))
 
         val noop = CompletableDeferred<String?>()
-        vm.save("t", "v39", null, false, null) { noop.complete(it) }
+        vm.save("t", "v39", null, false, null, null) { noop.complete(it) }
         assertEquals(null, noop.await())
 
         val beyond = CompletableDeferred<String?>()
-        vm.save("t", "v40", null, false, null) { beyond.complete(it) }
+        vm.save("t", "v40", null, false, null, null) { beyond.complete(it) }
         assertEquals(null, beyond.await())
         assertEquals(41, repo.countRevisions(id))
     }
@@ -121,7 +122,7 @@ class NoteEditViewModelTest {
         vm.viewModelScope.cancel()
         vm = NoteEditViewModel(repo, ImageStore(ApplicationProvider.getApplicationContext()), noteId = id)
         val warning = CompletableDeferred<String?>()
-        vm.save("t", "v38", null, false, null) { warning.complete(it) }
+        vm.save("t", "v38", null, false, null, null) { warning.complete(it) }
         assertEquals(null, warning.await())
     }
 
@@ -129,8 +130,8 @@ class NoteEditViewModelTest {
     fun doubleSaveCreatesOnlyOneNoteAndReportsOnce() = runTest(dispatcher) {
         var doneCount = 0
         val first = CompletableDeferred<Unit>()
-        vm.save("t", "c", null, false, null) { doneCount++; first.complete(Unit) }
-        vm.save("t", "c", null, false, null) { doneCount++ }
+        vm.save("t", "c", null, false, null, null) { doneCount++; first.complete(Unit) }
+        vm.save("t", "c", null, false, null, null) { doneCount++ }
         first.await()
         assertEquals(1, db.noteDao().getAll().size)
         assertEquals(1, doneCount)
@@ -143,7 +144,7 @@ class NoteEditViewModelTest {
         vm = NoteEditViewModel(repo, ImageStore(ApplicationProvider.getApplicationContext()), noteId = id)
         vm.note.first { it != null }
 
-        vm.saveDraft("t2", "c2", null, true, null)
+        vm.saveDraft("t2", "c2", null, true, null, null)
 
         val updated = vm.note.first { it?.title == "t2" }!!
         assertEquals("c2", updated.content)
@@ -153,13 +154,13 @@ class NoteEditViewModelTest {
 
     @Test
     fun saveDraftBlankNewNoteDoesNotInsert() = runTest(dispatcher) {
-        vm.saveDraft("   ", "", null, true, null)
+        vm.saveDraft("   ", "", null, true, null, null)
         advanceUntilIdle()
         assertNull(vm.draftId.value)
 
         // 用一次正式保存同步数据库：空白草稿若误插入，这次断言会看到两条
         val done = CompletableDeferred<Unit>()
-        vm.save("t", "c", null, false, null) { done.complete(Unit) }
+        vm.save("t", "c", null, false, null, null) { done.complete(Unit) }
         done.await()
         assertEquals(1, db.noteDao().getAll().size)
         assertEquals("t", db.noteDao().getAll().single().title)
@@ -167,7 +168,7 @@ class NoteEditViewModelTest {
 
     @Test
     fun saveDraftNewNonBlankInsertsAndExposesDraftId() = runTest(dispatcher) {
-        vm.saveDraft("标题", "正文", null, false, null)
+        vm.saveDraft("标题", "正文", null, false, null, null)
 
         val id = vm.draftId.first { it != null }!!
         assertEquals("标题", db.noteDao().getById(id)?.title)
@@ -178,16 +179,42 @@ class NoteEditViewModelTest {
 
     @Test
     fun saveAfterSilentDraftUpdatesSameNoteWithoutDuplicateInsert() = runTest(dispatcher) {
-        vm.saveDraft("标题", "正文", null, false, null)
+        vm.saveDraft("标题", "正文", null, false, null, null)
         val id = vm.draftId.first { it != null }!!
 
         val done = CompletableDeferred<Unit>()
-        vm.save("标题", "改后正文", null, false, null) { done.complete(Unit) }
+        vm.save("标题", "改后正文", null, false, null, null) { done.complete(Unit) }
         done.await()
 
         assertEquals(1, db.noteDao().getAll().size)
         assertEquals("改后正文", db.noteDao().getById(id)?.content)
         assertEquals(2, repo.countRevisions(id))
+    }
+
+    @Test
+    fun savePersistsNoteDate() = runTest(dispatcher) {
+        val day = CalendarDates.dayStart(2026, 9, 15)
+        val done = CompletableDeferred<Unit>()
+        vm.save("t", "c", null, false, null, day) { done.complete(Unit) }
+        done.await()
+
+        val id = db.noteDao().getAll().single().id
+        assertEquals(day, db.noteDao().getById(id)?.noteDate)
+    }
+
+    @Test
+    fun saveDraftPersistsNoteDateWithoutAddingRevision() = runTest(dispatcher) {
+        val id = repo.saveNote(null, "t", "c", null, false, null)
+        vm.viewModelScope.cancel()
+        vm = NoteEditViewModel(repo, ImageStore(ApplicationProvider.getApplicationContext()), noteId = id)
+        vm.note.first { it != null }
+        val day = CalendarDates.dayStart(2026, 9, 15)
+
+        vm.saveDraft("t", "c", null, false, null, day)
+
+        assertEquals(day, vm.note.first { it?.noteDate != null }?.noteDate)
+        // 静默草稿不写历史快照
+        assertEquals(1, repo.countRevisions(id))
     }
 
     @Test

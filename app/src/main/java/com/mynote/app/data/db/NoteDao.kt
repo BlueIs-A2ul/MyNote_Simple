@@ -38,6 +38,14 @@ interface NoteDao {
     @Query("SELECT id, title, categoryId, pinned, createdAt, updatedAt, deletedAt, substr(content, 1, 400) AS summary FROM notes WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC")
     fun observeDeleted(): Flow<List<NoteListItem>>
 
+    /** 日历：按日期范围取笔记（含起不含止），排序与主列表一致（月/日视图共用）。 */
+    @Query("SELECT id, title, categoryId, pinned, createdAt, updatedAt, deletedAt, substr(content, 1, 400) AS summary FROM notes WHERE deletedAt IS NULL AND noteDate >= :startInclusive AND noteDate < :endExclusive ORDER BY pinned DESC, updatedAt DESC")
+    fun observeByDateRange(startInclusive: Long, endExclusive: Long): Flow<List<NoteListItem>>
+
+    /** 日历圆点：范围内每天各有多少篇已标记日期的笔记。 */
+    @Query("SELECT noteDate, COUNT(*) AS count FROM notes WHERE deletedAt IS NULL AND noteDate IS NOT NULL AND noteDate >= :startInclusive AND noteDate < :endExclusive GROUP BY noteDate")
+    fun observeDateMarks(startInclusive: Long, endExclusive: Long): Flow<List<DateMark>>
+
     /** 回收站中删除时间早于截止时刻的笔记（到期清理用，SQL 过滤避免全表读正文）。 */
     @Query("SELECT * FROM notes WHERE deletedAt IS NOT NULL AND deletedAt < :cutoff")
     suspend fun getDeletedBefore(cutoff: Long): List<NoteEntity>

@@ -59,7 +59,9 @@ class BackupManager(
         val pinned: Boolean,
         val color: Int?,
         /** 软删除时间戳；默认 null 保证旧备份 JSON 缺失该字段时仍可解码。 */
-        val deletedAt: Long? = null
+        val deletedAt: Long? = null,
+        /** 归属日期（本地零点毫秒）；默认 null 保证旧备份 JSON 缺失该字段时仍可解码。 */
+        val noteDate: Long? = null
     )
 
     @Serializable
@@ -85,10 +87,10 @@ class BackupManager(
         localUpdatedAt == null || incomingUpdatedAt > localUpdatedAt
 
     fun NoteEntity.toBackup() =
-        BackupNote(id, title, content, createdAt, updatedAt, categoryId, pinned, color, deletedAt)
+        BackupNote(id, title, content, createdAt, updatedAt, categoryId, pinned, color, deletedAt, noteDate)
 
     fun BackupNote.toEntity() =
-        NoteEntity(id, title, content, createdAt, updatedAt, categoryId, pinned, color, deletedAt)
+        NoteEntity(id, title, content, createdAt, updatedAt, categoryId, pinned, color, deletedAt, noteDate)
 
     fun CategoryEntity.toBackup() = BackupCategory(id, name, color)
 

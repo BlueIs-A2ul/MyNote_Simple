@@ -17,6 +17,27 @@ object TimeFormat {
 
     fun date(timestamp: Long): String = formatter("yyyy-MM-dd").format(Date(timestamp))
 
+    /** 日历顶栏月份标题：2026年9月。 */
+    fun monthLabel(year: Int, month: Int): String = "${year}年${month}月"
+
+    /** 日历选中日标题 / 日期展示：9月10日。 */
+    fun dayLabel(timestamp: Long): String {
+        val c = Calendar.getInstance().apply { timeInMillis = timestamp }
+        return "${c.get(Calendar.MONTH) + 1}月${c.get(Calendar.DAY_OF_MONTH)}日"
+    }
+
+    /** 编辑页日期按钮文案：同年 `M月d日`，跨年 `yyyy年M月d日`。 */
+    fun dateLabel(timestamp: Long, now: Long = System.currentTimeMillis()): String {
+        val target = Calendar.getInstance().apply { timeInMillis = timestamp }
+        val today = Calendar.getInstance().apply { timeInMillis = now }
+        val monthDay = "${target.get(Calendar.MONTH) + 1}月${target.get(Calendar.DAY_OF_MONTH)}日"
+        return if (target.get(Calendar.YEAR) == today.get(Calendar.YEAR)) {
+            monthDay
+        } else {
+            "${target.get(Calendar.YEAR)}年$monthDay"
+        }
+    }
+
     /**
      * 列表用相对时间：刚刚 / N 分钟前 / N 小时前 / 今天 / 昨天 / M月d日 / yyyy年M月d日。
      *

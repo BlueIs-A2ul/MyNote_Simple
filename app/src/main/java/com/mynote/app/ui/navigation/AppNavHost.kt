@@ -11,6 +11,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.mynote.app.di.AppContainer
 import com.mynote.app.ui.ai.AiChatScreen
+import com.mynote.app.ui.calendar.CalendarScreen
 import com.mynote.app.ui.categories.CategoriesScreen
 import com.mynote.app.ui.history.NoteHistoryScreen
 import com.mynote.app.ui.notes.NoteEditScreen
@@ -54,6 +55,7 @@ fun AppNavHost(container: AppContainer) {
                 },
                 onManageCategories = { navController.navigate("categories") },
                 onOpenTrash = { navController.navigate("trash") },
+                onOpenCalendar = { navController.navigate("calendar") },
                 onOpenSettings = { navController.navigate("settings") }
             )
         }
@@ -160,6 +162,13 @@ fun AppNavHost(container: AppContainer) {
             TrashScreen(
                 repository = container.noteRepository,
                 retentionStore = container.trashRetentionStore,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable("calendar") {
+            CalendarScreen(
+                repository = container.noteRepository,
+                onOpenNote = { id -> navController.navigate("edit/$id") { launchSingleTop = true } },
                 onBack = { navController.popBackStack() }
             )
         }

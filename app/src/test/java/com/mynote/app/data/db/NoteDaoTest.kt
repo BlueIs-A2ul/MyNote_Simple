@@ -2,6 +2,7 @@ package com.mynote.app.data.db
 
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.mynote.app.util.CalendarDates
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -34,8 +35,13 @@ class NoteDaoTest {
         db.close()
     }
 
-    private fun note(id: Long = 0, title: String, updatedAt: Long, pinned: Boolean = false) =
-        NoteEntity(id, title, "c", 0L, updatedAt, null, pinned, null)
+    private fun note(
+        id: Long = 0,
+        title: String,
+        updatedAt: Long,
+        pinned: Boolean = false,
+        noteDate: Long? = null
+    ) = NoteEntity(id, title, "c", 0L, updatedAt, null, pinned, null, noteDate = noteDate)
 
     @Test
     fun insertAndGetById() = runTest {
@@ -240,5 +246,39 @@ class NoteDaoTest {
         val b = dao.insert(note(title = "b", updatedAt = 2L))
         dao.updateAll(dao.getByIds(listOf(a, b)).map { it.copy(pinned = true) })
         assertEquals(listOf(true, true), dao.getByIds(listOf(a, b)).map { it.pinned })
+    }
+
+    @Test
+    fun observeByDateRangeFiltersRangeAndExcludesUntaggedAndDeleted() = runTest {
+        val day = CalendarDates.dayStart(2026, 9, 15)
+        val nextDay = CalendarDates.nextDay(day)
+        dao.insert(note(title = "当天普通", updatedAt = 1L, noteDate = day))
+        dao.insert(note(title = "当天置顶", updatedAt = 2L, pinned = true, noteDate = day))
+        dao.insert(note(title = "次日", updatedAt = 3L, noteDate = nextDay))
+        dao.insert(note(title = "未标记", updatedAt = 4L))
+        val deleted = dao.insert(note(title = "已删当天", updatedAt = 5L, noteDate = day))
+        dao.update(dao.getById(deleted)!!.copy(deletedAt = 9L))
+
+        // 含起不含止：只出现选中日；置顶优先；未标记与软删除不出现
+        assertEquals(
+            listOf("当天置顶", "当天普通"),
+            dao.observeByDateRange(day, nextDay).first().map { it.title }
+        )
+    }
+
+    @Test
+    fun observeDateMarksCountsNotesPerDayWithinRange() = runTest {
+        val day = CalendarDates.dayStart(2026, 9, 15)
+        val nextDay = CalendarDates.nextDay(day)
+        dao.insert(note(title = "a", updatedAt = 1L, noteDate = day))
+        dao.insert(note(title = "b", updatedAt = 2L, noteDate = day))
+        dao.insert(note(title = "c", updatedAt = 3L, noteDate = nextDay))
+        dao.insert(note(title = "未标记", updatedAt = 4L))
+        val deleted = dao.insert(note(title = "已删", updatedAt = 5L, noteDate = day))
+        dao.update(dao.getById(deleted)!!.copy(deletedAt = 9L))
+
+        val marks = dao.observeDateMarks(day, nextDay).first()
+        assertEquals(1, marks.size)
+        assertEquals(DateMark(day, 2), marks.single())
     }
 }

@@ -83,6 +83,7 @@ fun NotesScreen(
     onNewNote: (Long?) -> Unit,
     onManageCategories: () -> Unit,
     onOpenTrash: () -> Unit,
+    onOpenCalendar: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
     val notes by viewModel.notes.collectAsState()
@@ -267,6 +268,10 @@ fun NotesScreen(
                             DropdownMenuItem(
                                 text = { Text("回收站") },
                                 onClick = { menuOpen = false; onOpenTrash() }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("日历") },
+                                onClick = { menuOpen = false; onOpenCalendar() }
                             )
                             // 排序对所有视图生效（#11 口径；#16 的禁用说明已作废）
                             DropdownMenuItem(

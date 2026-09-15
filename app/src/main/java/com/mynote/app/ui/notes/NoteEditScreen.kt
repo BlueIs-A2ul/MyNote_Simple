@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -43,6 +45,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -91,7 +94,9 @@ import com.mynote.app.ui.export.NoteExportDialog
 import com.mynote.app.ui.notes.NoteContentParser.ContentBlock
 import com.mynote.app.ui.theme.NoteColors
 import com.mynote.app.ui.theme.PaperPalette
+import com.mynote.app.util.CalendarDates
 import com.mynote.app.util.FileNameSanitizer
+import com.mynote.app.util.TimeFormat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -152,14 +157,22 @@ class NoteEditViewModel(
         }
     }
 
-    fun save(title: String, content: String, categoryId: Long?, pinned: Boolean, color: Int?, onDone: (String?) -> Unit) {
+    fun save(
+        title: String,
+        content: String,
+        categoryId: Long?,
+        pinned: Boolean,
+        color: Int?,
+        noteDate: Long?,
+        onDone: (String?) -> Unit
+    ) {
         if (saving) return
         saving = true
         viewModelScope.launch {
             try {
                 val targetId = noteId?.takeIf { it != 0L } ?: _draftId.value
                 val before = if (targetId != null) repository.countRevisions(targetId) else 0
-                val id = repository.saveNote(targetId, title, content, categoryId, pinned, color)
+                val id = repository.saveNote(targetId, title, content, categoryId, pinned, color, noteDate)
                 val warning = if (targetId != null &&
                     before < NoteRevisionDao.WARN_AT &&
                     repository.countRevisions(id) == NoteRevisionDao.WARN_AT
@@ -179,17 +192,24 @@ class NoteEditViewModel(
      * 静默保存草稿（退后台兜底）：存量笔记只更新数据行；新笔记标题/正文均空则不落库；
      * 新笔记非空则插入并记录 [draftId]，后续保存只更新同一条。
      */
-    fun saveDraft(title: String, content: String, categoryId: Long?, pinned: Boolean, color: Int?) {
+    fun saveDraft(
+        title: String,
+        content: String,
+        categoryId: Long?,
+        pinned: Boolean,
+        color: Int?,
+        noteDate: Long?
+    ) {
         if (saving) return
         saving = true
         viewModelScope.launch {
             try {
                 val targetId = noteId?.takeIf { it != 0L } ?: _draftId.value
                 when {
-                    targetId != null -> repository.updateDraft(targetId, title, content, categoryId, pinned, color)
+                    targetId != null -> repository.updateDraft(targetId, title, content, categoryId, pinned, color, noteDate)
                     title.isBlank() && content.isBlank() -> Unit
                     else -> {
-                        val id = repository.saveNote(null, title, content, categoryId, pinned, color)
+                        val id = repository.saveNote(null, title, content, categoryId, pinned, color, noteDate)
                         _draftId.value = id
                         observeNote(id)
                     }
@@ -225,9 +245,9 @@ class NoteEditViewModel(
 
 /**
  * 判断编辑页是否存在未保存变更。
- * - 新建笔记：仅标题/正文非空才算变更；空笔记只改分类/置顶不视为变更（不会落库）。
+ * - 新建笔记：仅标题/正文非空才算变更；空笔记只改分类/置顶/日期不视为变更（不会落库）。
  * - 已有笔记未加载完（saved 为 null）：标题/正文非空即视为有变更（保守防丢）。
- * - 已有笔记已加载：标题/正文/分类/置顶与已保存值逐项比较。
+ * - 已有笔记已加载：标题/正文/分类/置顶/归属日期与已保存值逐项比较。
  */
 internal fun hasUnsavedChanges(
     isNew: Boolean,
@@ -236,12 +256,13 @@ internal fun hasUnsavedChanges(
     title: String,
     content: String,
     categoryId: Long?,
-    pinned: Boolean
+    pinned: Boolean,
+    noteDate: Long?
 ): Boolean = when {
     isNew -> title.isNotBlank() || content.isNotBlank()
     saved == null -> title.isNotBlank() || content.isNotBlank()
     else -> title != saved.title || content != saved.content ||
-        categoryId != saved.categoryId || pinned != saved.pinned
+        categoryId != saved.categoryId || pinned != saved.pinned || noteDate != saved.noteDate
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -276,8 +297,11 @@ fun NoteEditScreen(
     var previewMode by rememberSaveable { mutableStateOf(false) }
     var pinned by rememberSaveable(noteId) { mutableStateOf(false) }
     var selectedCategoryId by rememberSaveable(noteId) { mutableStateOf(initialCategoryId) }
+    // 归属日期（本地零点毫秒），null = 未标记
+    var noteDate by rememberSaveable(noteId) { mutableStateOf<Long?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     var showCategorySheet by remember { mutableStateOf(false) }
+    var showDatePicker by remember { mutableStateOf(false) }
     var showAddCategoryDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
@@ -305,6 +329,7 @@ fun NoteEditScreen(
                 content = TextFieldValue(n.content)
                 selectedCategoryId = n.categoryId
                 pinned = n.pinned
+                noteDate = n.noteDate
             }
             // 回填后的内容作为撤销基线，不回退到空文本
             undoController.reset()
@@ -376,13 +401,13 @@ fun NoteEditScreen(
     val context = LocalContext.current
 
     val isNewNote = (noteId == null || noteId == 0L) && draftId == null
-    val dirty = hasUnsavedChanges(isNewNote, note, initialCategoryId, title, content.text, selectedCategoryId, pinned)
+    val dirty = hasUnsavedChanges(isNewNote, note, initialCategoryId, title, content.text, selectedCategoryId, pinned, noteDate)
     val canSave = !(isNewNote && title.isBlank() && content.text.isBlank())
 
     // 退后台静默保存草稿：标题/正文非空的新笔记会入库，空白新笔记不落库
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
         if (dirty && !isSaving) {
-            vm.saveDraft(title, content.text, selectedCategoryId, pinned, note?.color)
+            vm.saveDraft(title, content.text, selectedCategoryId, pinned, note?.color, noteDate)
         }
     }
 
@@ -393,7 +418,7 @@ fun NoteEditScreen(
     val saveAndExit: () -> Unit = {
         if (!isSaving) {
             isSaving = true
-            vm.save(title, content.text, selectedCategoryId, pinned, note?.color) { warning ->
+            vm.save(title, content.text, selectedCategoryId, pinned, note?.color, noteDate) { warning ->
                 isSaving = false
                 if (warning != null) {
                     scope.launch {
@@ -618,6 +643,14 @@ fun NoteEditScreen(
                             contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     ) { Text("图片") }
+                    TextButton(
+                        onClick = { showDatePicker = true },
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    ) {
+                        Text(noteDate?.let { TimeFormat.dateLabel(it) } ?: "日期")
+                    }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TextButton(
@@ -669,6 +702,36 @@ fun NoteEditScreen(
                     onClick = { showCategorySheet = false; showAddCategoryDialog = true }
                 )
             }
+        }
+    }
+
+    if (showDatePicker) {
+        // DatePicker 的初始值与返回值都是「所选日期的 UTC 零点」，经 CalendarDates 与本地零点互转
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = noteDate?.let { CalendarDates.localDayToPickerMillis(it) }
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let {
+                            noteDate = CalendarDates.pickerMillisToLocalDay(it)
+                        }
+                        showDatePicker = false
+                    }
+                ) { Text("确定") }
+            },
+            dismissButton = {
+                Row {
+                    if (noteDate != null) {
+                        TextButton(onClick = { noteDate = null; showDatePicker = false }) { Text("清除") }
+                    }
+                    TextButton(onClick = { showDatePicker = false }) { Text("取消") }
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
         }
     }
 
