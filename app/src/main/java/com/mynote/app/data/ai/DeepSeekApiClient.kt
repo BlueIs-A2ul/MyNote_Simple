@@ -82,6 +82,7 @@ fun interface HttpStreamTransport {
  * DeepSeek Chat Completions 客户端（OpenAI 兼容协议）。
  * 手写 SSE：零新增依赖；解析逻辑见 [DeepSeekSseParser]（纯函数）。
  * 429/503 仅在连接已建立、尚未读流时重试一次（间隔 [retryDelayMs]，测试传 0）。
+ * 422（参数被拒，如官方不再支持 `thinking` 字段）时去掉该字段立即重试一次；两种重试互不叠加。
  */
 class DeepSeekApiClient(
     private val transport: HttpStreamTransport = UrlConnectionTransport(),
@@ -95,6 +96,8 @@ class DeepSeekApiClient(
 
     private val json = Json {
         encodeDefaults = true
+        // thinking = null 时序列化结果不含该键（422 回退用）；不影响 parseToJsonElement 解析
+        explicitNulls = false
         ignoreUnknownKeys = true
     }
 
@@ -104,26 +107,30 @@ class DeepSeekApiClient(
         deepThinking: Boolean,
         messages: List<AiChatMessage>
     ): Flow<ApiStreamEvent> = flow {
-        val body = json.encodeToString(
-            ChatRequest(
-                model = model,
-                messages = messages.map { MessageDto(it.role, it.content) },
-                stream = true,
-                thinking = ThinkingDto(if (deepThinking) THINKING_ENABLED else THINKING_DISABLED)
-            )
-        ).toByteArray(Charsets.UTF_8)
+        val messageDtos = messages.map { MessageDto(it.role, it.content) }
+        var includeThinking = true
 
-        var connection = openConnection(apiKey, body)
+        var connection = openConnection(apiKey, requestBody(model, messageDtos, deepThinking, includeThinking))
         if (connection == null) {
             emit(ApiStreamEvent.Error(NETWORK_ERROR))
             return@flow
         }
 
-        // 限流/服务器繁忙：尚未开始读流，安全丢弃旧连接后重试一次
-        if (connection.statusCode == 429 || connection.statusCode == 503) {
+        // 422 回退优先：参数被拒（如官方不再支持 thinking 字段）→ 去掉 thinking 立即重试一次
+        if (connection.statusCode == 422 && includeThinking) {
+            runCatching { connection.close() }
+            includeThinking = false
+            val retried = openConnection(apiKey, requestBody(model, messageDtos, deepThinking, includeThinking))
+            if (retried == null) {
+                emit(ApiStreamEvent.Error(NETWORK_ERROR))
+                return@flow
+            }
+            connection = retried
+        } else if (connection.statusCode == 429 || connection.statusCode == 503) {
+            // 限流/服务器繁忙：尚未开始读流，安全丢弃旧连接后重试一次
             runCatching { connection.close() }
             delay(retryDelayMs)
-            val retried = openConnection(apiKey, body)
+            val retried = openConnection(apiKey, requestBody(model, messageDtos, deepThinking, includeThinking))
             if (retried == null) {
                 emit(ApiStreamEvent.Error(NETWORK_ERROR))
                 return@flow
@@ -196,6 +203,28 @@ class DeepSeekApiClient(
 
     /** 测试用：进行中的连接数。 */
     internal fun activeStreamCount(): Int = activeConnections.size
+
+    /**
+     * 构造 `POST /chat/completions` 请求体；[includeThinking] 为 false 时结果不含 `thinking` 键。
+     * 因重试时字段可能不同，每次请求都必须重新调用，不能复用旧字节。
+     */
+    private fun requestBody(
+        model: String,
+        messages: List<MessageDto>,
+        deepThinking: Boolean,
+        includeThinking: Boolean
+    ): ByteArray = json.encodeToString(
+        ChatRequest(
+            model = model,
+            messages = messages,
+            stream = true,
+            thinking = if (includeThinking) {
+                ThinkingDto(if (deepThinking) THINKING_ENABLED else THINKING_DISABLED)
+            } else {
+                null
+            }
+        )
+    ).toByteArray(Charsets.UTF_8)
 
     /** 建立流式连接；IOException 转为 null（由调用方发错误事件）。 */
     private suspend fun openConnection(apiKey: String, body: ByteArray): HttpStreamConnection? {
@@ -324,7 +353,7 @@ class DeepSeekApiClient(
         val model: String,
         val messages: List<MessageDto>,
         val stream: Boolean,
-        val thinking: ThinkingDto
+        val thinking: ThinkingDto?
     )
 
     companion object {

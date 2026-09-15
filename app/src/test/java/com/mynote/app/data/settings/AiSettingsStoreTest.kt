@@ -77,6 +77,47 @@ class AiSettingsStoreTest {
     }
 
     @Test
+    fun modelsRoundTripAndPersistAcrossInstances() {
+        assertEquals(DeepSeekModels.all, store.models())
+
+        store.setModels(listOf("deepseek-flash", "deepseek-x"))
+
+        assertEquals(listOf("deepseek-flash", "deepseek-x"), store.models())
+        assertEquals(
+            listOf("deepseek-flash", "deepseek-x"),
+            AiSettingsStore(context, FakeCipher()).models()
+        )
+    }
+
+    @Test
+    fun setModelsFiltersBlankAndDuplicates() {
+        store.setModels(listOf(" deepseek-flash ", "", "deepseek-flash", "   ", "deepseek-x"))
+
+        assertEquals(listOf("deepseek-flash", "deepseek-x"), store.models())
+    }
+
+    @Test
+    fun modelsFallBackToBuiltinWhenEmptyOrBlank() {
+        store.setModels(emptyList())
+        assertEquals(DeepSeekModels.all, store.models())
+
+        store.setModels(listOf("deepseek-x"))
+        store.setModels(listOf("   ", ""))
+        assertEquals(DeepSeekModels.all, store.models())
+    }
+
+    @Test
+    fun modelsFallBackToBuiltinWhenStoredValueCorrupt() {
+        context.getSharedPreferences("ai_settings", Context.MODE_PRIVATE)
+            .edit().putString("api_models", "\n \ndeepseek-x\n").commit()
+        assertEquals(listOf("deepseek-x"), store.models())
+
+        context.getSharedPreferences("ai_settings", Context.MODE_PRIVATE)
+            .edit().putString("api_models", "\n \n").commit()
+        assertEquals(DeepSeekModels.all, store.models())
+    }
+
+    @Test
     fun modelDefaultsToFlashAndRejectsUnknownIds() {
         assertEquals(DeepSeekModels.FLASH, store.model())
 
@@ -85,6 +126,27 @@ class AiSettingsStoreTest {
 
         store.setModel(DeepSeekModels.V4_PRO)
         assertEquals(DeepSeekModels.V4_PRO, store.model())
+
+        // 新语义：模型合法性以 models() 列表为准
+        store.setModels(listOf("deepseek-x"))
+        assertEquals(DeepSeekModels.DEFAULT, store.model())
+
+        store.setModel("deepseek-x")
+        assertEquals("deepseek-x", store.model())
+
+        store.setModel(DeepSeekModels.V4_PRO)
+        assertEquals("deepseek-x", store.model())
+    }
+
+    @Test
+    fun modelFallsBackWhenStoredIdDropsOutOfList() {
+        store.setModels(listOf("deepseek-x", "deepseek-y"))
+        store.setModel("deepseek-x")
+        assertEquals("deepseek-x", store.model())
+
+        store.setModels(listOf(DeepSeekModels.V4_PRO))
+
+        assertEquals(DeepSeekModels.DEFAULT, store.model())
     }
 
     @Test

@@ -14,6 +14,12 @@ import com.mynote.app.data.settings.DarkMode
 import com.mynote.app.data.settings.NoteSortStore
 import com.mynote.app.data.settings.ThemeSettingsStore
 import com.mynote.app.data.settings.TrashRetentionStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -34,6 +40,7 @@ class SettingsViewModelTest {
             stored.removePrefix("enc:").takeIf { stored.startsWith("enc:") }
     }
 
+    private val dispatcher = StandardTestDispatcher()
     private lateinit var context: Context
     private lateinit var store: ThemeSettingsStore
     private lateinit var sortStore: NoteSortStore
@@ -41,8 +48,20 @@ class SettingsViewModelTest {
     private lateinit var aiStore: AiSettingsStore
     private lateinit var vm: SettingsViewModel
 
+    /** 假探测：测试可改 [probeResult]；[lastProbeKey] 记录收到的 Key。 */
+    private var probeResult: ProbeResult = ProbeResult.Failed("未配置")
+    private var lastProbeKey: String? = null
+    private val fakeProbe: suspend (String) -> ProbeResult = { key ->
+        lastProbeKey = key
+        probeResult
+    }
+
+    /** 假余额查询：本测试类只验证注入缝不触网。 */
+    private val fakeBalance: suspend (String) -> BalanceState = { BalanceState.Failed("未配置") }
+
     @Before
     fun setup() {
+        Dispatchers.setMain(dispatcher)
         context = ApplicationProvider.getApplicationContext()
         context.getSharedPreferences("theme_settings", Context.MODE_PRIVATE)
             .edit().clear().commit()
@@ -54,7 +73,12 @@ class SettingsViewModelTest {
         sortStore = NoteSortStore(context)
         trashStore = TrashRetentionStore(context)
         aiStore = AiSettingsStore(context, FakeCipher())
-        vm = SettingsViewModel(store, sortStore, trashStore, aiStore, DeepSeekApiClient())
+        vm = SettingsViewModel(store, sortStore, trashStore, aiStore, DeepSeekApiClient(), fakeProbe, fakeBalance)
+    }
+
+    @After
+    fun teardown() {
+        Dispatchers.resetMain()
     }
 
     @Test
@@ -100,6 +124,65 @@ class SettingsViewModelTest {
 
         vm.setAiModel("nope")
         assertEquals(DeepSeekModels.V4_PRO, vm.aiModel.value)
+    }
+
+    @Test
+    fun availableModelsStartsFromStore() {
+        assertEquals(DeepSeekModels.all, vm.availableModels.value)
+    }
+
+    @Test
+    fun testConnectionUpdatesModelsAndSwitchesStaleModel() = runTest(dispatcher) {
+        vm.setAiModel(DeepSeekModels.V4_PRO)
+        probeResult = ProbeResult.Ok(listOf(DeepSeekModels.FLASH, "deepseek-x"))
+
+        val message = vm.testConnection("sk-1")
+
+        assertEquals("sk-1", lastProbeKey)
+        assertEquals(listOf(DeepSeekModels.FLASH, "deepseek-x"), vm.availableModels.value)
+        assertEquals(listOf(DeepSeekModels.FLASH, "deepseek-x"), aiStore.models())
+        assertEquals(DeepSeekModels.FLASH, vm.aiModel.value)
+        assertEquals(DeepSeekModels.FLASH, aiStore.model())
+        assertTrue(message.startsWith("连接正常，可用模型："))
+    }
+
+    @Test
+    fun testConnectionKeepsModelPresentInNewList() = runTest(dispatcher) {
+        probeResult = ProbeResult.Ok(listOf(DeepSeekModels.FLASH, "deepseek-x"))
+
+        vm.testConnection("sk-1")
+
+        assertEquals(listOf(DeepSeekModels.FLASH, "deepseek-x"), vm.availableModels.value)
+        assertEquals(DeepSeekModels.FLASH, vm.aiModel.value)
+    }
+
+    @Test
+    fun testConnectionFailureKeepsModelsAndModel() = runTest(dispatcher) {
+        vm.setAiModel(DeepSeekModels.V4_PRO)
+        val modelsBefore = vm.availableModels.value
+        probeResult = ProbeResult.Failed("API Key 无效，请到设置中检查")
+
+        val message = vm.testConnection("sk-1")
+
+        assertEquals("API Key 无效，请到设置中检查", message)
+        assertEquals(modelsBefore, vm.availableModels.value)
+        assertEquals(DeepSeekModels.V4_PRO, vm.aiModel.value)
+        assertEquals(DeepSeekModels.all, aiStore.models())
+    }
+
+    @Test
+    fun modelAfterRefreshKeepsCurrentWhenStillInList() {
+        assertEquals("deepseek-x", modelAfterRefresh("deepseek-x", listOf("deepseek-y", "deepseek-x")))
+    }
+
+    @Test
+    fun modelAfterRefreshPicksFirstWhenCurrentMissing() {
+        assertEquals("deepseek-y", modelAfterRefresh("deepseek-v4-pro", listOf("deepseek-y", "deepseek-x")))
+    }
+
+    @Test
+    fun modelAfterRefreshFallsBackToDefaultOnEmptyList() {
+        assertEquals(DeepSeekModels.DEFAULT, modelAfterRefresh("deepseek-x", emptyList()))
     }
 
     @Test

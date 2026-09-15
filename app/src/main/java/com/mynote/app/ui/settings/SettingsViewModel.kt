@@ -23,7 +23,9 @@ class SettingsViewModel(
     private val sortStore: NoteSortStore,
     private val trashStore: TrashRetentionStore,
     private val aiStore: AiSettingsStore,
-    private val apiClient: DeepSeekApiClient
+    private val apiClient: DeepSeekApiClient,
+    private val probeFn: suspend (String) -> ProbeResult = { apiClient.probe(it) },
+    private val balanceFn: suspend (String) -> BalanceState = { apiClient.fetchBalance(it) }
 ) : ViewModel() {
 
     val settings: StateFlow<ThemeSettings> = store.settings
@@ -37,6 +39,10 @@ class SettingsViewModel(
     /** AI 助手：模型 id（deepseek-flash / deepseek-v4-pro）。 */
     private val _aiModel = MutableStateFlow(aiStore.model())
     val aiModel: StateFlow<String> = _aiModel
+
+    /** AI 助手：可用模型列表（初始为持久化值/内置保底，测试连接成功后刷新为官方列表）。 */
+    private val _availableModels = MutableStateFlow(aiStore.models())
+    val availableModels: StateFlow<List<String>> = _availableModels
 
     /** AI 助手：深度思考开关（默认关，按输出计费更高）。 */
     private val _deepThinking = MutableStateFlow(aiStore.deepThinking())
@@ -80,11 +86,27 @@ class SettingsViewModel(
         _apiKeyConfigured.value = false
     }
 
-    /** 测试连接：始终返回可展示文案（成功含可用模型与内置模型一致性提示）。 */
-    suspend fun testConnection(key: String): String = connectionMessage(apiClient.probe(key))
+    /**
+     * 测试连接：成功时把官方模型列表写回设置、刷新 [availableModels]，
+     * 当前模型不在新列表内则自动选中校正结果；始终返回可展示文案。
+     */
+    suspend fun testConnection(key: String): String {
+        val result = probeFn(key)
+        if (result is ProbeResult.Ok) {
+            aiStore.setModels(result.models)
+            val models = aiStore.models()
+            _availableModels.value = models
+            val next = modelAfterRefresh(_aiModel.value, models)
+            if (next != _aiModel.value) {
+                aiStore.setModel(next)
+                _aiModel.value = aiStore.model()
+            }
+        }
+        return connectionMessage(result)
+    }
 
     /** 查询余额：始终返回可展示文案（总额/赠金/充值，或不足提示）。 */
-    suspend fun queryBalance(key: String): String = balanceMessage(apiClient.fetchBalance(key))
+    suspend fun queryBalance(key: String): String = balanceMessage(balanceFn(key))
 
     companion object {
         fun factory(
@@ -92,11 +114,22 @@ class SettingsViewModel(
             sortStore: NoteSortStore,
             trashStore: TrashRetentionStore,
             aiStore: AiSettingsStore,
-            apiClient: DeepSeekApiClient
+            apiClient: DeepSeekApiClient,
+            probeFn: suspend (String) -> ProbeResult = { apiClient.probe(it) },
+            balanceFn: suspend (String) -> BalanceState = { apiClient.fetchBalance(it) }
         ): ViewModelProvider.Factory = viewModelFactory {
-            initializer { SettingsViewModel(store, sortStore, trashStore, aiStore, apiClient) }
+            initializer {
+                SettingsViewModel(store, sortStore, trashStore, aiStore, apiClient, probeFn, balanceFn)
+            }
         }
     }
+}
+
+/** 模型刷新校正：当前模型仍在列表内则保留；否则取列表首项；列表为空回退内置默认。 */
+internal fun modelAfterRefresh(current: String, models: List<String>): String = when {
+    current in models -> current
+    models.isNotEmpty() -> models.first()
+    else -> DeepSeekModels.DEFAULT
 }
 
 /** 测试连接结果 → 展示文案：成功时列出可用模型，官方列表与内置不一致时追加提醒。 */

@@ -63,6 +63,7 @@ class DeepSeekApiClientTest {
 
         DeepSeekApiClient(transport).stream("key", "deepseek-v4-pro", true, messages).toList()
 
+        assertTrue("正常请求体应包含 thinking 键", transport.body!!.contains("\"thinking\""))
         val root = Json.parseToJsonElement(transport.body!!).jsonObject
         assertEquals("deepseek-v4-pro", root["model"]!!.jsonPrimitive.content)
         assertEquals(true, root["stream"]!!.jsonPrimitive.content.toBoolean())
@@ -305,6 +306,51 @@ class DeepSeekApiClientTest {
     }
 
     @Test
+    fun retryOn422WithoutThinkingThenSucceeds() = runTest {
+        val transport = FakeTransport(
+            FakeConnection(
+                statusCode = 422,
+                errorBody = """{"error":{"message":"thinking is not supported"}}"""
+            ),
+            FakeConnection(
+                body = sse(
+                    """data: {"choices":[{"delta":{"content":"好"}}]}""",
+                    """data: {"choices":[{"delta":{"content":""},"finish_reason":"stop"}]}"""
+                )
+            )
+        )
+
+        val events = DeepSeekApiClient(transport, retryDelayMs = 0)
+            .stream("key", "deepseek-flash", true, messages).toList()
+
+        assertEquals("422 应去掉 thinking 重试一次", 2, transport.calls)
+        assertTrue("首次请求体应携带 thinking", transport.bodies[0].contains("\"thinking\""))
+        assertTrue("422 回退后请求体不应携带 thinking", !transport.bodies[1].contains("\"thinking\""))
+        assertEquals(
+            listOf(
+                ApiStreamEvent.Chunk("好"),
+                ApiStreamEvent.Finished("好", "stop", null)
+            ),
+            events
+        )
+    }
+
+    @Test
+    fun `422RetriedOnlyOnceThenMapsError`() = runTest {
+        val transport = FakeTransport(
+            FakeConnection(statusCode = 422, errorBody = """{"error":{"message":"thinking is not supported"}}"""),
+            FakeConnection(statusCode = 422, errorBody = """{"error":{"message":"invalid model"}}""")
+        )
+
+        val events = DeepSeekApiClient(transport, retryDelayMs = 0)
+            .stream("key", "nope", false, messages).toList()
+
+        assertEquals("422 只应重试一次", 2, transport.calls)
+        assertTrue("重试请求体不应携带 thinking", !transport.bodies[1].contains("\"thinking\""))
+        assertEquals("请求被拒绝（参数错误）：invalid model", (events.single() as ApiStreamEvent.Error).message)
+    }
+
+    @Test
     fun probeParsesModelList() = runTest {
         val transport = FakeTransport(
             FakeConnection(
@@ -431,6 +477,9 @@ class DeepSeekApiClientTest {
         var body: String? = null
             private set
 
+        /** 按调用顺序记录每次请求体（重试场景需要比较先后差异）。 */
+        val bodies = mutableListOf<String>()
+
         override fun execute(
             method: String,
             url: String,
@@ -443,6 +492,7 @@ class DeepSeekApiClientTest {
             this.url = url
             this.headers = headers
             this.body = body?.toString(Charsets.UTF_8)
+            this.body?.let { bodies += it }
             return connection
         }
     }

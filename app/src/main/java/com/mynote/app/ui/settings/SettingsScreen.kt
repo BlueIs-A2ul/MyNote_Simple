@@ -84,6 +84,7 @@ fun SettingsScreen(
     val defaultSort by vm.defaultSort.collectAsState()
     val retentionDays by vm.retentionDays.collectAsState()
     val aiModel by vm.aiModel.collectAsState()
+    val availableModels by vm.availableModels.collectAsState()
     val deepThinking by vm.deepThinking.collectAsState()
     val apiKeyConfigured by vm.apiKeyConfigured.collectAsState()
     var apiKeyInput by rememberSaveable { mutableStateOf("") }
@@ -260,13 +261,13 @@ fun SettingsScreen(
             )
             Spacer(Modifier.height(6.dp))
             TextTabRow(
-                tabs = DeepSeekModels.all,
+                tabs = availableModels,
                 selected = aiModel,
                 onSelect = { vm.setAiModel(it) },
                 label = { DeepSeekModels.label(it) }
             )
             Text(
-                "deepseek-flash 更快更省；deepseek-v4-pro 更强。",
+                "deepseek-flash 更快更省；deepseek-v4-pro 更强。测试连接成功后会更新为官方最新模型列表。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 6.dp)

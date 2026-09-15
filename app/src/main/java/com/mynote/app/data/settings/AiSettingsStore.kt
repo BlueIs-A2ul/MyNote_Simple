@@ -3,7 +3,7 @@ package com.mynote.app.data.settings
 import android.content.Context
 import com.mynote.app.data.ai.DeepSeekModels
 
-/** AI 助手设置：API Key（密文）+ 模型 + 深度思考 + 隐私确认。 */
+/** AI 助手设置：API Key（密文）+ 模型（含动态列表）+ 深度思考 + 隐私确认。 */
 class AiSettingsStore(
     context: Context,
     private val cipher: ApiKeyCipher = KeystoreApiKeyCipher()
@@ -49,13 +49,41 @@ class AiSettingsStore(
         return true
     }
 
-    fun model(): String {
-        val stored = prefs.getString(KEY_MODEL, null)
-        return if (stored != null && DeepSeekModels.isValid(stored)) stored else DeepSeekModels.DEFAULT
+    /**
+     * 可用模型 id 列表：读取持久化值（`\n` 连接）并过滤空白、去重。
+     * 无有效项（未设置/空白/损坏）时回退内置 [DeepSeekModels.all] 保底。
+     */
+    fun models(): List<String> {
+        val stored = prefs.getString(KEY_MODELS, null)
+        val parsed = stored?.split('\n')
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.distinct()
+            .orEmpty()
+        return parsed.ifEmpty { DeepSeekModels.all }
     }
 
+    /** 保存可用模型列表：过滤空白、去重后按 `\n` 连接持久化；空列表等价清除（[models] 回退内置）。 */
+    fun setModels(models: List<String>) {
+        val cleaned = models.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        prefs.edit().apply {
+            if (cleaned.isEmpty()) {
+                remove(KEY_MODELS)
+            } else {
+                putString(KEY_MODELS, cleaned.joinToString("\n"))
+            }
+        }.apply()
+    }
+
+    /** 当前模型 id；不在 [models] 内（含列表回退内置）则返回 [DeepSeekModels.DEFAULT]。 */
+    fun model(): String {
+        val stored = prefs.getString(KEY_MODEL, null)
+        return if (stored != null && stored in models()) stored else DeepSeekModels.DEFAULT
+    }
+
+    /** 保存模型 id；仅接受在 [models] 内的 id，其余忽略。 */
     fun setModel(id: String) {
-        if (DeepSeekModels.isValid(id)) {
+        if (id in models()) {
             prefs.edit().putString(KEY_MODEL, id).apply()
         }
     }
@@ -78,6 +106,7 @@ class AiSettingsStore(
     private companion object {
         const val KEY_API_KEY = "api_key_encrypted"
         const val KEY_MODEL = "api_model"
+        const val KEY_MODELS = "api_models"
         const val KEY_DEEP_THINKING = "api_deep_thinking"
     }
 }

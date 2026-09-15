@@ -14,7 +14,7 @@ MyNote 安卓备忘录（原生 Android，单模块 `:app`）。本文件只记�
 | 目的 | 命令 |
 |---|---|
 | debug APK | `.\gradlew :app:assembleDebug` |
-| 全部单测（当前 442 个） | `.\gradlew :app:testDebugUnitTest` |
+| 全部单测（当前 456 个） | `.\gradlew :app:testDebugUnitTest` |
 | 单个测试类 | `.\gradlew :app:testDebugUnitTest --tests "com.mynote.app.data.db.NoteDaoTest"` |
 | release（R8 + 资源压缩 + 签名） | `.\gradlew :app:assembleRelease` |
 
