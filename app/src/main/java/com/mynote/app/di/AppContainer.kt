@@ -12,9 +12,11 @@ import com.mynote.app.data.export.ImageExportManager
 import com.mynote.app.data.export.NoteImageRenderer
 import com.mynote.app.data.image.ImageStore
 import com.mynote.app.data.repository.NoteRepository
+import com.mynote.app.data.repository.WelcomeNoteSeeder
 import com.mynote.app.data.settings.AiDraftStore
 import com.mynote.app.data.settings.AiSettingsStore
 import com.mynote.app.data.settings.NoteSortStore
+import com.mynote.app.data.settings.OnboardingStore
 import com.mynote.app.data.settings.PrefsAiDraftStore
 import com.mynote.app.data.settings.ThemeSettingsStore
 import com.mynote.app.data.settings.TrashRetentionStore
@@ -45,6 +47,13 @@ class AppContainer(context: Context) {
 
     val noteRepository: NoteRepository by lazy {
         NoteRepository(database.noteDao(), database.categoryDao(), database.noteRevisionDao(), imageStore, database)
+    }
+
+    val onboardingStore: OnboardingStore by lazy { OnboardingStore(context) }
+
+    /** 新用户首次启动生成欢迎笔记（只一次；已有笔记的用户不生成）。 */
+    val welcomeNoteSeeder: WelcomeNoteSeeder by lazy {
+        WelcomeNoteSeeder(database.noteDao(), noteRepository, onboardingStore)
     }
 
     val backupManager: BackupManager by lazy {

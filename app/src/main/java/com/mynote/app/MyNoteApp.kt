@@ -5,6 +5,7 @@ import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.memory.MemoryCache
 import com.mynote.app.di.AppContainer
+import kotlinx.coroutines.launch
 
 class MyNoteApp : Application(), ImageLoaderFactory {
     lateinit var container: AppContainer
@@ -13,6 +14,10 @@ class MyNoteApp : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        // 新用户首次启动生成欢迎笔记；失败静默，不阻塞启动
+        container.applicationScope.launch {
+            runCatching { container.welcomeNoteSeeder.seedIfNeeded() }
+        }
     }
 
     /**

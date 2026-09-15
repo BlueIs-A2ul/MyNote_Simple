@@ -116,6 +116,10 @@ interface NoteDao {
     @Query("SELECT * FROM notes")
     suspend fun getAll(): List<NoteEntity>
 
+    /** 主页可见笔记数（不含回收站），欢迎笔记种子判断用，不读正文。 */
+    @Query("SELECT COUNT(*) FROM notes WHERE deletedAt IS NULL")
+    suspend fun countVisible(): Int
+
     @Query("UPDATE notes SET categoryId = NULL WHERE categoryId = :categoryId")
     suspend fun clearCategory(categoryId: Long)
 }
