@@ -183,12 +183,26 @@ fun AiChatScreen(
             topBar = {
                 TopAppBar(
                     title = {
-                        Text(
-                            state.sessions.firstOrNull { it.id == state.currentSessionId }?.title
-                                ?: "AI 助手",
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Column {
+                            Text(
+                                state.sessions.firstOrNull { it.id == state.currentSessionId }?.title
+                                    ?: "AI 助手",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            val subtitle = listOf(state.providerName, state.modelName)
+                                .filter { it.isNotBlank() }
+                                .joinToString(" · ")
+                            if (subtitle.isNotEmpty()) {
+                                Text(
+                                    subtitle,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
                     },
                     navigationIcon = {
                         IconButton(onClick = onBack) {

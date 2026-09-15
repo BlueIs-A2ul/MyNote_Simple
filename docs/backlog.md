@@ -368,6 +368,12 @@
 
 - **69 AI 服务商可切换**：内置 DeepSeek / 硅基流动 / 自定义（任意 OpenAI 兼容地址）三档；服务商配置集中在 `AiProvider` 枚举（地址、思考参数样式、余额样式、模型过滤、默认模型），新增服务商 = 加一条枚举；Key / 模型 / 思考开关按服务商命名空间隔离（DeepSeek 沿用历史 key 名，老用户无感升级）；设置页支持切换服务商、自定义地址与模型、余额按钮按能力显示；聊天页隐私确认按服务商独立。高 × M/L
 
+### AI 模型选择体验优化（70，2026-09-15）✅ 已完成（v1.10.1）
+
+> 背景：硅基流动官方对话模型达数十个，v1.10.0 的「连接成功列出全部模型」「横向 tab 选模型」「聊天页不显示模型」三处体验没跟上。设计见 `docs/superpowers/specs/2026-09-15-ai-model-ux-design.md`。
+
+- **70 模型选择体验优化**：连接成功文案在模型数 > 5 时改为「共 N 个可用模型」（不再拼超长 snackbar）；设置页模型数 > 8 时改用可搜索弹窗（当前项对勾、点选即存）；聊天页顶栏副标题显示「服务商 · 模型」。低 × S
+
 ---
 
 ## 协同开发建议
@@ -418,3 +424,4 @@
 | 2026-09-15 | **字体切换（条目 68）评估后暂缓**：现状无字体切换；三方案（系统字体 / 内置子集 / 用户自选）成本与收益均已评估，用户拍板保持极致轻量，不实现、不改代码。详见条目 68。 |
 | 2026-09-15 | **笔记日期与日历视图完成（v1.8.0，用户新增需求）**：笔记新增可选归属日期（`NoteEntity.noteDate` 存本地零点毫秒，Room v6 + `MIGRATION_5_6` + 索引）；编辑页底栏「日期」入口 + Material3 DatePickerDialog（可清除，UTC↔本地零点经 `CalendarDates` 互转）；主页 ⋮ → 日历页（月网格圆点 + 当天笔记列表，只读，「今天」与前后月切换，切月选中日回 1 号）；旧笔记迁移后无日期、不进日历；备份含该字段且兼容旧文件；历史恢复旧版保留当前日期。全量单测 547 全绿（本次新增 28 个）。 |
 | 2026-09-15 | **AI 服务商可切换完成（v1.10.0，条目 69）**：`AiProvider` 枚举收敛一切服务商差异（DeepSeek / 硅基流动 / 自定义 OpenAI 兼容：地址、`thinking` 对象 / `enable_thinking` 布尔、余额接口与 schema、`?sub_type=chat` 模型过滤、默认模型、Key 提示文案）；`DeepSeekApiClient`→`AiApiClient`、`DeepSeekApiSession`→`AiApiSession`、`DeepSeekSseParser`→`AiSseParser`（协议层不变，端点驱动）；请求体改 `buildJsonObject` 组装，422 去参数重试仅对支持思考的服务商生效；错误详情兼容 `error.message` / `message` / 纯字符串三种形态，文案去 DeepSeek 化；设置页新增服务商 tab、自定义地址（http(s) 校验）与模型自由填写，深度思考/查询余额按能力显示；Key、模型、思考开关按 serviceId 命名空间隔离（DeepSeek 沿用旧 key 名兼容）；聊天页隐私弹窗用 `session.displayName`。全量单测 547 → 582 全绿。 |
+| 2026-09-15 | **AI 模型选择体验优化（v1.10.1，条目 70）**：连接成功文案模型数 > 5 时收敛为「共 N 个可用模型」；设置页模型数 > 8 改用可搜索 `ModelPickerDialog`（LazyColumn + 过滤 + 当前项对勾，≤ 8 仍用 tab）；聊天页顶栏副标题显示「服务商 · 模型」（`UiState.modelName` 进入会话时快照）。同批修正 AGENTS.md worktree 说明（signingConfig 配置期无条件读取签名文件，新 worktree 需从主树复制 `keystore.properties` 与 `app/mynote-release.keystore` 才能跑测试）。全量单测 582 → 584 全绿。 |

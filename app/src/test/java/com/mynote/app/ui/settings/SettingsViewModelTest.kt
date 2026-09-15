@@ -344,6 +344,24 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun connectionMessageReportsCountWhenModelListIsLong() {
+        val models = (1..MODEL_LIST_INLINE_MAX + 3).map { "vendor/model-$it" }
+
+        val message = connectionMessage(ProbeResult.Ok(models), AiProvider.CUSTOM)
+
+        assertEquals("连接正常，共 ${models.size} 个可用模型", message)
+    }
+
+    @Test
+    fun connectionMessageKeepsInlineListAtThreshold() {
+        val models = (1..MODEL_LIST_INLINE_MAX).map { "vendor/model-$it" }
+
+        val message = connectionMessage(ProbeResult.Ok(models), AiProvider.CUSTOM)
+
+        assertEquals("连接正常，可用模型：" + models.joinToString("、"), message)
+    }
+
+    @Test
     fun connectionMessageReturnsFailureText() {
         val message = connectionMessage(
             ProbeResult.Failed("API Key 无效，请到设置中检查"),

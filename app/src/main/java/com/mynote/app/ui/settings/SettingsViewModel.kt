@@ -174,10 +174,14 @@ internal fun modelAfterRefresh(current: String, models: List<String>, defaults: 
     else -> defaults.firstOrNull() ?: ""
 }
 
-/** 测试连接结果 → 展示文案：成功时列出可用模型，官方列表与内置不一致时追加提醒。 */
+/** 测试连接结果 → 展示文案：模型少时列举、多时只报数量，官方列表与内置不一致时追加提醒。 */
 internal fun connectionMessage(result: ProbeResult, provider: AiProvider): String = when (result) {
     is ProbeResult.Ok -> {
-        val base = "连接正常，可用模型：" + result.models.joinToString("、")
+        val base = if (result.models.size > MODEL_LIST_INLINE_MAX) {
+            "连接正常，共 ${result.models.size} 个可用模型"
+        } else {
+            "连接正常，可用模型：" + result.models.joinToString("、")
+        }
         if (provider.defaultModels.all { it in result.models }) {
             base
         } else {
@@ -186,6 +190,9 @@ internal fun connectionMessage(result: ProbeResult, provider: AiProvider): Strin
     }
     is ProbeResult.Failed -> result.message
 }
+
+/** 连接成功文案列举模型的个数上限；超过则只显示数量（硅基流动等可达数十个）。 */
+internal const val MODEL_LIST_INLINE_MAX = 5
 
 /** 余额查询结果 → 展示文案：多条按「；」拼接，余额不可用时加前缀；无数据给兜底文案。 */
 internal fun balanceMessage(state: BalanceState): String = when (state) {

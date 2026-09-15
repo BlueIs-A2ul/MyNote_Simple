@@ -16,14 +16,14 @@ MyNote 安卓备忘录（原生 Android，单模块 `:app`）。本文件只记�
 - 会话开始先检测隔离状态：`git rev-parse --git-dir` 与 `--git-common-dir` 不同即已在 worktree（`git worktree list` 可查全部）；若在主树，到仓库根创建：`git worktree add .worktrees/<分支名> -b <分支名>`（`.worktrees/` 已在 `.gitignore`，勿提交其内容）。
 - 分支命名 `英文任务名-序号/日期`（如 `ai-provider-0915`）；master 只留在主树（git 不允许两个 worktree 同时检出同一分支）；功能分支只在本地用，不推送远程。
 - 收尾（主树）：`git merge --ff-only <分支>`（需要时先在该分支 worktree 里 `git rebase master`）保持 master 线性、无合并提交 → `git worktree remove .worktrees/<分支>` + `git branch -d <分支>`。
-- release 构建/发布必须在主树做：`keystore.properties` 未被跟踪、worktree 里没有，`assembleRelease` 会在配置阶段失败；各 worktree 的 `app/build` 相互独立，首次构建偏慢属正常。
+- release 构建/发布必须在主树做（既定策略，非构建限制）：worktree 里可以复制签名文件跑 debug/单测，但 release 的构建与发布统一在主树进行；各 worktree 的 `app/build` 相互独立，首次构建偏慢属正常。
 
 ## 命令（Windows PowerShell，统一 `.\gradlew`）
 
 | 目的 | 命令 |
 |---|---|
 | debug APK | `.\gradlew :app:assembleDebug` |
-| 全部单测（当前 582 个） | `.\gradlew :app:testDebugUnitTest` |
+| 全部单测（当前 584 个） | `.\gradlew :app:testDebugUnitTest` |
 | 单个测试类 | `.\gradlew :app:testDebugUnitTest --tests "com.mynote.app.data.db.NoteDaoTest"` |
 | release（R8 + 资源压缩 + 签名） | `.\gradlew :app:assembleRelease` |
 
@@ -33,7 +33,7 @@ MyNote 安卓备忘录（原生 Android，单模块 `:app`）。本文件只记�
 
 - `settings.gradle.kts` 里阿里云镜像**刻意置前** + `RepositoriesMode.PREFER_SETTINGS`：本机全局 init 脚本会向 project 注入仓库（`FAIL_ON_PROJECT_REPOS` 会冲突），且 dl.google.com TLS 不稳定，镜像置前保证解析不中断。
 - 没有 `local.properties`，依赖环境变量 `ANDROID_HOME`。
-- 根目录 `keystore.properties` 与 `*.keystore` 已 gitignore，但 release 在配置阶段强制读取（缺失即失败）；debug/单测不受影响。
+- 根目录 `keystore.properties`（`storeFile` 相对 `app/` 解析，实际文件是 `app/mynote-release.keystore`；两者均已 gitignore）。`app/build.gradle.kts` 在配置阶段**无条件**创建 release signingConfig，因此任一任务在工作树缺这两个文件时都会配置失败（不止 release）；新 worktree 开发前先从未跟踪的主树把两个文件复制过去（`keystore.properties` → 仓库根，`app/mynote-release.keystore` → `app/`），勿提交。
 - 本机直连 `github.com:443` TLS 会被重置（`SSL_ERROR_SYSCALL`）：push / `ls-remote` 需走本机代理，单命令加 `-c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897`（gh 则设置进程环境变量 `HTTPS_PROXY`/`HTTP_PROXY`）；勿在全局 git 配置里固化代理。
 - `app/build.gradle.kts` 单测 JVM 参数 `--add-opens=java.base/java.io=ALL-UNNAMED` 是 Robolectric + JDK 17 关闭文件流所必需，勿删。
 

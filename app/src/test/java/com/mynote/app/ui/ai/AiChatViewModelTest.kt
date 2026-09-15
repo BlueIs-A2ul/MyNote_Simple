@@ -106,6 +106,7 @@ class AiChatViewModelTest {
         val vm = createVm(noteId)
 
         assertEquals(AiProvider.DEEPSEEK.displayName, vm.state.value.providerName)
+        assertEquals(AiProvider.DEEPSEEK.defaultModels.first(), vm.state.value.modelName)
     }
 
     @Test

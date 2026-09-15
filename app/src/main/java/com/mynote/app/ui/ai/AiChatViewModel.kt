@@ -53,7 +53,9 @@ class AiChatViewModel(
         val lastUsage: AiUsage? = null,
         val draft: String = "",
         /** 当前服务商展示名（隐私弹窗/文案用），来自会话身份。 */
-        val providerName: String = ""
+        val providerName: String = "",
+        /** 进入会话时的模型 id（顶栏副标题展示；会话中改设置需重进生效）。 */
+        val modelName: String = ""
     )
 
     private val _state = MutableStateFlow(
@@ -62,7 +64,8 @@ class AiChatViewModel(
             apiKeyMissing = !settingsStore.hasApiKey(),
             banner = if (settingsStore.hasApiKey()) null else AiSession.KEY_MISSING_REASON,
             draft = draftStore.get(aiDraftKey(noteId, null)),
-            providerName = session.displayName
+            providerName = session.displayName,
+            modelName = settingsStore.model()
         )
     )
     val state: StateFlow<UiState> = _state
