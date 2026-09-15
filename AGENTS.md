@@ -10,6 +10,14 @@ MyNote 安卓备忘录（原生 Android，单模块 `:app`）。本文件只记�
 - 版本规则：`versionName` 语义化 `major.minor.patch`；`versionCode = major*10000 + minor*100 + patch`（定义在 `app/build.gradle.kts` 顶部）；release 产物名 `MyNote-<versionName>-release.apk`；设置页底部显示版本号。发 release 前先递增 minor（功能）/ patch（修复），并同步 README 的版本行。
 - Release 发布流程：`assembleRelease` 后创建注解 tag `v<versionName>` 并推送，再用 `gh release create v<versionName> --title "MyNote v<versionName>" --notes-file <说明> app/build/outputs/apk/release/MyNote-<versionName>-release.apk`；说明沿用累积式 changelog（自上一个 tag 起逐版本列要点）+ 末尾附 APK 的 SHA-256（格式参照 v1.4.0 / v1.5.0）。
 
+## 开发隔离约定（worktree）
+
+- **每个开发会话（功能/修复）必须在独立 worktree 中进行**：主工作树只做「合入 master、release 构建发布、push」等收尾操作，勿在主树直接开发；多会话并发时互不污染（同一分支/暂存区冲突均不会发生）。
+- 会话开始先检测隔离状态：`git rev-parse --git-dir` 与 `--git-common-dir` 不同即已在 worktree（`git worktree list` 可查全部）；若在主树，到仓库根创建：`git worktree add .worktrees/<分支名> -b <分支名>`（`.worktrees/` 已在 `.gitignore`，勿提交其内容）。
+- 分支命名 `英文任务名-序号/日期`（如 `ai-provider-0915`）；master 只留在主树（git 不允许两个 worktree 同时检出同一分支）；功能分支只在本地用，不推送远程。
+- 收尾（主树）：`git merge --ff-only <分支>`（需要时先在该分支 worktree 里 `git rebase master`）保持 master 线性、无合并提交 → `git worktree remove .worktrees/<分支>` + `git branch -d <分支>`。
+- release 构建/发布必须在主树做：`keystore.properties` 未被跟踪、worktree 里没有，`assembleRelease` 会在配置阶段失败；各 worktree 的 `app/build` 相互独立，首次构建偏慢属正常。
+
 ## 命令（Windows PowerShell，统一 `.\gradlew`）
 
 | 目的 | 命令 |
