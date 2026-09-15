@@ -28,15 +28,26 @@ object AiNavKeys {
     const val RESULT_TEXT = "ai_result_text"
 }
 
+object NavResults {
+    const val RESTORE_MESSAGE = "restore_message"
+}
+
 @Composable
 fun AppNavHost(container: AppContainer) {
     val navController = rememberNavController()
     NavHost(navController = navController, startDestination = "notes") {
-        composable("notes") {
+        composable("notes") { backStack ->
             val vm: NotesViewModel = viewModel(factory = NotesViewModel.factory(container.noteRepository, container.noteSortStore))
+            // 历史恢复成功后回传的提示：由历史页写入本条目的 savedStateHandle，此处读取
+            val restoreMessage by backStack.savedStateHandle
+                .getStateFlow<String?>(NavResults.RESTORE_MESSAGE, null).collectAsState()
             NotesScreen(
                 viewModel = vm,
                 backupManager = container.backupManager,
+                restoreMessage = restoreMessage,
+                onRestoreMessageConsumed = {
+                    backStack.savedStateHandle.remove<String>(NavResults.RESTORE_MESSAGE)
+                },
                 onOpenNote = { id -> navController.navigate("edit/$id") { launchSingleTop = true } },
                 onNewNote = { catId ->
                     navController.navigate("edit/new?categoryId=${catId ?: -1L}") { launchSingleTop = true }
@@ -85,7 +96,7 @@ fun AppNavHost(container: AppContainer) {
                     backStack.savedStateHandle[AiNavKeys.NOTE_CONTENT] = noteContent
                     navController.navigate("ai_chat/$id")
                 },
-                onOpenHistory = { id?.let { navController.navigate("note_history/$it") } },
+                onOpenHistory = { dirty -> id?.let { navController.navigate("note_history/$it?dirty=$dirty") } },
                 onBack = { navController.popBackStack() }
             )
         }
@@ -113,12 +124,28 @@ fun AppNavHost(container: AppContainer) {
                 onBack = { navController.popBackStack() }
             )
         }
-        composable("note_history/{noteId}") { backStack ->
+        composable(
+            route = "note_history/{noteId}?dirty={dirty}",
+            arguments = listOf(
+                navArgument("dirty") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                }
+            )
+        ) { backStack ->
             val noteId = backStack.arguments?.getString("noteId")?.toLongOrNull() ?: return@composable
+            // 编辑页带着未保存修改进入历史页时，恢复确认框需提示草稿将被丢弃
+            val hadUnsavedDraft = backStack.arguments?.getBoolean("dirty") == true
             NoteHistoryScreen(
                 noteId = noteId,
+                hadUnsavedDraft = hadUnsavedDraft,
                 repository = container.noteRepository,
-                onRestored = { navController.popBackStack("notes", inclusive = false) },
+                onRestored = {
+                    // 恢复成功提示先写到 notes 条目（start destination 恒在），弹出后由 NotesScreen 弹 snackbar
+                    navController.getBackStackEntry("notes").savedStateHandle[NavResults.RESTORE_MESSAGE] =
+                        "已恢复历史版本"
+                    navController.popBackStack("notes", inclusive = false)
+                },
                 onBack = { navController.popBackStack() }
             )
         }

@@ -93,6 +93,40 @@ class NotesViewModelTest {
     }
 
     @Test
+    fun toggleLastSelectedExitsSelectionMode() {
+        vm.enterSelection(1L)
+        vm.toggleSelect(1L)
+        assertFalse(vm.selectionMode.value)
+        assertTrue(vm.selectedIds.value.isEmpty())
+    }
+
+    @Test
+    fun selectAllOnEmptyListDoesNothing() = runTest(dispatcher) {
+        // 首帧加载中（notes == null）时全选不动作也不崩溃
+        assertNull(vm.notes.value)
+        vm.selectAll()
+        assertTrue(vm.selectedIds.value.isEmpty())
+
+        // 列表为空时全选同样不动作
+        vm.notes.first { it != null }
+        assertTrue(vm.notes.value.orEmpty().isEmpty())
+        vm.selectAll()
+        assertTrue(vm.selectedIds.value.isEmpty())
+    }
+
+    @Test
+    fun onFilterSelectClearsSelection() {
+        vm.enterSelection(1L)
+        assertTrue(vm.selectionMode.value)
+
+        vm.onFilterSelect(CategoryFilter.Uncategorized)
+
+        assertFalse(vm.selectionMode.value)
+        assertTrue(vm.selectedIds.value.isEmpty())
+        assertEquals(CategoryFilter.Uncategorized, vm.selectedFilter.value)
+    }
+
+    @Test
     fun batchDeleteSoftDeletesSelectedNotesAndExits() = runTest(dispatcher) {
         val a = repo.saveNote(null, "a", "c", null, false, null)
         val b = repo.saveNote(null, "b", "c", null, false, null)

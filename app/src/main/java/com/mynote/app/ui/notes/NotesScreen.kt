@@ -56,6 +56,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
+import com.mynote.app.data.backup.BackupFormatException
 import com.mynote.app.data.backup.BackupManager
 
 import com.mynote.app.data.db.NoteSortMode
@@ -76,6 +77,8 @@ import kotlinx.coroutines.launch
 fun NotesScreen(
     viewModel: NotesViewModel,
     backupManager: BackupManager,
+    restoreMessage: String?,
+    onRestoreMessageConsumed: () -> Unit,
     onOpenNote: (Long) -> Unit,
     onNewNote: (Long?) -> Unit,
     onManageCategories: () -> Unit,
@@ -99,6 +102,9 @@ fun NotesScreen(
     var showBatchDeleteDialog by remember { mutableStateOf(false) }
     // 选好文件后先弹确认框，确认后才执行导入（合并策略对用户可见，见 PaperAlertDialog）
     var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
+    // 导出/导入在途标记：防重复触发，菜单项与确认按钮据此禁用
+    var exporting by remember { mutableStateOf(false) }
+    var importing by remember { mutableStateOf(false) }
     // 列表相对时间的基准：每分钟刷新一次，界面停留时「5 分钟前」等文案保持准确
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val focusRequester = remember { FocusRequester() }
@@ -107,6 +113,7 @@ fun NotesScreen(
     // 关闭搜索：清空关键词 + 收起搜索栏 + 隐藏键盘（X 按钮与系统返回键共用）
     fun closeSearch() {
         viewModel.onQueryChange("")
+        viewModel.exitSelection()
         searchActive = false
         keyboard?.hide()
     }
@@ -127,10 +134,15 @@ fun NotesScreen(
         ActivityResultContracts.CreateDocument("application/zip")
     ) { uri ->
         uri?.let {
+            exporting = true
             scope.launch {
-                val message = runCatching { backupManager.exportZip(it) }
-                    .fold(onSuccess = { "已导出 $it 条笔记" }, onFailure = { "导出失败" })
-                snackbarHostState.showSnackbar(message)
+                try {
+                    val message = runCatching { backupManager.exportZip(it) }
+                        .fold(onSuccess = { n -> "已导出 $n 条笔记" }, onFailure = { "导出失败" })
+                    snackbarHostState.showSnackbar(message)
+                } finally {
+                    exporting = false
+                }
             }
         }
     }
@@ -142,15 +154,37 @@ fun NotesScreen(
     }
 
     fun runImport(uri: Uri) {
+        importing = true
         scope.launch {
-            val message = runCatching { backupManager.importZip(uri) }
-                .fold(onSuccess = { "已导入 $it 条笔记" }, onFailure = { "导入失败" })
-            snackbarHostState.showSnackbar(message)
+            try {
+                val message = runCatching { backupManager.importZip(uri) }
+                    .fold(
+                        onSuccess = { r ->
+                            buildString {
+                                append("导入完成：新增 ${r.inserted} · 更新 ${r.updated} · 跳过 ${r.skipped}")
+                                if (r.trashed > 0) append(" · 回收站 ${r.trashed}")
+                            }
+                        },
+                        onFailure = { e ->
+                            if (e is BackupFormatException) "不是有效的备份文件" else "导入失败"
+                        }
+                    )
+                snackbarHostState.showSnackbar(message)
+            } finally {
+                importing = false
+            }
         }
     }
 
     LaunchedEffect(searchActive) {
         if (searchActive) focusRequester.requestFocus()
+    }
+
+    // 历史恢复成功后的提示：非空即弹 snackbar 并消费，避免旋转/重组重复弹出
+    LaunchedEffect(restoreMessage) {
+        val message = restoreMessage ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(message)
+        onRestoreMessageConsumed()
     }
 
     val tabs = remember(categories) {
@@ -184,10 +218,12 @@ fun NotesScreen(
                         ) {
                             DropdownMenuItem(
                                 text = { Text("全选") },
+                                enabled = !notes.isNullOrEmpty(),
                                 onClick = { menuOpen = false; viewModel.selectAll() }
                             )
                             DropdownMenuItem(
                                 text = { Text("置顶") },
+                                enabled = selectedIds.isNotEmpty(),
                                 onClick = {
                                     menuOpen = false
                                     viewModel.batchSetPinned(true) { n ->
@@ -197,6 +233,7 @@ fun NotesScreen(
                             )
                             DropdownMenuItem(
                                 text = { Text("取消置顶") },
+                                enabled = selectedIds.isNotEmpty(),
                                 onClick = {
                                     menuOpen = false
                                     viewModel.batchSetPinned(false) { n ->
@@ -206,15 +243,17 @@ fun NotesScreen(
                             )
                             DropdownMenuItem(
                                 text = { Text("移动到分类") },
+                                enabled = selectedIds.isNotEmpty(),
                                 onClick = { menuOpen = false; showBatchCategorySheet = true }
                             )
                             DropdownMenuItem(
                                 text = { Text("删除", color = MaterialTheme.colorScheme.error) },
+                                enabled = selectedIds.isNotEmpty(),
                                 onClick = { menuOpen = false; showBatchDeleteDialog = true }
                             )
                         }
                     } else {
-                        IconButton(onClick = { searchActive = true }) {
+                        IconButton(onClick = { viewModel.exitSelection(); searchActive = true }) {
                             Icon(Icons.Default.Search, contentDescription = "搜索")
                         }
                         PaperOverflowMenu(
@@ -244,6 +283,7 @@ fun NotesScreen(
                             )
                             DropdownMenuItem(
                                 text = { Text("导出备份") },
+                                enabled = !exporting,
                                 onClick = { menuOpen = false; exportLauncher.launch("mynote-backup.zip") }
                             )
                             DropdownMenuItem(
@@ -410,10 +450,11 @@ fun NotesScreen(
             onDismissRequest = { pendingImportUri = null },
             title = "导入备份？",
             text = {
-                Text("将从所选备份合并导入：备份中较新的笔记会覆盖本地版本，本地较新的笔记保留，本地没有的笔记将新增。此操作不可撤销。")
+                Text("将从所选备份合并导入：备份中较新的笔记会覆盖本地版本，本地较新的笔记保留，本地没有的笔记将新增。分类名称与颜色以备份为准；备份中在回收站的条目会导入回收站。此操作不可撤销。")
             },
             confirmButton = {
                 TextButton(
+                    enabled = !importing,
                     onClick = {
                         pendingImportUri = null
                         runImport(uri)
@@ -465,6 +506,7 @@ fun NotesScreen(
             text = { Text("将把所选 ${selectedIds.size} 条笔记移入回收站，30 天后自动清理，期间可恢复。") },
             confirmButton = {
                 TextButton(
+                    enabled = selectedIds.isNotEmpty(),
                     onClick = {
                         showBatchDeleteDialog = false
                         viewModel.batchDelete { n ->

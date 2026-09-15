@@ -8,13 +8,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.util.UUID
 
 class ImageStore(private val context: Context) {
 
     companion object {
         const val MAX_DIMENSION = 1600
-        const val THUMB_DIMENSION = 300
     }
 
     private val imageDir: File
@@ -24,14 +24,10 @@ class ImageStore(private val context: Context) {
 
     fun physicalFile(name: String): File = File(imageDir, name)
 
-    fun thumbFileName(name: String): String = "thumb_$name"
-
-    fun thumbFile(name: String): File = File(imageDir, thumbFileName(name))
-
     fun newImageFile(extension: String): File =
         File(imageDir, "${UUID.randomUUID()}.${extension.removePrefix(".")}")
 
-    /** 采样压缩源图并写入目标文件，返回是否成功。解码/压缩/缩略图全部在 IO 线程执行。 */
+    /** 采样压缩源图并写入目标文件，返回是否成功。解码/压缩全部在 IO 线程执行。 */
     suspend fun importAndCompress(source: Uri, target: File): Boolean = withContext(Dispatchers.IO) {
         try {
             val resolver = context.contentResolver
@@ -50,7 +46,6 @@ class ImageStore(private val context: Context) {
                 bitmap.compress(Bitmap.CompressFormat.WEBP, 85, out)
             }
             bitmap.recycle()
-            generateThumbnail(target.name)
             true
         } catch (e: Exception) {
             // 失败时清理半成品文件，避免残留占用空间
@@ -59,37 +54,21 @@ class ImageStore(private val context: Context) {
         }
     }
 
-    private fun generateThumbnail(name: String) {
-        try {
-            val src = physicalFile(name)
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeFile(src.absolutePath, bounds)
-            var sample = 1
-            while (bounds.outWidth / sample > THUMB_DIMENSION || bounds.outHeight / sample > THUMB_DIMENSION) {
-                sample *= 2
-            }
-            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-            val bitmap = BitmapFactory.decodeFile(src.absolutePath, opts) ?: return
-            FileOutputStream(thumbFile(name)).use { out ->
-                bitmap.compress(Bitmap.CompressFormat.WEBP, 80, out)
-            }
-            bitmap.recycle()
-        } catch (e: Exception) {
-            // 缩略图失败不阻塞主图保存
-        }
-    }
-
     fun writeFile(name: String, bytes: ByteArray) {
         FileOutputStream(physicalFile(name)).use { it.write(bytes) }
-        generateThumbnail(name)
     }
 
-    /** 删除未被任何笔记引用的图片文件（含缩略图）。 */
+    /** 流式写入图片文件（供备份导入，避免整图读入内存）；不关闭传入的输入流。 */
+    fun writeFile(name: String, input: InputStream) {
+        FileOutputStream(physicalFile(name)).use { input.copyTo(it) }
+    }
+
+    /** 删除未被任何笔记引用的图片文件，并清理历史版本的缩略图遗留文件（缩略图机制已移除）。 */
     fun collectGarbage(referenced: Set<String>) {
         imageDir.listFiles()?.forEach { file ->
             val name = file.name
-            val base = if (name.startsWith("thumb_")) name.removePrefix("thumb_") else name
-            if (base !in referenced) {
+            // thumb_* 一律删除：仅清理历史遗留，不再生成
+            if (name.startsWith("thumb_") || name !in referenced) {
                 file.delete()
             }
         }

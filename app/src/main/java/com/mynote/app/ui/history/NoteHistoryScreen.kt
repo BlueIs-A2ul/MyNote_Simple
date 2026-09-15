@@ -59,6 +59,7 @@ private val AddedEmphasis = Color(0x664CAF50)
 @Composable
 fun NoteHistoryScreen(
     noteId: Long,
+    hadUnsavedDraft: Boolean,
     repository: NoteRepository,
     onRestored: () -> Unit,
     onBack: () -> Unit
@@ -180,7 +181,12 @@ fun NoteHistoryScreen(
         PaperAlertDialog(
             onDismissRequest = { showRestoreDialog = false },
             title = "恢复此版本？",
-            text = { Text("将用此版本覆盖当前内容，并生成一条新的历史记录。") },
+            text = {
+                Text(
+                    "将用此版本覆盖当前内容，并生成一条新的历史记录。" +
+                        if (hadUnsavedDraft) "编辑页未保存的修改将一并丢弃。" else ""
+                )
+            },
             confirmButton = {
                 TextButton(
                     onClick = {

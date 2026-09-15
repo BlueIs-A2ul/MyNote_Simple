@@ -2,6 +2,7 @@ package com.mynote.app.data.backup
 
 import android.content.Context
 import android.net.Uri
+import androidx.room.withTransaction
 import com.mynote.app.data.db.AppDatabase
 import com.mynote.app.data.db.CategoryEntity
 import com.mynote.app.data.db.NoteEntity
@@ -13,15 +14,39 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.io.InputStream
+import java.io.OutputStream
 import java.util.zip.ZipEntry
+import java.util.zip.ZipException
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
+
+/** 备份文件格式错误（非 zip / 缺少 notes.json / 条目名非法）。 */
+class BackupFormatException(message: String) : Exception(message)
+
+/** 导入结果计数（条目 44）：回收站条目单独计数，不计入新增/更新。 */
+data class BackupImportResult(
+    val inserted: Int,
+    val updated: Int,
+    val skipped: Int,
+    val trashed: Int
+)
 
 class BackupManager(
     private val context: Context,
     private val imageStore: ImageStore,
-    private val database: AppDatabase? = null
+    private val database: AppDatabase? = null,
+    private val openOutput: (Uri) -> OutputStream? = { context.contentResolver.openOutputStream(it) },
+    private val openInput: (Uri) -> InputStream? = { context.contentResolver.openInputStream(it) }
 ) {
+
+    companion object {
+        /** 格式错误统一提示文案。 */
+        private const val FORMAT_ERROR = "不是有效的备份文件"
+
+        /** zip 内图片条目名校验（剥离 img/ 前缀后）：仅允许字母数字与 . _ -，防路径穿越。 */
+        private val IMAGE_NAME_REGEX = Regex("^[A-Za-z0-9._-]+$")
+    }
 
     @Serializable
     data class BackupNote(
@@ -77,8 +102,10 @@ class BackupManager(
         val data = BackupData(notes, categories)
         val jsonText = encode(data)
 
-        context.contentResolver.openOutputStream(uri)?.use { output ->
-            ZipOutputStream(output).use { zip ->
+        // 条目 17：拿不到输出流说明所选文件不可写，必须抛错而非「假成功」
+        val output = openOutput(uri) ?: error("无法写入所选文件")
+        output.use { out ->
+            ZipOutputStream(out).use { zip ->
                 zip.putNextEntry(ZipEntry("notes.json"))
                 zip.write(jsonText.toByteArray(Charsets.UTF_8))
                 zip.closeEntry()
@@ -97,57 +124,110 @@ class BackupManager(
         notes.size
     }
 
-    /** 导入 zip 备份，返回导入的笔记数。 */
-    suspend fun importZip(uri: Uri): Int = withContext(Dispatchers.IO) {
+    /**
+     * 导入 zip 备份（条目 43/44）：条目名校验 + 图片流式落盘 + 分类/笔记单事务写入。
+     * 格式问题抛 [BackupFormatException]；读取 IO 异常原样上抛。返回四类计数。
+     */
+    suspend fun importZip(uri: Uri): BackupImportResult = withContext(Dispatchers.IO) {
         val db = requireNotNull(database) { "导入需要数据库实例" }
 
-        var jsonText = ""
-        val images = mutableMapOf<String, ByteArray>()
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            ZipInputStream(input).use { zip ->
-                var entry = zip.nextEntry
-                while (entry != null) {
-                    when {
-                        entry.name == "notes.json" -> jsonText = zip.readBytes().toString(Charsets.UTF_8)
-                        entry.name.startsWith("img/") ->
-                            images[entry.name.removePrefix("img/")] = zip.readBytes()
+        var jsonText: String? = null
+        try {
+            openInput(uri)?.use { input ->
+                ZipInputStream(input).use { zip ->
+                    var entry = zip.nextEntry
+                    while (entry != null) {
+                        when {
+                            entry.isDirectory -> Unit
+                            entry.name == "notes.json" ->
+                                jsonText = zip.readBytes().toString(Charsets.UTF_8)
+                            entry.name.startsWith("img/") -> {
+                                val name = entry.name.removePrefix("img/")
+                                // 先校验再落盘：非法条目不得触碰文件系统
+                                if (!IMAGE_NAME_REGEX.matches(name)) throw BackupFormatException(FORMAT_ERROR)
+                                imageStore.writeFile(name, zip)
+                            }
+                        }
+                        zip.closeEntry()
+                        entry = zip.nextEntry
                     }
-                    entry = zip.nextEntry
                 }
             }
+        } catch (e: ZipException) {
+            // 非 zip 或损坏的压缩包统一视为格式错误
+            throw BackupFormatException(FORMAT_ERROR)
         }
-
-        val data = decode(jsonText)
-
-        images.forEach { (name, bytes) -> imageStore.writeFile(name, bytes) }
+        val data = decode(jsonText ?: throw BackupFormatException(FORMAT_ERROR))
 
         val noteDao = db.noteDao()
         val categoryDao = db.categoryDao()
+        var inserted = 0
+        var updated = 0
+        var skipped = 0
+        var trashed = 0
 
-        data.categories.forEach { cat ->
-            val existing = categoryDao.getById(cat.id)
-            if (existing == null) categoryDao.insert(cat.toEntity()) else categoryDao.update(cat.toEntity())
-        }
-        data.notes.forEach { note ->
-            val existing = noteDao.getById(note.id)
-            when {
-                existing == null -> noteDao.insert(note.toEntity())
-                incomingWins(existing.updatedAt, note.updatedAt) -> noteDao.update(note.toEntity())
-                // 否则保留本地较新版本，跳过
+        db.withTransaction {
+            // 分类 id 重映射：备份 id → 库内真实 id
+            val idRemap = mutableMapOf<Long, Long>()
+            data.categories.forEach { cat ->
+                val byId = categoryDao.getById(cat.id)
+                if (byId != null) {
+                    // 同 id 视为同一分类：备份的名称与颜色覆盖本地
+                    categoryDao.update(cat.toEntity())
+                    idRemap[cat.id] = cat.id
+                } else {
+                    val byName = categoryDao.getByName(cat.name)
+                    if (byName != null) {
+                        // 名称唯一索引冲突：复用本地分类 id，颜色以备份为准
+                        categoryDao.update(CategoryEntity(byName.id, cat.name, cat.color))
+                        idRemap[cat.id] = byName.id
+                    } else {
+                        categoryDao.insert(cat.toEntity())
+                        idRemap[cat.id] = cat.id
+                    }
+                }
+            }
+            val knownDbCategoryIds = categoryDao.getAll().map { it.id }.toSet()
+            data.notes.forEach { note ->
+                // 备份分类 id 经重映射；映射不到且库中也不存在的野 id 置 null
+                val categoryId = note.categoryId?.let { cid ->
+                    idRemap[cid] ?: cid.takeIf { it in knownDbCategoryIds }
+                }
+                val entity = note.toEntity().copy(categoryId = categoryId)
+                val existing = noteDao.getById(note.id)
+                val inTrash = note.deletedAt != null
+                when {
+                    existing == null -> {
+                        noteDao.insert(entity)
+                        if (inTrash) trashed++ else inserted++
+                    }
+                    incomingWins(existing.updatedAt, note.updatedAt) -> {
+                        noteDao.update(entity)
+                        if (inTrash) trashed++ else updated++
+                    }
+                    // 否则保留本地较新版本，跳过
+                    else -> skipped++
+                }
             }
         }
-        data.notes.size
+        BackupImportResult(inserted, updated, skipped, trashed)
     }
 
-    /** 单条笔记导出为 txt（标记原样保留）。 */
-    suspend fun exportNoteAsTxt(uri: Uri, note: NoteEntity): Boolean = withContext(Dispatchers.IO) {
-        try {
-            context.contentResolver.openOutputStream(uri)?.use { output ->
-                output.write(note.content.toByteArray(Charsets.UTF_8))
+    /** 单条笔记导出为 txt（标记原样保留）：标题非空时写「标题 + 空行 + 正文」，否则仅正文。 */
+    suspend fun exportNoteAsTxt(uri: Uri, title: String, content: String): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                val output = openOutput(uri) ?: return@withContext false
+                output.use { out ->
+                    if (title.isNotBlank()) {
+                        out.write(title.toByteArray(Charsets.UTF_8))
+                        out.write("\n\n".toByteArray(Charsets.UTF_8))
+                    }
+                    out.write(content.toByteArray(Charsets.UTF_8))
+                }
+                true
+            } catch (e: Exception) {
+                false
             }
-            true
-        } catch (e: Exception) {
-            false
         }
-    }
 }

@@ -102,6 +102,33 @@ class NoteRepository(
         return resultId
     }
 
+    /**
+     * 静默保存草稿：只更新笔记数据行并刷新 [NoteEntity.updatedAt]。
+     * 不写历史快照、不触发图片 GC（草稿不是一次正式保存）。
+     */
+    suspend fun updateDraft(
+        id: Long,
+        title: String,
+        content: String,
+        categoryId: Long?,
+        pinned: Boolean,
+        color: Int?
+    ) {
+        database.withTransaction {
+            val existing = noteDao.getById(id) ?: return@withTransaction
+            noteDao.update(
+                existing.copy(
+                    title = title,
+                    content = content,
+                    categoryId = categoryId,
+                    pinned = pinned,
+                    color = color,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
     suspend fun restoreRevision(noteId: Long, revisionId: Long): Boolean {
         val revision = revisionDao.getById(revisionId) ?: return false
         if (revision.noteId != noteId) return false

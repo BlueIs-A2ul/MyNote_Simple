@@ -309,6 +309,29 @@ class NoteRepositoryTest {
     }
 
     @Test
+    fun updateDraftUpdatesFieldsWithoutAddingRevision() = runTest {
+        val catId = repo.addCategory("工作", 0)
+        val id = repo.saveNote(null, "t", "c", null, false, null)
+        val created = repo.getNote(id)!!.createdAt
+        // 把 updatedAt 改成过去时刻，断言草稿保存确实刷新了它
+        db.noteDao().update(repo.getNote(id)!!.copy(updatedAt = 111L))
+
+        repo.updateDraft(id, "t2", "c2", catId, true, 0x123456)
+
+        val updated = repo.getNote(id)!!
+        assertEquals("t2", updated.title)
+        assertEquals("c2", updated.content)
+        assertEquals(catId, updated.categoryId)
+        assertTrue(updated.pinned)
+        assertEquals(0x123456, updated.color)
+        assertEquals(created, updated.createdAt)
+        assertTrue(updated.updatedAt > 111L)
+        // 静默草稿不写历史快照，原快照内容保持首次保存时的值
+        assertEquals(1, repo.countRevisions(id))
+        assertEquals("c", db.noteRevisionDao().getByNote(id).single().content)
+    }
+
+    @Test
     fun purgeExpiredUsesSqlCutoff() = runTest {
         val expired = repo.saveNote(null, "expired", "c", null, false, null)
         val fresh = repo.saveNote(null, "fresh", "c", null, false, null)

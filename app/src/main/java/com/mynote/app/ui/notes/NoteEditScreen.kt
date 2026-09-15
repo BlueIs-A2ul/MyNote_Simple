@@ -65,8 +65,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -108,6 +110,10 @@ class NoteEditViewModel(
     private val _note = MutableStateFlow<NoteEntity?>(null)
     val note: StateFlow<NoteEntity?> = _note
 
+    // 新笔记被静默保存（草稿兜底）后的 id：后续保存/静默保存都以它为目标，避免重复插入
+    private val _draftId = MutableStateFlow<Long?>(null)
+    val draftId: StateFlow<Long?> = _draftId
+
     // 保存/删除在途标志：连点第二次调用直接忽略，防止重复插入与双重退出回调
     private var saving = false
     private var deleting = false
@@ -117,9 +123,13 @@ class NoteEditViewModel(
             repository.observeCategories().collectLatest { _categories.value = it }
         }
         if (noteId != null && noteId != 0L) {
-            viewModelScope.launch {
-                repository.observeNote(noteId).collectLatest { _note.value = it }
-            }
+            observeNote(noteId)
+        }
+    }
+
+    private fun observeNote(id: Long) {
+        viewModelScope.launch {
+            repository.observeNote(id).collectLatest { _note.value = it }
         }
     }
 
@@ -147,9 +157,10 @@ class NoteEditViewModel(
         saving = true
         viewModelScope.launch {
             try {
-                val before = if (noteId != null && noteId != 0L) repository.countRevisions(noteId) else 0
-                val id = repository.saveNote(noteId, title, content, categoryId, pinned, color)
-                val warning = if (noteId != null && noteId != 0L &&
+                val targetId = noteId?.takeIf { it != 0L } ?: _draftId.value
+                val before = if (targetId != null) repository.countRevisions(targetId) else 0
+                val id = repository.saveNote(targetId, title, content, categoryId, pinned, color)
+                val warning = if (targetId != null &&
                     before < NoteRevisionDao.WARN_AT &&
                     repository.countRevisions(id) == NoteRevisionDao.WARN_AT
                 ) {
@@ -158,6 +169,31 @@ class NoteEditViewModel(
                     null
                 }
                 onDone(warning)
+            } finally {
+                saving = false
+            }
+        }
+    }
+
+    /**
+     * 静默保存草稿（退后台兜底）：存量笔记只更新数据行；新笔记标题/正文均空则不落库；
+     * 新笔记非空则插入并记录 [draftId]，后续保存只更新同一条。
+     */
+    fun saveDraft(title: String, content: String, categoryId: Long?, pinned: Boolean, color: Int?) {
+        if (saving) return
+        saving = true
+        viewModelScope.launch {
+            try {
+                val targetId = noteId?.takeIf { it != 0L } ?: _draftId.value
+                when {
+                    targetId != null -> repository.updateDraft(targetId, title, content, categoryId, pinned, color)
+                    title.isBlank() && content.isBlank() -> Unit
+                    else -> {
+                        val id = repository.saveNote(null, title, content, categoryId, pinned, color)
+                        _draftId.value = id
+                        observeNote(id)
+                    }
+                }
             } finally {
                 saving = false
             }
@@ -189,7 +225,7 @@ class NoteEditViewModel(
 
 /**
  * 判断编辑页是否存在未保存变更。
- * - 新建笔记：标题/正文非空，或分类/置顶相对进入时的初始状态有变化（分类页带入的预选分类不算变更）。
+ * - 新建笔记：仅标题/正文非空才算变更；空笔记只改分类/置顶不视为变更（不会落库）。
  * - 已有笔记未加载完（saved 为 null）：标题/正文非空即视为有变更（保守防丢）。
  * - 已有笔记已加载：标题/正文/分类/置顶与已保存值逐项比较。
  */
@@ -202,8 +238,7 @@ internal fun hasUnsavedChanges(
     categoryId: Long?,
     pinned: Boolean
 ): Boolean = when {
-    isNew -> title.isNotBlank() || content.isNotBlank() ||
-        categoryId != initialCategoryId || pinned
+    isNew -> title.isNotBlank() || content.isNotBlank()
     saved == null -> title.isNotBlank() || content.isNotBlank()
     else -> title != saved.title || content != saved.content ||
         categoryId != saved.categoryId || pinned != saved.pinned
@@ -223,7 +258,7 @@ fun NoteEditScreen(
     aiResultText: String?,
     onAiResultConsumed: () -> Unit,
     onOpenAi: (selStart: Int, selEnd: Int, noteTitle: String, noteContent: String) -> Unit,
-    onOpenHistory: () -> Unit,
+    onOpenHistory: (Boolean) -> Unit,
     onBack: () -> Unit
 ) {
     val vm: NoteEditViewModel = viewModel(
@@ -232,6 +267,7 @@ fun NoteEditScreen(
     )
     val note by vm.note.collectAsState()
     val categories by vm.categories.collectAsState()
+    val draftId by vm.draftId.collectAsState()
 
     var title by rememberSaveable(noteId) { mutableStateOf("") }
     var content by rememberSaveable(noteId, stateSaver = TextFieldValue.Saver) {
@@ -250,6 +286,8 @@ fun NoteEditScreen(
     // 全屏图片预览：记录被点开的图片文件，非空即渲染 NoteImagePreviewDialog
     var previewFile by remember { mutableStateOf<File?>(null) }
     var isSaving by remember { mutableStateOf(false) }
+    // 导出在途标志：禁用导出入口，防止重复提交
+    var exporting by remember { mutableStateOf(false) }
     // 是否已从已保存笔记回填过字段：只回填一次，清空内容后旋转/重建不再被旧内容覆盖
     var initialized by rememberSaveable(noteId) { mutableStateOf(false) }
 
@@ -318,19 +356,35 @@ fun NoteEditScreen(
         }
     }
 
+    // txt 导出写编辑态现值（未保存的新笔记也能导出），结果用 snackbar 反馈
     val exportTxtLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/plain")
     ) { uri ->
         uri?.let { u ->
-            val n = note
-            if (n != null) scope.launch { backupManager.exportNoteAsTxt(u, n) }
+            scope.launch {
+                exporting = true
+                try {
+                    val ok = backupManager.exportNoteAsTxt(u, title, content.text)
+                    snackbarHostState.showSnackbar(if (ok) "已导出" else "导出失败")
+                } finally {
+                    exporting = false
+                }
+            }
         }
     }
 
     val context = LocalContext.current
 
-    val isNewNote = noteId == null || noteId == 0L
+    val isNewNote = (noteId == null || noteId == 0L) && draftId == null
     val dirty = hasUnsavedChanges(isNewNote, note, initialCategoryId, title, content.text, selectedCategoryId, pinned)
+    val canSave = !(isNewNote && title.isBlank() && content.text.isBlank())
+
+    // 退后台静默保存草稿：标题/正文非空的新笔记会入库，空白新笔记不落库
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+        if (dirty && !isSaving) {
+            vm.saveDraft(title, content.text, selectedCategoryId, pinned, note?.color)
+        }
+    }
 
     BackHandler(enabled = true) {
         if (dirty) showUnsavedDialog = true else onBack()
@@ -376,7 +430,7 @@ fun NoteEditScreen(
                             else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    TextButton(onClick = saveAndExit, enabled = !isSaving) {
+                    TextButton(onClick = saveAndExit, enabled = !isSaving && canSave) {
                         Text("保存", style = MaterialTheme.typography.labelLarge)
                     }
                     PaperOverflowMenu(
@@ -386,7 +440,7 @@ fun NoteEditScreen(
                         if (noteId != null && noteId != 0L) {
                             DropdownMenuItem(
                                 text = { Text("历史记录") },
-                                onClick = { menuOpen = false; onOpenHistory() }
+                                onClick = { menuOpen = false; onOpenHistory(dirty) }
                             )
                         }
                         if (noteId != null || title.isNotBlank() || content.text.isNotBlank()) {
@@ -484,11 +538,8 @@ fun NoteEditScreen(
                                 color = MaterialTheme.colorScheme.onBackground
                             )
                             is ContentBlock.Image -> {
-                                // 预览优先缩略图（省内存，约 1/20 体积），缺失回退原图；点开仍看原图
-                                val file = remember(block.name) {
-                                    imageStore.thumbFile(block.name).takeIf { it.exists() }
-                                        ?: imageStore.physicalFile(block.name)
-                                }
+                                // 预览直接加载原图：Coil 按显示尺寸自动降采样解码，内存由 LRU 缓存托管
+                                val file = remember(block.name) { imageStore.physicalFile(block.name) }
                                 AsyncImage(
                                     model = file,
                                     contentDescription = "图片",
@@ -661,7 +712,7 @@ fun NoteEditScreen(
                     TextButton(onClick = onBack) { Text("不保存") }
                     TextButton(
                         onClick = { showUnsavedDialog = false; saveAndExit() },
-                        enabled = !isSaving
+                        enabled = !isSaving && canSave
                     ) {
                         Text("保存并退出")
                     }
@@ -697,14 +748,11 @@ fun NoteEditScreen(
                     TextButton(
                         onClick = {
                             showExportDialog = false
-                            exportTxtLauncher.launch(FileNameSanitizer.sanitize(note?.title ?: "note") + ".txt")
+                            exportTxtLauncher.launch(FileNameSanitizer.sanitize(title.ifBlank { "note" }) + ".txt")
                         },
-                        enabled = note != null,
+                        enabled = hasContent && !exporting,
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("文本文档 (txt)") }
-                    if (note == null) {
-                        Text("保存后可导出 txt", style = MaterialTheme.typography.bodySmall)
-                    }
                     TextButton(
                         onClick = {
                             showExportDialog = false

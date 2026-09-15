@@ -36,24 +36,32 @@ class HasUnsavedChangesTest {
         assertTrue(hasUnsavedChanges(true, null, null, "标题", "", null, false))
 
     @Test
-    fun newNoteCategoryIsDirty() =
-        assertTrue(hasUnsavedChanges(true, null, null, "", "", 3L, false))
+    fun newNoteCategoryOnlyIsNotDirty() =
+        assertFalse(hasUnsavedChanges(true, null, null, "", "", 3L, false))
 
     @Test
     fun newNotePreselectedCategoryOnlyIsNotDirty() =
         assertFalse(hasUnsavedChanges(true, null, 3L, "", "", 3L, false))
 
     @Test
-    fun newNoteCategoryChangedFromInitialIsDirty() =
-        assertTrue(hasUnsavedChanges(true, null, 3L, "", "", 4L, false))
+    fun newNoteCategoryChangedOnEmptyNoteIsNotDirty() =
+        assertFalse(hasUnsavedChanges(true, null, 3L, "", "", 4L, false))
 
     @Test
-    fun newNoteCategoryClearedFromInitialIsDirty() =
-        assertTrue(hasUnsavedChanges(true, null, 3L, "", "", null, false))
+    fun newNoteCategoryClearedOnEmptyNoteIsNotDirty() =
+        assertFalse(hasUnsavedChanges(true, null, 3L, "", "", null, false))
 
     @Test
-    fun newNotePinnedIsDirty() =
-        assertTrue(hasUnsavedChanges(true, null, null, "", "", null, true))
+    fun newNotePinnedOnlyIsNotDirty() =
+        assertFalse(hasUnsavedChanges(true, null, null, "", "", null, true))
+
+    @Test
+    fun newNoteWithTitleAndCategoryChangedIsDirty() =
+        assertTrue(hasUnsavedChanges(true, null, 3L, "标题", "", 4L, false))
+
+    @Test
+    fun newNoteWithContentAndPinnedIsDirty() =
+        assertTrue(hasUnsavedChanges(true, null, null, "", "内容", null, true))
 
     @Test
     fun existingNoteNotLoadedAndEmptyIsNotDirty() =

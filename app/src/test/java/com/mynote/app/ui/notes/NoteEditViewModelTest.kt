@@ -9,9 +9,11 @@ import com.mynote.app.data.image.ImageStore
 import com.mynote.app.data.repository.NoteRepository
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -19,12 +21,15 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class NoteEditViewModelTest {
@@ -129,6 +134,60 @@ class NoteEditViewModelTest {
         first.await()
         assertEquals(1, db.noteDao().getAll().size)
         assertEquals(1, doneCount)
+    }
+
+    @Test
+    fun saveDraftExistingNoteUpdatesWithoutAddingRevision() = runTest(dispatcher) {
+        val id = repo.saveNote(null, "t", "c", null, false, null)
+        vm.viewModelScope.cancel()
+        vm = NoteEditViewModel(repo, ImageStore(ApplicationProvider.getApplicationContext()), noteId = id)
+        vm.note.first { it != null }
+
+        vm.saveDraft("t2", "c2", null, true, null)
+
+        val updated = vm.note.first { it?.title == "t2" }!!
+        assertEquals("c2", updated.content)
+        assertTrue(updated.pinned)
+        assertEquals(1, repo.countRevisions(id))
+    }
+
+    @Test
+    fun saveDraftBlankNewNoteDoesNotInsert() = runTest(dispatcher) {
+        vm.saveDraft("   ", "", null, true, null)
+        advanceUntilIdle()
+        assertNull(vm.draftId.value)
+
+        // 用一次正式保存同步数据库：空白草稿若误插入，这次断言会看到两条
+        val done = CompletableDeferred<Unit>()
+        vm.save("t", "c", null, false, null) { done.complete(Unit) }
+        done.await()
+        assertEquals(1, db.noteDao().getAll().size)
+        assertEquals("t", db.noteDao().getAll().single().title)
+    }
+
+    @Test
+    fun saveDraftNewNonBlankInsertsAndExposesDraftId() = runTest(dispatcher) {
+        vm.saveDraft("标题", "正文", null, false, null)
+
+        val id = vm.draftId.first { it != null }!!
+        assertEquals("标题", db.noteDao().getById(id)?.title)
+        assertEquals(1, db.noteDao().getAll().size)
+        // 静默入库走 saveNote：新笔记的首次快照照常写入
+        assertEquals(1, repo.countRevisions(id))
+    }
+
+    @Test
+    fun saveAfterSilentDraftUpdatesSameNoteWithoutDuplicateInsert() = runTest(dispatcher) {
+        vm.saveDraft("标题", "正文", null, false, null)
+        val id = vm.draftId.first { it != null }!!
+
+        val done = CompletableDeferred<Unit>()
+        vm.save("标题", "改后正文", null, false, null) { done.complete(Unit) }
+        done.await()
+
+        assertEquals(1, db.noteDao().getAll().size)
+        assertEquals("改后正文", db.noteDao().getById(id)?.content)
+        assertEquals(2, repo.countRevisions(id))
     }
 
     @Test

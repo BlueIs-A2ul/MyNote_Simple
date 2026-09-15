@@ -82,7 +82,7 @@ dependencyResolutionManagement {
 | 目的 | 命令 | 预期 |
 |---|---|---|
 | debug APK | `.\gradlew :app:assembleDebug` | `app\build\outputs\apk\debug\app-debug.apk`（约 17.8MB） |
-| 全部单元测试 | `.\gradlew :app:testDebugUnitTest` | 199 个测试全部 PASS |
+| 全部单元测试 | `.\gradlew :app:testDebugUnitTest` | 376 个测试全部 PASS |
 | 单个测试类 | `.\gradlew :app:testDebugUnitTest --tests "com.mynote.app.data.db.NoteDaoTest"` | 该类 PASS |
 | release APK | `.\gradlew :app:assembleRelease` | `app\build\outputs\apk\release\MyNote-<版本>-release.apk`（约 1.7MB，R8 + 资源压缩，按 `keystore.properties` 签名） |
 

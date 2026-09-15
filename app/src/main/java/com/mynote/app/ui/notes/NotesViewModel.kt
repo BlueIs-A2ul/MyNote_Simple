@@ -61,6 +61,8 @@ class NotesViewModel(
     }
 
     fun onFilterSelect(filter: CategoryFilter) {
+        // 切换筛选时清空多选，避免选中集跨 tab 残留（含分类被删除后的自动回落）
+        exitSelection()
         selectedFilter.value = filter
     }
 
@@ -80,12 +82,17 @@ class NotesViewModel(
     }
 
     fun toggleSelect(noteId: Long) {
-        selectedIds.value = selectedIds.value.let { if (noteId in it) it - noteId else it + noteId }
+        val next = selectedIds.value.let { if (noteId in it) it - noteId else it + noteId }
+        selectedIds.value = next
+        // 取消最后一个选中项后自动退出多选，避免停留在「已选 0 项」的死状态
+        if (next.isEmpty()) selectionMode.value = false
     }
 
-    /** 全选当前列表可见笔记。 */
+    /** 全选当前列表可见笔记；列表仍在加载或为空时不动作。 */
     fun selectAll() {
-        selectedIds.value = notes.value.orEmpty().map { it.id }.toSet()
+        val visible = notes.value
+        if (visible.isNullOrEmpty()) return
+        selectedIds.value = visible.map { it.id }.toSet()
     }
 
     fun exitSelection() {
