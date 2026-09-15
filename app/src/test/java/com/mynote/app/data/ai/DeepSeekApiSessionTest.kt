@@ -57,7 +57,7 @@ class DeepSeekApiSessionTest {
         streamer.result = flow {
             emit(ApiStreamEvent.Chunk("a"))
             emit(ApiStreamEvent.Chunk("b"))
-            emit(ApiStreamEvent.Finished("ab", "stop"))
+            emit(ApiStreamEvent.Finished("ab", "stop", null))
         }
         session.send(messages())
         runCurrent()
@@ -67,6 +67,37 @@ class DeepSeekApiSessionTest {
         assertEquals(true, streamer.lastDeepThinking)
         assertEquals(
             listOf(AiEvent.Chunk("a"), AiEvent.Chunk("b"), AiEvent.Done("ab")),
+            received
+        )
+    }
+
+    @Test
+    fun reasoningAndUsageAreForwarded() = runTest {
+        val streamer = FakeStreamer()
+        val session = DeepSeekApiSession(
+            streamer, { "key" }, { DeepSeekModels.FLASH }, { true }, backgroundScope
+        )
+        val received = mutableListOf<AiEvent>()
+        backgroundScope.launch { session.events.collect { received += it } }
+        runCurrent()
+
+        val usage = AiUsage(promptTokens = 12, completionTokens = 3, totalTokens = 15)
+        streamer.result = flow {
+            emit(ApiStreamEvent.Reasoning("想一"))
+            emit(ApiStreamEvent.Reasoning("想二"))
+            emit(ApiStreamEvent.Chunk("答"))
+            emit(ApiStreamEvent.Finished("答", "stop", usage))
+        }
+        session.send(messages())
+        runCurrent()
+
+        assertEquals(
+            listOf(
+                AiEvent.Reasoning("想一"),
+                AiEvent.Reasoning("想二"),
+                AiEvent.Chunk("答"),
+                AiEvent.Done("答", usage)
+            ),
             received
         )
     }

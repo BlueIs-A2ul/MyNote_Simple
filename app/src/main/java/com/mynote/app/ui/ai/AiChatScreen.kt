@@ -1,6 +1,8 @@
 package com.mynote.app.ui.ai
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,7 +15,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -46,6 +50,7 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,16 +59,20 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mynote.app.data.ai.AiChatRepository
 import com.mynote.app.data.ai.AiSession
+import com.mynote.app.data.ai.AiUsage
 import com.mynote.app.data.db.AiMessageEntity
 import com.mynote.app.data.db.AiSessionEntity
 import com.mynote.app.data.repository.NoteRepository
+import com.mynote.app.data.settings.AiDraftStore
 import com.mynote.app.data.settings.AiSettingsStore
 import com.mynote.app.util.TimeFormat
 import kotlinx.coroutines.CoroutineScope
@@ -81,6 +90,7 @@ fun AiChatScreen(
     settingsStore: AiSettingsStore,
     externalScope: CoroutineScope,
     session: AiSession,
+    draftStore: AiDraftStore,
     onApplyResult: (type: String, text: String) -> Unit,
     onOpenSettings: () -> Unit,
     onBack: () -> Unit
@@ -89,11 +99,11 @@ fun AiChatScreen(
         key = "ai_chat_$noteId",
         factory = AiChatViewModel.factory(
             noteId, noteTitle, noteContent, aiRepository, noteRepository,
-            settingsStore, externalScope, session
+            settingsStore, externalScope, session, draftStore = draftStore
         )
     )
     val state by vm.state.collectAsState()
-    var input by rememberSaveable { mutableStateOf("") }
+    var pendingDelete by remember { mutableStateOf<AiSessionEntity?>(null) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -115,6 +125,25 @@ fun AiChatScreen(
             },
             confirmButton = {
                 TextButton(onClick = { vm.acceptPrivacy() }) { Text("同意并继续") }
+            }
+        )
+    }
+
+    pendingDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("删除会话") },
+            text = { Text("删除后「${target.title}」及其全部消息记录都会一并删除，且无法恢复。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        vm.deleteSession(target.id)
+                        pendingDelete = null
+                    }
+                ) { Text("删除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text("取消") }
             }
         )
     }
@@ -147,7 +176,7 @@ fun AiChatScreen(
                                 vm.selectSession(sessionItem.id)
                                 scope.launch { drawerState.close() }
                             },
-                            onDelete = { vm.deleteSession(sessionItem.id) }
+                            onDelete = { pendingDelete = sessionItem }
                         )
                     }
                 }
@@ -185,11 +214,9 @@ fun AiChatScreen(
             ChatLayer(
                 state = state,
                 hasSelection = hasSelection,
-                input = input,
-                onInputChange = { input = it },
-                onSend = {
-                    if (vm.send(input)) input = ""
-                },
+                onDraftChange = vm::updateDraft,
+                onSend = { vm.send(state.draft) },
+                onRetry = { vm.retry() },
                 onStop = { vm.stop() },
                 onInsert = { text -> onApplyResult("insert", text) },
                 onReplace = { text -> onApplyResult("replace", text) },
@@ -233,9 +260,9 @@ private fun SessionItem(
 private fun ChatLayer(
     state: AiChatViewModel.UiState,
     hasSelection: Boolean,
-    input: String,
-    onInputChange: (String) -> Unit,
+    onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
+    onRetry: () -> Unit,
     onStop: () -> Unit,
     onInsert: (String) -> Unit,
     onReplace: (String) -> Unit,
@@ -245,11 +272,25 @@ private fun ChatLayer(
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
+    val streamingVisible = state.sending || state.streamingText.isNotEmpty()
+    val itemCount = state.messages.size + if (streamingVisible) 1 else 0
 
-    LaunchedEffect(state.messages.size, state.sending) {
-        val itemCount = state.messages.size +
-            if (state.sending || state.streamingText.isNotEmpty()) 1 else 0
-        if (itemCount > 0) listState.animateScrollToItem(itemCount - 1)
+    // 是否停留在底部：最后可见项 index ≥ 总数 - 1；用户上滑后不再打扰
+    val atBottom by remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val lastVisibleIndex = info.visibleItemsInfo.lastOrNull()?.index ?: -1
+            lastVisibleIndex >= info.totalItemsCount - 1
+        }
+    }
+
+    // 普通新消息用动画滚到底
+    LaunchedEffect(state.messages.size) {
+        if (atBottom && itemCount > 0) listState.animateScrollToItem(itemCount - 1)
+    }
+    // 流式增量直接定位，避免动画排队抖动
+    LaunchedEffect(state.streamingText, state.reasoningText, state.sending) {
+        if (atBottom && itemCount > 0) listState.scrollToItem(itemCount - 1)
     }
 
     Surface(
@@ -279,7 +320,7 @@ private fun ChatLayer(
                     }
                 }
             }
-            if (state.messages.isEmpty() && !state.sending && state.streamingText.isEmpty()) {
+            if (state.messages.isEmpty() && !streamingVisible) {
                 Box(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     contentAlignment = Alignment.Center
@@ -297,38 +338,46 @@ private fun ChatLayer(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(state.messages, key = { it.id }) { message ->
+                    itemsIndexed(state.messages, key = { _, message -> message.id }) { index, message ->
                         MessageBubble(
                             message = message,
+                            isLast = index == state.messages.lastIndex,
+                            sending = state.sending,
                             hasSelection = hasSelection,
+                            onRetry = onRetry,
                             onInsert = onInsert,
                             onReplace = onReplace,
                             onCopy = onCopy,
                             onSaveAsNote = onSaveAsNote
                         )
                     }
-                    if (state.sending || state.streamingText.isNotEmpty()) {
+                    if (streamingVisible) {
                         item(key = "streaming") {
-                            StreamingBubble(text = state.streamingText, sending = state.sending)
+                            StreamingBubble(
+                                text = state.streamingText,
+                                reasoningText = state.reasoningText,
+                                sending = state.sending
+                            )
                         }
                     }
                 }
             }
+            state.lastUsage?.let { UsageLine(it) }
             Row(
                 modifier = Modifier.fillMaxWidth().padding(12.dp),
                 verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 OutlinedTextField(
-                    value = input,
-                    onValueChange = onInputChange,
+                    value = state.draft,
+                    onValueChange = onDraftChange,
                     modifier = Modifier.weight(1f),
                     placeholder = { Text("问点什么…") },
                     maxLines = 5
                 )
                 FilledIconButton(
                     onClick = { if (state.sending) onStop() else onSend() },
-                    enabled = state.sending || input.isNotBlank()
+                    enabled = state.sending || state.draft.isNotBlank()
                 ) {
                     Icon(
                         if (state.sending) Icons.Default.Stop else Icons.AutoMirrored.Filled.Send,
@@ -343,13 +392,21 @@ private fun ChatLayer(
 @Composable
 private fun MessageBubble(
     message: AiMessageEntity,
+    isLast: Boolean,
+    sending: Boolean,
     hasSelection: Boolean,
+    onRetry: () -> Unit,
     onInsert: (String) -> Unit,
     onReplace: (String) -> Unit,
     onCopy: (String) -> Unit,
     onSaveAsNote: (String) -> Unit
 ) {
     val isUser = message.role == AiMessageEntity.ROLE_USER
+    val retryable = if (isUser) {
+        isLast && !sending
+    } else {
+        message.status != AiMessageEntity.STATUS_DONE
+    }
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
@@ -361,16 +418,27 @@ private fun MessageBubble(
             modifier = Modifier.widthIn(max = 320.dp)
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
-                Text(
-                    message.content.ifEmpty { "（没有内容）" },
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                if (message.status != AiMessageEntity.STATUS_DONE) {
+                if (isUser) {
+                    Text(
+                        message.content.ifEmpty { "（没有内容）" },
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                } else {
+                    AssistantContent(message.content.ifEmpty { "（没有内容）" })
+                }
+                if (!isUser && message.status != AiMessageEntity.STATUS_DONE) {
                     Text(
                         if (message.status == AiMessageEntity.STATUS_INTERRUPTED) "（未完成）" else "（失败）",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            }
+        }
+        if (retryable) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = onRetry) {
+                    Text("重试", style = MaterialTheme.typography.labelMedium)
                 }
             }
         }
@@ -393,17 +461,112 @@ private fun MessageBubble(
     }
 }
 
+/** 输入区上方的用量提示：最近一次成功回答的 token 统计。 */
 @Composable
-private fun StreamingBubble(text: String, sending: Boolean) {
+private fun UsageLine(usage: AiUsage) {
+    Text(
+        "上次用量：输入 ${usage.promptTokens} / 输出 ${usage.completionTokens} / 合计 ${usage.totalTokens} tokens",
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+/** 助手正文：普通文本 + 围栏代码块（等宽、横向可滚动）。 */
+@Composable
+private fun AssistantContent(content: String) {
+    val segments = remember(content) { CodeBlockParser.parse(content) }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        segments.forEach { segment ->
+            when (segment) {
+                is CodeBlockParser.Segment.Text -> Text(
+                    segment.text,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                is CodeBlockParser.Segment.Code -> CodeBlockView(
+                    language = segment.language,
+                    code = segment.code
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CodeBlockView(language: String?, code: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surface)
+    ) {
+        if (!language.isNullOrBlank()) {
+            Text(
+                language,
+                modifier = Modifier.padding(start = 10.dp, end = 10.dp, top = 6.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+        ) {
+            Text(
+                code.trimEnd('\n'),
+                modifier = Modifier.padding(10.dp),
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
+            )
+        }
+    }
+}
+
+@Composable
+private fun StreamingBubble(text: String, reasoningText: String, sending: Boolean) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier.widthIn(max = 320.dp)
     ) {
-        Text(
-            text.ifEmpty { if (sending) "正在等待回答…" else "" },
+        Column(
             modifier = Modifier.padding(12.dp),
-            style = MaterialTheme.typography.bodyMedium
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (reasoningText.isNotEmpty()) {
+                ReasoningSection(reasoningText)
+            }
+            Text(
+                text.ifEmpty { if (sending) "正在等待回答…" else "" },
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+    }
+}
+
+/** 深度思考折叠区：默认最多 3 行，可展开/收起。 */
+@Composable
+private fun ReasoningSection(reasoningText: String) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            "深度思考",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        Text(
+            reasoningText,
+            modifier = Modifier.padding(top = 2.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = if (expanded) Int.MAX_VALUE else 3,
+            overflow = TextOverflow.Ellipsis
+        )
+        TextButton(
+            onClick = { expanded = !expanded },
+            contentPadding = PaddingValues(horizontal = 8.dp)
+        ) {
+            Text(if (expanded) "收起" else "展开", style = MaterialTheme.typography.labelSmall)
+        }
     }
 }

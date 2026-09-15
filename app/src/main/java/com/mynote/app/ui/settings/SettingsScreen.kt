@@ -349,16 +349,24 @@ fun SettingsScreen(
                 }
                 TextButton(onClick = {
                     scope.launch {
-                        val key = apiKeyInput.trim().ifEmpty { vm.savedApiKey().orEmpty() }
+                        val key = resolveApiKey(apiKeyInput) { vm.savedApiKey() }
                         if (key.isEmpty()) {
                             snackbarHostState.showSnackbar("请先填写或保存 API Key")
                         } else {
-                            snackbarHostState.showSnackbar(
-                                vm.testConnection(key) ?: "连接正常，模型可用"
-                            )
+                            snackbarHostState.showSnackbar(vm.testConnection(key))
                         }
                     }
                 }) { Text("测试连接") }
+                TextButton(onClick = {
+                    scope.launch {
+                        val key = resolveApiKey(apiKeyInput) { vm.savedApiKey() }
+                        if (key.isEmpty()) {
+                            snackbarHostState.showSnackbar("请先填写或保存 API Key")
+                        } else {
+                            snackbarHostState.showSnackbar(vm.queryBalance(key))
+                        }
+                    }
+                }) { Text("查询余额") }
             }
             Spacer(Modifier.height(24.dp))
             HairlineDivider()
@@ -385,3 +393,7 @@ private fun sortModeLabel(mode: NoteSortMode): String = when (mode) {
     NoteSortMode.CREATED_DESC -> "最新创建"
     NoteSortMode.TITLE_ASC -> "按标题"
 }
+
+/** 取待用 API Key：优先输入框内容，为空回退已保存的 Key。 */
+private fun resolveApiKey(input: String, saved: () -> String?): String =
+    input.trim().ifEmpty { saved().orEmpty() }

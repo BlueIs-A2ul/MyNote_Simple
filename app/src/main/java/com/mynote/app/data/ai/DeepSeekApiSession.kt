@@ -49,7 +49,8 @@ class DeepSeekApiSession(
                 .collect { event ->
                     when (event) {
                         is ApiStreamEvent.Chunk -> _events.emit(AiEvent.Chunk(event.text))
-                        is ApiStreamEvent.Finished -> _events.emit(AiEvent.Done(event.text))
+                        is ApiStreamEvent.Reasoning -> _events.emit(AiEvent.Reasoning(event.text))
+                        is ApiStreamEvent.Finished -> _events.emit(AiEvent.Done(event.text, event.usage))
                         is ApiStreamEvent.Error ->
                             _events.emit(AiEvent.Failed(event.message, event.settingsHint))
                     }

@@ -9,10 +9,14 @@ import com.mynote.app.data.ai.AiApiMessageBuilder
 import com.mynote.app.data.ai.AiChatRepository
 import com.mynote.app.data.ai.AiEvent
 import com.mynote.app.data.ai.AiSession
+import com.mynote.app.data.ai.AiUsage
 import com.mynote.app.data.db.AiMessageEntity
 import com.mynote.app.data.db.AiSessionEntity
 import com.mynote.app.data.repository.NoteRepository
+import com.mynote.app.data.settings.AiDraftStore
 import com.mynote.app.data.settings.AiSettingsStore
+import com.mynote.app.data.settings.aiDraftKey
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -31,6 +35,7 @@ class AiChatViewModel(
     private val settingsStore: AiSettingsStore,
     private val externalScope: CoroutineScope,
     private val session: AiSession,
+    private val draftStore: AiDraftStore,
     private val watchdogTimeoutMs: Long = WATCHDOG_TIMEOUT_MS
 ) : ViewModel() {
 
@@ -39,18 +44,22 @@ class AiChatViewModel(
         val currentSessionId: Long? = null,
         val messages: List<AiMessageEntity> = emptyList(),
         val streamingText: String = "",
+        val reasoningText: String = "",
         val sending: Boolean = false,
         val privacyAccepted: Boolean = false,
         val banner: String? = null,
         val apiKeyMissing: Boolean = false,
-        val snackbar: String? = null
+        val snackbar: String? = null,
+        val lastUsage: AiUsage? = null,
+        val draft: String = ""
     )
 
     private val _state = MutableStateFlow(
         UiState(
             privacyAccepted = settingsStore.isPrivacyAccepted(session.serviceId),
             apiKeyMissing = !settingsStore.hasApiKey(),
-            banner = if (settingsStore.hasApiKey()) null else AiSession.KEY_MISSING_REASON
+            banner = if (settingsStore.hasApiKey()) null else AiSession.KEY_MISSING_REASON,
+            draft = draftStore.get(aiDraftKey(noteId, null))
         )
     )
     val state: StateFlow<UiState> = _state
@@ -79,25 +88,45 @@ class AiChatViewModel(
         }
     }
 
+    /** 切换会话：旧流按半截收尾，清空思考/用量，并加载目标会话的草稿。 */
     fun selectSession(sessionId: Long) {
         if (sessionId == _state.value.currentSessionId) return
-        val session = _state.value.sessions.firstOrNull { it.id == sessionId } ?: return
+        val target = _state.value.sessions.firstOrNull { it.id == sessionId } ?: return
         if (_state.value.sending) {
             this.session.stop()
             finalizeAssistant(AiMessageEntity.STATUS_INTERRUPTED)
         }
         userStartedNewChat = false
-        _state.update { it.copy(currentSessionId = sessionId, streamingText = "", banner = null) }
+        _state.update {
+            it.copy(
+                currentSessionId = sessionId,
+                streamingText = "",
+                reasoningText = "",
+                banner = null,
+                lastUsage = null,
+                draft = draftStore.get(aiDraftKey(noteId, sessionId))
+            )
+        }
         observeMessages(sessionId)
     }
 
+    /** 开启新对话：清空思考/用量，并加载新对话草稿（草稿键的 sessionId 为 0）。 */
     fun newChat() {
         if (_state.value.sending) {
             session.stop()
             finalizeAssistant(AiMessageEntity.STATUS_INTERRUPTED)
         }
         userStartedNewChat = true
-        _state.update { it.copy(currentSessionId = null, streamingText = "", banner = null) }
+        _state.update {
+            it.copy(
+                currentSessionId = null,
+                streamingText = "",
+                reasoningText = "",
+                banner = null,
+                lastUsage = null,
+                draft = draftStore.get(aiDraftKey(noteId, null))
+            )
+        }
         observeMessages(null)
     }
 
@@ -115,17 +144,68 @@ class AiChatViewModel(
         sendRequested = true
         val sessionId = snapshot.currentSessionId
         if (sessionId != null) {
-            viewModelScope.launch { launchSendNow(sessionId, input) }
+            viewModelScope.launch {
+                try {
+                    launchSendNow(sessionId, input)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    resetSendStateAfterFailure()
+                }
+            }
         } else {
             viewModelScope.launch {
-                val now = System.currentTimeMillis()
-                val id = aiRepository.createSession(noteId, session.serviceId, titleFor(input), now)
-                _state.update { it.copy(currentSessionId = id) }
-                observeMessages(id)
-                launchSendNow(id, input)
+                try {
+                    val now = System.currentTimeMillis()
+                    val id = aiRepository.createSession(noteId, session.serviceId, titleFor(input), now)
+                    // 新对话草稿键为 "<noteId>:0"，会话创建后清掉，再由 launchSendNow 清新会话键
+                    clearDraft(null)
+                    _state.update { it.copy(currentSessionId = id) }
+                    observeMessages(id)
+                    launchSendNow(id, input)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    resetSendStateAfterFailure()
+                }
             }
         }
         return true
+    }
+
+    /**
+     * 重发最后一条用户消息：历史只取其之前的消息（不含该条与其后的回答），
+     * 不重复插入 user、不重复落库；被拒（生成中 / 无 user 消息 / 无会话 / 未接受隐私 / 未配置 Key）返回 false。
+     */
+    fun retry(): Boolean {
+        val snapshot = _state.value
+        if (snapshot.sending || sendRequested) return false
+        if (!snapshot.privacyAccepted) return false
+        if (!settingsStore.hasApiKey()) {
+            _state.update {
+                it.copy(banner = AiSession.KEY_MISSING_REASON, apiKeyMissing = true)
+            }
+            return false
+        }
+        val lastUserIndex = snapshot.messages.indexOfLast { it.role == AiMessageEntity.ROLE_USER }
+        if (lastUserIndex < 0) return false
+        val sessionId = snapshot.currentSessionId ?: return false
+        val history = snapshot.messages.subList(0, lastUserIndex)
+        val input = snapshot.messages[lastUserIndex].content
+        // 与首次发送同一路径：首条用户消息仍会带上笔记正文快照
+        val messages = AiApiMessageBuilder.build(noteTitle, noteContent, history, input)
+        _state.update {
+            it.copy(sending = true, streamingText = "", reasoningText = "", banner = null)
+        }
+        session.send(messages)
+        resetWatchdog()
+        return true
+    }
+
+    /** 更新输入框草稿：同步内存态与当前会话（新对话为键 0）的持久化草稿。 */
+    fun updateDraft(text: String) {
+        _state.update { it.copy(draft = text) }
+        draftStore.set(aiDraftKey(noteId, _state.value.currentSessionId), text)
     }
 
     fun stop() {
@@ -187,14 +267,24 @@ class AiChatViewModel(
         val messages = AiApiMessageBuilder.build(noteTitle, noteContent, history, input)
         val now = System.currentTimeMillis()
         aiRepository.appendMessage(sessionId, AiMessageEntity.ROLE_USER, input, AiMessageEntity.STATUS_DONE, now)
-        _state.update { it.copy(sending = true, streamingText = "", banner = null) }
+        clearDraft(sessionId)
+        _state.update { it.copy(sending = true, streamingText = "", reasoningText = "", banner = null) }
         sendRequested = false
         session.send(messages)
-        startWatchdog()
+        resetWatchdog()
     }
 
-    /** 网络层未回终态时的兜底：超时未收到终态事件则按半截/失败收尾。 */
-    private fun startWatchdog() {
+    /** 进入流式后清空草稿（内存态与持久化同步清），避免切走再回来重复带出已发送内容。 */
+    private fun clearDraft(sessionId: Long?) {
+        draftStore.set(aiDraftKey(noteId, sessionId), "")
+        _state.update { it.copy(draft = "") }
+    }
+
+    /**
+     * 空闲看门狗：Chunk / Reasoning 每来一次就 cancel + 重启计时，
+     * 语义是「距上一个流事件超过阈值」才按半截/失败收尾；Done / Failed / 停止会取消它。
+     */
+    private fun resetWatchdog() {
         if (watchdogTimeoutMs <= 0L) return
         watchdogJob?.cancel()
         watchdogJob = viewModelScope.launch {
@@ -206,6 +296,20 @@ class AiChatViewModel(
                 else AiMessageEntity.STATUS_INTERRUPTED
             )
             _state.update { it.copy(banner = "回答超时，请重试") }
+        }
+    }
+
+    /** 发送协程内部异常时复位发送态：sendRequested 不复位会让后续发送被永久拒绝。 */
+    private fun resetSendStateAfterFailure() {
+        watchdogJob?.cancel()
+        sendRequested = false
+        _state.update {
+            it.copy(
+                sending = false,
+                streamingText = "",
+                reasoningText = "",
+                banner = "发送失败，请重试"
+            )
         }
     }
 
@@ -227,8 +331,18 @@ class AiChatViewModel(
             is AiEvent.Chunk -> {
                 if (!_state.value.sending) return
                 _state.update { it.copy(streamingText = event.text) }
+                resetWatchdog()
             }
-            is AiEvent.Done -> finalizeAssistant(AiMessageEntity.STATUS_DONE, event.text)
+            is AiEvent.Reasoning -> {
+                if (!_state.value.sending) return
+                _state.update { it.copy(reasoningText = it.reasoningText + event.text) }
+                resetWatchdog()
+            }
+            is AiEvent.Done -> {
+                if (!_state.value.sending) return
+                _state.update { it.copy(lastUsage = event.usage) }
+                finalizeAssistant(AiMessageEntity.STATUS_DONE, event.text)
+            }
             is AiEvent.Failed -> {
                 if (!_state.value.sending) {
                     if (event.settingsHint) {
@@ -236,16 +350,27 @@ class AiChatViewModel(
                     }
                     return
                 }
-                val partial = _state.value.streamingText
-                finalizeAssistant(
-                    if (partial.isBlank()) AiMessageEntity.STATUS_FAILED
-                    else AiMessageEntity.STATUS_INTERRUPTED
-                )
-                _state.update {
-                    it.copy(
-                        banner = event.reason,
-                        apiKeyMissing = event.settingsHint || it.apiKeyMissing
-                    )
+                if (_state.value.streamingText.isBlank()) {
+                    // 本次没有任何半截内容：不落库空 failed 消息，仅横幅（保留 user 消息）
+                    watchdogJob?.cancel()
+                    sendRequested = false
+                    _state.update {
+                        it.copy(
+                            sending = false,
+                            streamingText = "",
+                            reasoningText = "",
+                            banner = event.reason,
+                            apiKeyMissing = event.settingsHint || it.apiKeyMissing
+                        )
+                    }
+                } else {
+                    finalizeAssistant(AiMessageEntity.STATUS_INTERRUPTED)
+                    _state.update {
+                        it.copy(
+                            banner = event.reason,
+                            apiKeyMissing = event.settingsHint || it.apiKeyMissing
+                        )
+                    }
                 }
             }
         }
@@ -257,7 +382,7 @@ class AiChatViewModel(
         watchdogJob?.cancel()
         val text = textOverride?.takeIf { it.isNotEmpty() } ?: snapshot.streamingText
         sendRequested = false
-        _state.update { it.copy(sending = false, streamingText = "") }
+        _state.update { it.copy(sending = false, streamingText = "", reasoningText = "") }
         val sessionId = snapshot.currentSessionId ?: return
         externalScope.launch {
             val now = System.currentTimeMillis()
@@ -284,12 +409,13 @@ class AiChatViewModel(
             settingsStore: AiSettingsStore,
             externalScope: CoroutineScope,
             session: AiSession,
+            draftStore: AiDraftStore,
             watchdogTimeoutMs: Long = WATCHDOG_TIMEOUT_MS
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 AiChatViewModel(
                     noteId, noteTitle, noteContent, aiRepository, noteRepository,
-                    settingsStore, externalScope, session, watchdogTimeoutMs
+                    settingsStore, externalScope, session, draftStore, watchdogTimeoutMs
                 )
             }
         }

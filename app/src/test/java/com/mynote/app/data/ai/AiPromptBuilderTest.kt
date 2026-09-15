@@ -54,4 +54,70 @@ class AiPromptBuilderTest {
     fun inputIsTrimmed() {
         assertEquals("问题", AiPromptBuilder.build("", "", "  问题  ", includeNoteContext = false))
     }
+
+    @Test
+    fun noteBodyOverLimitIsTruncatedWithNotice() {
+        val text = AiPromptBuilder.build(
+            noteTitle = "",
+            noteContent = "0123456789",
+            userInput = "总结",
+            includeNoteContext = true,
+            maxNoteChars = 4
+        )
+        assertTrue(text.contains("【笔记正文】\n0123（正文过长，已截断）"))
+        assertFalse(text.contains("456789"))
+        assertTrue(text.contains("【要求】\n总结"))
+    }
+
+    @Test
+    fun noteBodyAtLimitIsNotTruncated() {
+        val text = AiPromptBuilder.build("", "0123", "总结", includeNoteContext = true, maxNoteChars = 4)
+        assertFalse(text.contains("（正文过长，已截断）"))
+        assertTrue(text.contains("0123"))
+    }
+
+    @Test
+    fun defaultMaxNoteCharsKeepsFullBody() {
+        val text = AiPromptBuilder.build("", "0123456789", "总结", includeNoteContext = true)
+        assertFalse(text.contains("（正文过长，已截断）"))
+        assertTrue(text.contains("0123456789"))
+    }
+
+    @Test
+    fun truncationCountsPlainTextAfterImageMarkupStripped() {
+        val text = AiPromptBuilder.build(
+            noteTitle = "",
+            noteContent = "ab![](img/x.png)cd",
+            userInput = "问",
+            includeNoteContext = true,
+            maxNoteChars = 3
+        )
+        assertTrue(text.contains("【笔记正文】\nabc（正文过长，已截断）"))
+        assertFalse(text.contains("![]("))
+    }
+
+    @Test
+    fun noteTitleIsNotCountedTowardLimit() {
+        val text = AiPromptBuilder.build(
+            noteTitle = "很长的标题文本",
+            noteContent = "ab",
+            userInput = "问",
+            includeNoteContext = true,
+            maxNoteChars = 2
+        )
+        assertTrue(text.contains("# 很长的标题文本"))
+        assertFalse(text.contains("（正文过长，已截断）"))
+    }
+
+    @Test
+    fun maxNoteCharsIgnoredWhenNoteContextExcluded() {
+        val text = AiPromptBuilder.build(
+            noteTitle = "标题",
+            noteContent = "很长的正文",
+            userInput = "只发输入",
+            includeNoteContext = false,
+            maxNoteChars = 1
+        )
+        assertEquals("只发输入", text)
+    }
 }

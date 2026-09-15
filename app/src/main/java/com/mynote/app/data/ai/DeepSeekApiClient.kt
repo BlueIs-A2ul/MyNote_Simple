@@ -2,6 +2,7 @@ package com.mynote.app.data.ai
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -11,6 +12,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.BufferedReader
@@ -20,14 +22,30 @@ import java.io.InputStream
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArraySet
 import kotlin.coroutines.cancellation.CancellationException
 
 /** 流式回答的底层事件（面向会话层；错误文案已是中文）。 */
 sealed interface ApiStreamEvent {
     data class Chunk(val text: String) : ApiStreamEvent
-    data class Finished(val text: String, val finishReason: String?) : ApiStreamEvent
+    data class Reasoning(val text: String) : ApiStreamEvent
+    data class Finished(val text: String, val finishReason: String?, val usage: AiUsage?) : ApiStreamEvent
     data class Error(val message: String, val settingsHint: Boolean = false) : ApiStreamEvent
+}
+
+/** 「测试连接」结果：成功带官方模型 id 列表。 */
+sealed interface ProbeResult {
+    data class Ok(val models: List<String>) : ProbeResult
+    data class Failed(val message: String) : ProbeResult
+}
+
+/** 单个币种的余额行；金额保留接口原样字符串，避免浮点误差。 */
+data class BalanceLine(val currency: String, val total: String, val granted: String, val toppedUp: String)
+
+/** 「查询余额」结果。 */
+sealed interface BalanceState {
+    data class Ok(val isAvailable: Boolean, val lines: List<BalanceLine>) : BalanceState
+    data class Failed(val message: String) : BalanceState
 }
 
 /** 可替换的流式实现，便于会话层测试；[cancel] 用于打断阻塞中的读取。 */
@@ -63,15 +81,17 @@ fun interface HttpStreamTransport {
 /**
  * DeepSeek Chat Completions 客户端（OpenAI 兼容协议）。
  * 手写 SSE：零新增依赖；解析逻辑见 [DeepSeekSseParser]（纯函数）。
+ * 429/503 仅在连接已建立、尚未读流时重试一次（间隔 [retryDelayMs]，测试传 0）。
  */
 class DeepSeekApiClient(
     private val transport: HttpStreamTransport = UrlConnectionTransport(),
-    baseUrl: String = BASE_URL
+    baseUrl: String = BASE_URL,
+    private val retryDelayMs: Long = 1_000
 ) : ChatStreamer {
 
     private val baseUrl = baseUrl.trimEnd('/')
 
-    private val activeConnections = ConcurrentHashMap.newKeySet<HttpStreamConnection>()
+    private val activeConnections = CopyOnWriteArraySet<HttpStreamConnection>()
 
     private val json = Json {
         encodeDefaults = true
@@ -93,12 +113,22 @@ class DeepSeekApiClient(
             )
         ).toByteArray(Charsets.UTF_8)
 
-        val connection = try {
-            transport.execute("POST", "$baseUrl/chat/completions", streamHeaders(apiKey), body)
-        } catch (e: IOException) {
-            if (!currentCoroutineContext().isActive) throw CancellationException()
-            emit(ApiStreamEvent.Error("网络错误，请检查网络后重试"))
+        var connection = openConnection(apiKey, body)
+        if (connection == null) {
+            emit(ApiStreamEvent.Error(NETWORK_ERROR))
             return@flow
+        }
+
+        // 限流/服务器繁忙：尚未开始读流，安全丢弃旧连接后重试一次
+        if (connection.statusCode == 429 || connection.statusCode == 503) {
+            runCatching { connection.close() }
+            delay(retryDelayMs)
+            val retried = openConnection(apiKey, body)
+            if (retried == null) {
+                emit(ApiStreamEvent.Error(NETWORK_ERROR))
+                return@flow
+            }
+            connection = retried
         }
 
         // 登记连接：stop() 时经 cancel() 从外部断开阻塞读（read 不响应协程取消）
@@ -117,6 +147,7 @@ class DeepSeekApiClient(
 
             val full = StringBuilder()
             var finishReason: String? = null
+            var usage: AiUsage? = null
             var streamError: String? = null
             BufferedReader(InputStreamReader(stream, Charsets.UTF_8)).use { reader ->
                 while (true) {
@@ -132,21 +163,27 @@ class DeepSeekApiClient(
                         full.append(text)
                         emit(ApiStreamEvent.Chunk(text))
                     }
+                    val reasoning = frame.reasoning
+                    if (!reasoning.isNullOrEmpty()) {
+                        emit(ApiStreamEvent.Reasoning(reasoning))
+                    }
                     frame.finishReason?.let { finishReason = it }
+                    // usage 取流中最后一次非空（可能出现在 choices 为空的末块上）
+                    frame.usage?.let { usage = it }
                     if (frame.done) break
                 }
             }
             if (streamError != null) {
                 emit(ApiStreamEvent.Error(streamError!!))
             } else {
-                emit(ApiStreamEvent.Finished(full.toString(), finishReason))
+                emit(ApiStreamEvent.Finished(full.toString(), finishReason, usage))
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
             if (!currentCoroutineContext().isActive) throw CancellationException()
             // 已发出的 chunk 由上层保留；这里只报告失败原因
-            emit(ApiStreamEvent.Error("网络错误，请检查网络后重试"))
+            emit(ApiStreamEvent.Error(NETWORK_ERROR))
         } finally {
             activeConnections -= connection
             runCatching { connection.close() }
@@ -160,32 +197,100 @@ class DeepSeekApiClient(
     /** 测试用：进行中的连接数。 */
     internal fun activeStreamCount(): Int = activeConnections.size
 
-    /** 测试连接：GET /models；返回 null 表示成功，否则为错误文案。 */
-    suspend fun verifyApiKey(apiKey: String): String? = withContext(Dispatchers.IO) {
+    /** 建立流式连接；IOException 转为 null（由调用方发错误事件）。 */
+    private suspend fun openConnection(apiKey: String, body: ByteArray): HttpStreamConnection? {
+        return try {
+            transport.execute("POST", "$baseUrl/chat/completions", streamHeaders(apiKey), body)
+        } catch (e: IOException) {
+            if (!currentCoroutineContext().isActive) throw CancellationException()
+            null
+        }
+    }
+
+    /** 测试连接：GET /models；成功返回官方模型 id 列表。 */
+    suspend fun probe(apiKey: String): ProbeResult = withContext(Dispatchers.IO) {
         try {
             val connection = transport.execute("GET", "$baseUrl/models", jsonHeaders(apiKey), null)
             try {
-                if (connection.statusCode in 200..299) {
-                    null
+                if (connection.statusCode !in 200..299) {
+                    ProbeResult.Failed(mapHttpError(connection.statusCode, connection.errorBody).message)
                 } else {
-                    mapHttpError(connection.statusCode, connection.errorBody).message
+                    val body = readBody(connection.stream)
+                        ?: return@withContext ProbeResult.Failed(PARSE_ERROR)
+                    parseModelIds(body)
                 }
             } finally {
                 runCatching { connection.close() }
             }
         } catch (e: IOException) {
-            "网络错误，请检查网络后重试"
+            ProbeResult.Failed(NETWORK_ERROR)
         }
     }
+
+    /** 查询余额：GET /user/balance；成功返回可用状态与各币种余额行。 */
+    suspend fun fetchBalance(apiKey: String): BalanceState = withContext(Dispatchers.IO) {
+        try {
+            val connection = transport.execute("GET", "$baseUrl/user/balance", jsonHeaders(apiKey), null)
+            try {
+                if (connection.statusCode !in 200..299) {
+                    BalanceState.Failed(mapHttpError(connection.statusCode, connection.errorBody).message)
+                } else {
+                    val body = readBody(connection.stream)
+                        ?: return@withContext BalanceState.Failed(PARSE_ERROR)
+                    parseBalance(body)
+                }
+            } finally {
+                runCatching { connection.close() }
+            }
+        } catch (e: IOException) {
+            BalanceState.Failed(NETWORK_ERROR)
+        }
+    }
+
+    /** 读取响应体为文本；空流/读取失败返回 null。 */
+    private fun readBody(stream: InputStream?): String? {
+        if (stream == null) return null
+        return runCatching {
+            InputStreamReader(stream, Charsets.UTF_8).use { it.readText() }
+        }.getOrNull()
+    }
+
+    /** 解析 GET /models 响应体，抽取 data[].id；坏数据返回失败。 */
+    private fun parseModelIds(body: String): ProbeResult {
+        val models = runCatching {
+            json.parseToJsonElement(body).jsonObject["data"]?.jsonArray
+                ?.mapNotNull { it.jsonObject["id"]?.jsonPrimitive?.contentOrNull }
+        }.getOrNull() ?: return ProbeResult.Failed(PARSE_ERROR)
+        return ProbeResult.Ok(models)
+    }
+
+    /** 解析 GET /user/balance 响应体；字段缺失按空值容错，坏 JSON 返回失败。 */
+    private fun parseBalance(body: String): BalanceState = runCatching {
+        val root = json.parseToJsonElement(body).jsonObject
+        val available = root["is_available"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
+        val lines = root["balance_infos"]?.jsonArray?.mapNotNull { element ->
+            val info = element.jsonObject
+            val currency = info["currency"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            BalanceLine(
+                currency = currency,
+                total = info["total_balance"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                granted = info["granted_balance"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                toppedUp = info["topped_up_balance"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            )
+        }.orEmpty()
+        BalanceState.Ok(available, lines)
+    }.getOrElse { BalanceState.Failed(PARSE_ERROR) }
 
     private fun streamHeaders(apiKey: String) = mapOf(
         "Content-Type" to "application/json",
         "Accept" to "text/event-stream",
+        "Accept-Encoding" to "identity",
         "Authorization" to "Bearer $apiKey"
     )
 
     private fun jsonHeaders(apiKey: String) = mapOf(
         "Accept" to "application/json",
+        "Accept-Encoding" to "identity",
         "Authorization" to "Bearer $apiKey"
     )
 
@@ -226,6 +331,8 @@ class DeepSeekApiClient(
         const val BASE_URL = "https://api.deepseek.com"
         private const val THINKING_ENABLED = "enabled"
         private const val THINKING_DISABLED = "disabled"
+        private const val NETWORK_ERROR = "网络错误，请检查网络后重试"
+        private const val PARSE_ERROR = "返回数据无法解析"
     }
 }
 

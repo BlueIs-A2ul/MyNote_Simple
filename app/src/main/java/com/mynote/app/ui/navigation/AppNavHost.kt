@@ -115,6 +115,7 @@ fun AppNavHost(container: AppContainer) {
                 settingsStore = container.aiSettingsStore,
                 externalScope = container.applicationScope,
                 session = container.aiSessionFactory(),
+                draftStore = container.aiDraftStore,
                 onApplyResult = { type, text ->
                     prev?.set(AiNavKeys.RESULT_TYPE, type)
                     prev?.set(AiNavKeys.RESULT_TEXT, text)

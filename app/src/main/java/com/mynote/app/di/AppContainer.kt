@@ -12,8 +12,10 @@ import com.mynote.app.data.export.ImageExportManager
 import com.mynote.app.data.export.NoteImageRenderer
 import com.mynote.app.data.image.ImageStore
 import com.mynote.app.data.repository.NoteRepository
+import com.mynote.app.data.settings.AiDraftStore
 import com.mynote.app.data.settings.AiSettingsStore
 import com.mynote.app.data.settings.NoteSortStore
+import com.mynote.app.data.settings.PrefsAiDraftStore
 import com.mynote.app.data.settings.ThemeSettingsStore
 import com.mynote.app.data.settings.TrashRetentionStore
 import kotlinx.coroutines.CoroutineScope
@@ -66,10 +68,16 @@ class AppContainer(context: Context) {
 
     val deepSeekApiClient: DeepSeekApiClient by lazy { DeepSeekApiClient() }
 
-    /** 每次进入 AI 页新建一个会话；读写设置走 Provider，设置页改 Key / 模型立即生效。 */
+    /** AI 助手输入草稿；提示词输入随会话持久化，切走/回来自动恢复。 */
+    val aiDraftStore: AiDraftStore by lazy { PrefsAiDraftStore(context) }
+
+    /**
+     * 每次进入 AI 页新建一个会话与独立客户端（取消隔离，条目 62）；
+     * 读写设置走 Provider，设置页改 Key / 模型立即生效。
+     */
     val aiSessionFactory: () -> AiSession = {
         DeepSeekApiSession(
-            streamer = deepSeekApiClient,
+            streamer = DeepSeekApiClient(),
             credentials = { aiSettingsStore.apiKey() },
             model = { aiSettingsStore.model() },
             deepThinking = { aiSettingsStore.deepThinking() },

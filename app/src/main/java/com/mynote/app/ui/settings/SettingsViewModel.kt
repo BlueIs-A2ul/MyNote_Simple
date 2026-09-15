@@ -4,7 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.mynote.app.data.ai.BalanceState
 import com.mynote.app.data.ai.DeepSeekApiClient
+import com.mynote.app.data.ai.DeepSeekModels
+import com.mynote.app.data.ai.ProbeResult
 import com.mynote.app.data.db.NoteSortMode
 import com.mynote.app.data.settings.AiSettingsStore
 import com.mynote.app.data.settings.DarkMode
@@ -77,8 +80,11 @@ class SettingsViewModel(
         _apiKeyConfigured.value = false
     }
 
-    /** 测试连接：null 表示成功，否则为错误文案。 */
-    suspend fun testConnection(key: String): String? = apiClient.verifyApiKey(key)
+    /** 测试连接：始终返回可展示文案（成功含可用模型与内置模型一致性提示）。 */
+    suspend fun testConnection(key: String): String = connectionMessage(apiClient.probe(key))
+
+    /** 查询余额：始终返回可展示文案（总额/赠金/充值，或不足提示）。 */
+    suspend fun queryBalance(key: String): String = balanceMessage(apiClient.fetchBalance(key))
 
     companion object {
         fun factory(
@@ -91,4 +97,32 @@ class SettingsViewModel(
             initializer { SettingsViewModel(store, sortStore, trashStore, aiStore, apiClient) }
         }
     }
+}
+
+/** 测试连接结果 → 展示文案：成功时列出可用模型，官方列表与内置不一致时追加提醒。 */
+internal fun connectionMessage(result: ProbeResult): String = when (result) {
+    is ProbeResult.Ok -> {
+        val base = "连接正常，可用模型：" + result.models.joinToString("、")
+        if (DeepSeekModels.all.all { it in result.models }) {
+            base
+        } else {
+            "$base（内置模型与官方不一致，请留意）"
+        }
+    }
+    is ProbeResult.Failed -> result.message
+}
+
+/** 余额查询结果 → 展示文案：多条按「；」拼接，余额不可用时加前缀；无数据给兜底文案。 */
+internal fun balanceMessage(state: BalanceState): String = when (state) {
+    is BalanceState.Ok -> {
+        val text = state.lines.joinToString("；") {
+            "余额 ${it.currency} ${it.total}（赠金 ${it.granted} / 充值 ${it.toppedUp}）"
+        }
+        when {
+            text.isEmpty() -> "未返回余额信息"
+            !state.isAvailable -> "余额不足：$text"
+            else -> text
+        }
+    }
+    is BalanceState.Failed -> state.message
 }
