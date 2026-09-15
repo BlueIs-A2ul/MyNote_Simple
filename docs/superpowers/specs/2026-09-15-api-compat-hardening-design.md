@@ -33,7 +33,7 @@
 - 存储：`AiSettingsStoreTest` 增模型列表读写、回退内置、`model()` 在新列表内/外行为。
 - 设置 VM：`SettingsViewModelTest` 用假 `probeFn` 验证「成功后写列表 + 自动切换失效模型」；`modelAfterRefresh` 纯函数用例；保留格式化用例。
 - 客户端：422→去 `thinking` 重试成功；422 重试后仍失败映射错误；既有 429/503 用例保持通过。
-- 全量 `:app:testDebugUnitTest` + `assembleDebug` + `assembleRelease`；版本 1.8.0。
+- 全量 `:app:testDebugUnitTest` + `assembleDebug` + `assembleRelease`；版本 1.7.1。
 
 ## 4. 风险
 
@@ -46,4 +46,4 @@
 ## 修订记录
 
 - 2026-09-15：初版。两条加固（动态模型列表 / 422 降级）拆分给两个并行子代理，文件所有权互斥。
-- 2026-09-15（实现）：并行轨道 A（客户端 422 回退：`thinking` 可空 + `explicitNulls = false` + 去字段重试一次）与轨道 B（`models()/setModels()` 持久化、`probeFn/balanceFn` 注入缝、`availableModels`、`modelAfterRefresh`）完成；集成修复 1 处测试期望（刷新后失效模型切到新列表首项 flash，而非列表中的新模型）。全量单测 456 全绿，版本 1.8.0。
+- 2026-09-15（实现）：并行轨道 A（客户端 422 回退：`thinking` 可空 + `explicitNulls = false` + 去字段重试一次）与轨道 B（`models()/setModels()` 持久化、`probeFn/balanceFn` 注入缝、`availableModels`、`modelAfterRefresh`）完成；集成修复 1 处测试期望（刷新后失效模型切到新列表首项 flash，而非列表中的新模型）。全量单测 456 全绿，版本 1.7.1（按用户要求按 patch 发布，原 1.8.0 未发布）。
