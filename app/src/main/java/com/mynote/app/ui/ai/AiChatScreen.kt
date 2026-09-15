@@ -1,8 +1,6 @@
 package com.mynote.app.ui.ai
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,7 +15,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -59,10 +56,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -424,7 +419,7 @@ private fun MessageBubble(
                         style = MaterialTheme.typography.bodyMedium
                     )
                 } else {
-                    AssistantContent(message.content.ifEmpty { "（没有内容）" })
+                    MarkdownContent(message.content.ifEmpty { "（没有内容）" })
                 }
                 if (!isUser && message.status != AiMessageEntity.STATUS_DONE) {
                     Text(
@@ -443,17 +438,20 @@ private fun MessageBubble(
             }
         }
         if (!isUser && message.status == AiMessageEntity.STATUS_DONE) {
+            val plainContent = remember(message.content) {
+                MarkdownPlainText.convert(message.content)
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = { onInsert(message.content) }) {
+                TextButton(onClick = { onInsert(plainContent) }) {
                     Text("插入正文", style = MaterialTheme.typography.labelMedium)
                 }
-                TextButton(onClick = { onReplace(message.content) }, enabled = hasSelection) {
+                TextButton(onClick = { onReplace(plainContent) }, enabled = hasSelection) {
                     Text("替换选中", style = MaterialTheme.typography.labelMedium)
                 }
                 TextButton(onClick = { onCopy(message.content) }) {
                     Text("复制", style = MaterialTheme.typography.labelMedium)
                 }
-                TextButton(onClick = { onSaveAsNote(message.content) }) {
+                TextButton(onClick = { onSaveAsNote(plainContent) }) {
                     Text("存为新笔记", style = MaterialTheme.typography.labelMedium)
                 }
             }
@@ -472,56 +470,7 @@ private fun UsageLine(usage: AiUsage) {
     )
 }
 
-/** 助手正文：普通文本 + 围栏代码块（等宽、横向可滚动）。 */
-@Composable
-private fun AssistantContent(content: String) {
-    val segments = remember(content) { CodeBlockParser.parse(content) }
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        segments.forEach { segment ->
-            when (segment) {
-                is CodeBlockParser.Segment.Text -> Text(
-                    segment.text,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                is CodeBlockParser.Segment.Code -> CodeBlockView(
-                    language = segment.language,
-                    code = segment.code
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun CodeBlockView(language: String?, code: String) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surface)
-    ) {
-        if (!language.isNullOrBlank()) {
-            Text(
-                language,
-                modifier = Modifier.padding(start = 10.dp, end = 10.dp, top = 6.dp),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-        ) {
-            Text(
-                code.trimEnd('\n'),
-                modifier = Modifier.padding(10.dp),
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
-            )
-        }
-    }
-}
-
+/** 助手正文：Markdown 渲染（块级结构 + 行内样式，见 `MarkdownContent`）。 */
 @Composable
 private fun StreamingBubble(text: String, reasoningText: String, sending: Boolean) {
     Surface(
@@ -536,10 +485,7 @@ private fun StreamingBubble(text: String, reasoningText: String, sending: Boolea
             if (reasoningText.isNotEmpty()) {
                 ReasoningSection(reasoningText)
             }
-            Text(
-                text.ifEmpty { if (sending) "正在等待回答…" else "" },
-                style = MaterialTheme.typography.bodyMedium
-            )
+            MarkdownContent(text.ifEmpty { if (sending) "正在等待回答…" else "" })
         }
     }
 }
