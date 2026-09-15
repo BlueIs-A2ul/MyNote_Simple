@@ -1,17 +1,14 @@
 package com.mynote.app.ui.ai
 
-import android.webkit.WebView
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.mynote.app.data.ai.AiApiMessageBuilder
 import com.mynote.app.data.ai.AiChatRepository
-import com.mynote.app.data.ai.AiDriverRegistry
-import com.mynote.app.data.ai.AiPromptBuilder
-import com.mynote.app.data.ai.AiWebDriver
-import com.mynote.app.data.ai.AiWebEvent
-import com.mynote.app.data.ai.AiWebSession
+import com.mynote.app.data.ai.AiEvent
+import com.mynote.app.data.ai.AiSession
 import com.mynote.app.data.db.AiMessageEntity
 import com.mynote.app.data.db.AiSessionEntity
 import com.mynote.app.data.repository.NoteRepository
@@ -33,8 +30,7 @@ class AiChatViewModel(
     private val noteRepository: NoteRepository,
     private val settingsStore: AiSettingsStore,
     private val externalScope: CoroutineScope,
-    registry: AiDriverRegistry,
-    webSessionFactory: (AiWebDriver) -> AiWebSession,
+    private val session: AiSession,
     private val watchdogTimeoutMs: Long = WATCHDOG_TIMEOUT_MS
 ) : ViewModel() {
 
@@ -44,20 +40,18 @@ class AiChatViewModel(
         val messages: List<AiMessageEntity> = emptyList(),
         val streamingText: String = "",
         val sending: Boolean = false,
-        val webVisible: Boolean = false,
-        val loggedIn: Boolean? = null,
         val privacyAccepted: Boolean = false,
         val banner: String? = null,
+        val apiKeyMissing: Boolean = false,
         val snackbar: String? = null
     )
 
-    private val driver: AiWebDriver =
-        settingsStore.selectedServiceId()?.let { registry.find(it) } ?: registry.default
-
-    private val webSession: AiWebSession = webSessionFactory(driver)
-
     private val _state = MutableStateFlow(
-        UiState(privacyAccepted = settingsStore.isPrivacyAccepted(driver.id))
+        UiState(
+            privacyAccepted = settingsStore.isPrivacyAccepted(session.serviceId),
+            apiKeyMissing = !settingsStore.hasApiKey(),
+            banner = if (settingsStore.hasApiKey()) null else AiSession.KEY_MISSING_REASON
+        )
     )
     val state: StateFlow<UiState> = _state
 
@@ -75,25 +69,13 @@ class AiChatViewModel(
                     initialSelectionDone = true
                     if (_state.value.currentSessionId == null) {
                         if (sessions.isNotEmpty()) selectSession(sessions.first().id)
-                        else webSession.openNewChat()
+                        else observeMessages(null)
                     }
                 }
             }
         }
         viewModelScope.launch {
-            webSession.events.collect { handleWebEvent(it) }
-        }
-    }
-
-    fun onWebViewAttached(webView: WebView) {
-        webSession.attach(webView)
-    }
-
-    /** WebView 随组合销毁（返回 / 旋转）时调用：断开旧的 WebView 并结束流式态。 */
-    fun onWebViewDetached() {
-        webSession.release()
-        if (_state.value.sending) {
-            finalizeAssistant(AiMessageEntity.STATUS_INTERRUPTED)
+            session.events.collect { handleEvent(it) }
         }
     }
 
@@ -101,44 +83,46 @@ class AiChatViewModel(
         if (sessionId == _state.value.currentSessionId) return
         val session = _state.value.sessions.firstOrNull { it.id == sessionId } ?: return
         if (_state.value.sending) {
-            webSession.stop()
+            this.session.stop()
             finalizeAssistant(AiMessageEntity.STATUS_INTERRUPTED)
         }
         userStartedNewChat = false
         _state.update { it.copy(currentSessionId = sessionId, streamingText = "", banner = null) }
         observeMessages(sessionId)
-        if (session.remoteChatId != null) webSession.openChat(session.remoteChatId)
-        else webSession.openNewChat()
     }
 
     fun newChat() {
         if (_state.value.sending) {
-            webSession.stop()
+            session.stop()
             finalizeAssistant(AiMessageEntity.STATUS_INTERRUPTED)
         }
         userStartedNewChat = true
         _state.update { it.copy(currentSessionId = null, streamingText = "", banner = null) }
         observeMessages(null)
-        webSession.openNewChat()
     }
 
-    /** 返回是否真正进入发送流程；被拒（空输入 / 生成中 / 重复请求 / 未接受隐私）返回 false。 */
+    /** 返回是否真正进入发送流程；被拒（空输入 / 生成中 / 重复请求 / 未接受隐私 / 未配置 Key）返回 false。 */
     fun send(rawInput: String): Boolean {
         val input = rawInput.trim()
         val snapshot = _state.value
         if (input.isEmpty() || snapshot.sending || sendRequested || !snapshot.privacyAccepted) return false
+        if (!settingsStore.hasApiKey()) {
+            _state.update {
+                it.copy(banner = AiSession.KEY_MISSING_REASON, apiKeyMissing = true)
+            }
+            return false
+        }
         sendRequested = true
         val sessionId = snapshot.currentSessionId
         if (sessionId != null) {
-            val session = snapshot.sessions.firstOrNull { it.id == sessionId }
-            viewModelScope.launch { launchSendNow(sessionId, session?.remoteChatId, input) }
+            viewModelScope.launch { launchSendNow(sessionId, input) }
         } else {
             viewModelScope.launch {
                 val now = System.currentTimeMillis()
-                val id = aiRepository.createSession(noteId, driver.id, titleFor(input), now)
+                val id = aiRepository.createSession(noteId, session.serviceId, titleFor(input), now)
                 _state.update { it.copy(currentSessionId = id) }
                 observeMessages(id)
-                launchSendNow(id, null, input)
+                launchSendNow(id, input)
             }
         }
         return true
@@ -146,7 +130,7 @@ class AiChatViewModel(
 
     fun stop() {
         if (!_state.value.sending) return
-        webSession.stop()
+        session.stop()
         finalizeAssistant(AiMessageEntity.STATUS_INTERRUPTED)
     }
 
@@ -161,12 +145,8 @@ class AiChatViewModel(
     }
 
     fun acceptPrivacy() {
-        settingsStore.acceptPrivacy(driver.id)
+        settingsStore.acceptPrivacy(session.serviceId)
         _state.update { it.copy(privacyAccepted = true) }
-    }
-
-    fun toggleWebVisible() {
-        _state.update { it.copy(webVisible = !it.webVisible) }
     }
 
     fun saveAsNote(text: String) {
@@ -198,25 +178,22 @@ class AiChatViewModel(
                 aiRepository.touch(sessionId, now)
             }
         }
-        webSession.release()
+        session.release()
     }
 
-    private suspend fun launchSendNow(sessionId: Long, remoteChatId: String?, input: String) {
-        val payload = AiPromptBuilder.build(
-            noteTitle = noteTitle,
-            noteContent = noteContent,
-            userInput = input,
-            includeNoteContext = remoteChatId == null
-        )
+    private suspend fun launchSendNow(sessionId: Long, input: String) {
+        // API 无服务端会话：每次请求都携带本地历史；笔记正文只进首条用户消息
+        val history = aiRepository.getMessages(sessionId)
+        val messages = AiApiMessageBuilder.build(noteTitle, noteContent, history, input)
         val now = System.currentTimeMillis()
         aiRepository.appendMessage(sessionId, AiMessageEntity.ROLE_USER, input, AiMessageEntity.STATUS_DONE, now)
         _state.update { it.copy(sending = true, streamingText = "", banner = null) }
         sendRequested = false
-        webSession.send(payload)
+        session.send(messages)
         startWatchdog()
     }
 
-    /** 注入的观察脚本失效时兜底：超时未收到终态事件则按半截/失败收尾（设计 §13 风险缓解）。 */
+    /** 网络层未回终态时的兜底：超时未收到终态事件则按半截/失败收尾。 */
     private fun startWatchdog() {
         if (watchdogTimeoutMs <= 0L) return
         watchdogJob?.cancel()
@@ -228,9 +205,7 @@ class AiChatViewModel(
                 if (partial.isBlank()) AiMessageEntity.STATUS_FAILED
                 else AiMessageEntity.STATUS_INTERRUPTED
             )
-            _state.update {
-                it.copy(banner = "回答超时，可重试或显示网页手动发送", webVisible = true)
-            }
+            _state.update { it.copy(banner = "回答超时，请重试") }
         }
     }
 
@@ -247,47 +222,32 @@ class AiChatViewModel(
         }
     }
 
-    private fun handleWebEvent(event: AiWebEvent) {
+    private fun handleEvent(event: AiEvent) {
         when (event) {
-            is AiWebEvent.LoginState -> _state.update {
-                it.copy(
-                    loggedIn = event.loggedIn,
-                    banner = if (event.loggedIn) null else "请先登录 ${driver.displayName}，登录后重新发送",
-                    webVisible = it.webVisible || !event.loggedIn
-                )
-            }
-            is AiWebEvent.ChatId -> {
-                if (!_state.value.sending) return
-                val sessionId = _state.value.currentSessionId ?: return
-                viewModelScope.launch { aiRepository.updateRemoteChatId(sessionId, event.id) }
-            }
-            is AiWebEvent.ReplyChunk -> {
+            is AiEvent.Chunk -> {
                 if (!_state.value.sending) return
                 _state.update { it.copy(streamingText = event.text) }
             }
-            is AiWebEvent.ReplyDone -> finalizeAssistant(AiMessageEntity.STATUS_DONE, event.text)
-            is AiWebEvent.ReplyError -> {
-                if (!_state.value.sending) return
+            is AiEvent.Done -> finalizeAssistant(AiMessageEntity.STATUS_DONE, event.text)
+            is AiEvent.Failed -> {
+                if (!_state.value.sending) {
+                    if (event.settingsHint) {
+                        _state.update { it.copy(banner = event.reason, apiKeyMissing = true) }
+                    }
+                    return
+                }
                 val partial = _state.value.streamingText
                 finalizeAssistant(
                     if (partial.isBlank()) AiMessageEntity.STATUS_FAILED
                     else AiMessageEntity.STATUS_INTERRUPTED
                 )
                 _state.update {
-                    it.copy(banner = "${event.reason}（可显示网页手动操作）", webVisible = true)
-                }
-            }
-            is AiWebEvent.PageError -> {
-                if (_state.value.sending) {
-                    val partial = _state.value.streamingText
-                    finalizeAssistant(
-                        if (partial.isBlank()) AiMessageEntity.STATUS_FAILED
-                        else AiMessageEntity.STATUS_INTERRUPTED
+                    it.copy(
+                        banner = event.reason,
+                        apiKeyMissing = event.settingsHint || it.apiKeyMissing
                     )
                 }
-                _state.update { it.copy(banner = event.description) }
             }
-            AiWebEvent.PageReady -> _state.update { it.copy(banner = null) }
         }
     }
 
@@ -323,14 +283,13 @@ class AiChatViewModel(
             noteRepository: NoteRepository,
             settingsStore: AiSettingsStore,
             externalScope: CoroutineScope,
-            registry: AiDriverRegistry,
-            webSessionFactory: (AiWebDriver) -> AiWebSession,
+            session: AiSession,
             watchdogTimeoutMs: Long = WATCHDOG_TIMEOUT_MS
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 AiChatViewModel(
                     noteId, noteTitle, noteContent, aiRepository, noteRepository,
-                    settingsStore, externalScope, registry, webSessionFactory, watchdogTimeoutMs
+                    settingsStore, externalScope, session, watchdogTimeoutMs
                 )
             }
         }

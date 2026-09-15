@@ -271,17 +271,15 @@
 - 现状：动态取色开启时 8 色圈仍显示选中环但实际色来自壁纸（`SettingsScreen.kt:114-141`），点色圈静默关动态取色无反馈。
 - 建议：动态开启时色板降透明/去环 + 说明文字，点色圈弹 snackbar 反馈。价值：中 × S
 
-### 36. AI 失败重试按钮
+### 36. AI 失败重试按钮（API 模式下仍适用，未实现）
 - 现状：banner「可重试」仅为文案，全代码无重试按钮（`AiChatViewModel.kt:232`）；发送即清空输入（`AiChatScreen.kt:224-226`），失败后要整段重打。
 - 建议：失败/未完成气泡下加重试（重发该会话最后一条 ROLE_USER 消息文本，复用 `launchSendNow`）或失败回填输入框。价值：高 × S
 
-### 37. AI 可见网页刷新/后退工具条
-- 现状：webVisible 时仅「返回聊天」FAB，BackHandler 占用系统返回（`AiChatScreen.kt:126,237-244`）；设计文档承诺的 PageError 重试（reload）未实现。
-- 建议：叠加刷新/后退/前进工具条；BackHandler 优先 `webView.canGoBack()` 后退，归零再切回聊天。价值：高 × S/M
+### 37. AI 可见网页刷新/后退工具条 ❌ 已作废
+- 2026-09-15 起 AI 助手改走 DeepSeek 官方 API，无 WebView 与可见网页，本条随网页版移除。
 
-### 38. AI 未登录误判文案 + 慢登录看门狗竞态
-- 现状：登录检测仅判「存在可见 textarea」（`DeepSeekDriver.kt:37-48`），5xx/验证码/骨架未渲染完都归因为未登录并引导重登；未登录时 send 挂起 pendingSend，登录 >120s 则看门狗先判失败、登录完成后自动补发成功但 `ChatId` 仅在 sending 时回写 → 网页有回答本地记「失败」且上下文失忆（`AiChatViewModel.kt:216-235,259-263,268`）。
-- 建议：文案改不确定性措辞（可能未登录/需验证/页面异常）；看门狗等登录完成或收到首个 ReplyChunk 再计时；ChatId 非 sending 时也幂等回写。价值：中 × S/M
+### 38. AI 未登录误判文案 + 慢登录看门狗竞态 ❌ 已作废
+- 2026-09-15 起无网页登录态；API Key 无效（401）已映射为「去设置」引导。
 
 ### 批次 D · 1.5.0 性能批（含 Room v5 迁移）✅ 已完成（2026-09-14，v1.5.0；条目 43/44 属 P0，未在本批）
 
@@ -365,3 +363,4 @@
 | 2026-09-14 | 批次 C 完成（v1.4.4）：条目 29 排序改为全视图生效（#11 口径为准，#16 的禁用说明作废）＋搜索态显示分类名＋新增 `snippetForHighlight` 命中窗口摘要；条目 30 相对时间增加「刚刚 / N 分钟前 / N 小时前」（同一天内生效，跨天仍优先「昨天」）；条目 31 置顶图钉改主题色并加「置顶/其他」分组标题，回收站行可点开只读预览（标题/摘要/图片数/剩余清理天数）且彻底删除确认带摘要；条目 32 搜索输入 200ms 防抖 + `NoteRow` 缓存纯文本与高亮 + 分类 id→实体 Map；条目 33 新建分类可选 6 色（默认最少使用色，不再随机）、行内点色点循环换色并持久化；条目 34 设置页新增「通用」分区（默认排序读写 NoteSortStore、回收站保留期 7/30/90 天走新增的 TrashRetentionStore，启动与打开回收站清理均按该保留期，列表密度未做）；条目 35 动态取色开启时色板降透明并提示，点色圈关闭动态取色并 snackbar 反馈；全量单测 338 全绿。 |
 | 2026-09-14 | 批次 D 完成（v1.5.0）：条目 39 `importAndCompress` 全程移入 `Dispatchers.IO`；条目 40 编辑页预览改用 300px 缩略图（缺失回退原图，点开仍看原图）+ `MyNoteApp` 实现 `ImageLoaderFactory` 显式限制图片内存缓存（堆约 10%）；条目 41 新增 `getDeletedBefore(cutoff)`，启动/打开回收站的到期清理改为 SQL 过滤 + 事务批量删；条目 42 新增 `purgeNotes(list)`（单事务 + 一次 GC），`TrashViewModel.purgeAll` 改用并暴露 `purging` 状态，回收站按钮在清理中禁用并显示「清理中…」；条目 45 `notes` 补三组索引（deletedAt / categoryId / pinned+updatedAt）+ `MIGRATION_4_5` + 迁移测试，全部列表查询投影化为 `NoteListItem`（`substr(content,1,400) AS summary`），列表不再整表携带正文；全量单测 342 全绿。同批发现并修复投影波及的接线点（NoteRepository/TrashViewModel/AiChatViewModelTest）。 |
 | 2026-09-14 | **P1 且非 AI 相关条目全部完成**（21-23、25-35、39-42、45，共 19 条，覆盖 v1.4.2 → v1.5.0）。仍待决策/待实现：P0 条目 17-20、24、43、44；AI 域条目 36-38；可选条目 46-50；用户决策条目 14、15。 |
+| 2026-09-15 | **AI 助手改为 DeepSeek 官方 API（v1.6.0）**：网页驱动全套（WebView / AiWebDriver / DeepSeekDriver / 登录态 / 可见网页）移除；用户自填 API Key（Keystore 加密），模型 deepseek-flash / deepseek-v4-pro + 深度思考开关，设置页新增「AI 助手」分区与测试连接；条目 37、38 作废，36 在 API 模式下仍适用（未实现）；全量单测 351 全绿。 |

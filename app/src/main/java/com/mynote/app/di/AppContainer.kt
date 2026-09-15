@@ -3,11 +3,9 @@ package com.mynote.app.di
 import android.content.Context
 import androidx.room.Room
 import com.mynote.app.data.ai.AiChatRepository
-import com.mynote.app.data.ai.AiDriverRegistry
-import com.mynote.app.data.ai.AiWebDriver
-import com.mynote.app.data.ai.AiWebSession
-import com.mynote.app.data.ai.DeepSeekDriver
-import com.mynote.app.data.ai.WebViewAiSession
+import com.mynote.app.data.ai.AiSession
+import com.mynote.app.data.ai.DeepSeekApiClient
+import com.mynote.app.data.ai.DeepSeekApiSession
 import com.mynote.app.data.backup.BackupManager
 import com.mynote.app.data.db.AppDatabase
 import com.mynote.app.data.export.ImageExportManager
@@ -66,9 +64,16 @@ class AppContainer(context: Context) {
 
     val aiSettingsStore: AiSettingsStore by lazy { AiSettingsStore(context) }
 
-    val aiDriverRegistry: AiDriverRegistry by lazy {
-        AiDriverRegistry(listOf(DeepSeekDriver()))
-    }
+    val deepSeekApiClient: DeepSeekApiClient by lazy { DeepSeekApiClient() }
 
-    val aiWebSessionFactory: (AiWebDriver) -> AiWebSession = { WebViewAiSession(it) }
+    /** 每次进入 AI 页新建一个会话；读写设置走 Provider，设置页改 Key / 模型立即生效。 */
+    val aiSessionFactory: () -> AiSession = {
+        DeepSeekApiSession(
+            streamer = deepSeekApiClient,
+            credentials = { aiSettingsStore.apiKey() },
+            model = { aiSettingsStore.model() },
+            deepThinking = { aiSettingsStore.deepThinking() },
+            scope = applicationScope
+        )
+    }
 }

@@ -56,23 +56,11 @@ class AiSessionDaoTest {
     }
 
     @Test
-    fun updateRemoteChatIdAndTouch() = runTest {
+    fun touchUpdatesUpdatedAt() = runTest {
         val noteId = db.noteDao().insert(NoteEntity(0, "t", "c", 1, 1, null, false, null))
         val id = db.aiSessionDao().insert(session(noteId))
-        db.aiSessionDao().updateRemoteChatId(id, "abc-123")
         db.aiSessionDao().touch(id, 999)
-        val row = db.aiSessionDao().getById(id)!!
-        assertEquals("abc-123", row.remoteChatId)
-        assertEquals(999, row.updatedAt)
-    }
-
-    @Test
-    fun updateRemoteChatIdCanClearToNull() = runTest {
-        val noteId = db.noteDao().insert(NoteEntity(0, "t", "c", 1, 1, null, false, null))
-        val id = db.aiSessionDao().insert(session(noteId))
-        db.aiSessionDao().updateRemoteChatId(id, "abc")
-        db.aiSessionDao().updateRemoteChatId(id, null)
-        assertEquals(null, db.aiSessionDao().getById(id)!!.remoteChatId)
+        assertEquals(999, db.aiSessionDao().getById(id)!!.updatedAt)
     }
 
     @Test

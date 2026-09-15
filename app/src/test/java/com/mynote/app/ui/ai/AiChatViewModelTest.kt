@@ -1,20 +1,20 @@
 package com.mynote.app.ui.ai
 
 import android.content.Context
-import android.webkit.WebView
+import androidx.lifecycle.viewModelScope
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
-import androidx.lifecycle.viewModelScope
+import com.mynote.app.data.ai.AiChatMessage
 import com.mynote.app.data.ai.AiChatRepository
-import com.mynote.app.data.ai.AiDriverRegistry
-import com.mynote.app.data.ai.AiWebDriver
-import com.mynote.app.data.ai.AiWebEvent
-import com.mynote.app.data.ai.AiWebSession
+import com.mynote.app.data.ai.AiEvent
+import com.mynote.app.data.ai.AiSession
+import com.mynote.app.data.ai.DeepSeekApiSession
 import com.mynote.app.data.db.AiMessageEntity
 import com.mynote.app.data.db.AppDatabase
 import com.mynote.app.data.image.ImageStore
 import com.mynote.app.data.repository.NoteRepository
 import com.mynote.app.data.settings.AiSettingsStore
+import com.mynote.app.data.settings.ApiKeyCipher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
@@ -48,7 +48,7 @@ class AiChatViewModelTest {
     private lateinit var aiRepo: AiChatRepository
     private lateinit var noteRepo: NoteRepository
     private lateinit var settings: AiSettingsStore
-    private lateinit var fake: FakeAiWebSession
+    private lateinit var fake: FakeAiSession
     private val vms = mutableListOf<AiChatViewModel>()
 
     @Before
@@ -60,9 +60,10 @@ class AiChatViewModelTest {
             .allowMainThreadQueries().build()
         aiRepo = AiChatRepository(db.aiSessionDao(), db.aiMessageDao())
         noteRepo = NoteRepository(db.noteDao(), db.categoryDao(), db.noteRevisionDao(), ImageStore(context), db)
-        settings = AiSettingsStore(context)
-        settings.acceptPrivacy("deepseek")
-        fake = FakeAiWebSession(FakeDriver)
+        settings = AiSettingsStore(context, FakeCipher())
+        settings.acceptPrivacy(DeepSeekApiSession.SERVICE_ID)
+        settings.setApiKey("sk-test")
+        fake = FakeAiSession()
     }
 
     @After
@@ -87,8 +88,7 @@ class AiChatViewModelTest {
             noteRepository = noteRepo,
             settingsStore = store,
             externalScope = CoroutineScope(dispatcher),
-            registry = AiDriverRegistry(listOf(FakeDriver)),
-            webSessionFactory = { fake },
+            session = fake,
             watchdogTimeoutMs = watchdogTimeoutMs
         )
         vms += vm
@@ -104,10 +104,13 @@ class AiChatViewModelTest {
 
         val session = aiRepo.observeSessions(noteId).first { it.isNotEmpty() }.single()
         assertEquals("帮我总结", session.title)
-        assertEquals("deepseek", session.serviceId)
-        assertTrue(fake.sent.single().contains("【笔记正文】"))
-        assertTrue(fake.sent.single().contains("正文"))
-        assertTrue(fake.sent.single().contains("帮我总结"))
+        assertEquals(DeepSeekApiSession.SERVICE_ID, session.serviceId)
+
+        val sent = fake.sent.single()
+        assertEquals(AiChatMessage.ROLE_USER, sent.last().role)
+        assertTrue(sent.last().content.contains("【笔记正文】"))
+        assertTrue(sent.last().content.contains("正文"))
+        assertTrue(sent.last().content.contains("帮我总结"))
 
         val messages = aiRepo.observeMessages(session.id).first { it.isNotEmpty() }
         assertEquals(1, messages.size)
@@ -116,34 +119,33 @@ class AiChatViewModelTest {
     }
 
     @Test
-    fun laterSendOmitsNoteContext() = runTest(dispatcher) {
+    fun laterSendKeepsHistoryAndOmitsNoteContext() = runTest(dispatcher) {
         val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
         val vm = createVm(noteId)
         vm.send("第一问")
         vm.state.first { it.sending }
-
-        fake.emit(AiWebEvent.ChatId("chat-1"))
-        vm.state.first { it.sessions.firstOrNull()?.remoteChatId == "chat-1" }
-        fake.emit(AiWebEvent.ReplyDone("答"))
+        fake.emit(AiEvent.Done("答"))
         vm.state.first { !it.sending }
 
         vm.send("第二问")
         vm.state.first { it.sending && fake.sent.size == 2 }
-        assertTrue(fake.sent[0].contains("【笔记正文】"))
-        assertEquals("第二问", fake.sent[1])
+        assertEquals(3, fake.sent[1].size)
+        assertEquals(AiChatMessage.ROLE_ASSISTANT, fake.sent[1][1].role)
+        assertEquals("第二问", fake.sent[1].last().content)
+        assertTrue(fake.sent[0].last().content.contains("【笔记正文】"))
     }
 
     @Test
-    fun replyDoneStoresAssistantMessage() = runTest(dispatcher) {
+    fun doneStoresAssistantMessage() = runTest(dispatcher) {
         val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
         val vm = createVm(noteId)
         vm.send("问")
         vm.state.first { it.sending }
         val sessionId = aiRepo.observeSessions(noteId).first().single().id
 
-        fake.emit(AiWebEvent.ReplyChunk("答"))
+        fake.emit(AiEvent.Chunk("答"))
         vm.state.first { it.streamingText == "答" }
-        fake.emit(AiWebEvent.ReplyDone("答"))
+        fake.emit(AiEvent.Done("答"))
         vm.state.first { !it.sending }
 
         val messages = aiRepo.observeMessages(sessionId).first { it.size == 2 }
@@ -153,33 +155,34 @@ class AiChatViewModelTest {
     }
 
     @Test
-    fun replyErrorWithPartialStoresInterrupted() = runTest(dispatcher) {
+    fun failedWithPartialStoresInterruptedAndShowsBanner() = runTest(dispatcher) {
         val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
         val vm = createVm(noteId)
         vm.send("问")
         vm.state.first { it.sending }
         val sessionId = aiRepo.observeSessions(noteId).first().single().id
 
-        fake.emit(AiWebEvent.ReplyChunk("半截"))
+        fake.emit(AiEvent.Chunk("半截"))
         vm.state.first { it.streamingText == "半截" }
-        fake.emit(AiWebEvent.ReplyError("回答超时"))
+        fake.emit(AiEvent.Failed("网络错误，请检查网络后重试"))
         vm.state.first { !it.sending && it.banner != null }
 
         val messages = aiRepo.observeMessages(sessionId).first { it.size == 2 }
         assertEquals("半截", messages[1].content)
         assertEquals(AiMessageEntity.STATUS_INTERRUPTED, messages[1].status)
-        assertTrue(vm.state.value.webVisible)
+        assertEquals("网络错误，请检查网络后重试", vm.state.value.banner)
+        assertFalse(vm.state.value.apiKeyMissing)
     }
 
     @Test
-    fun replyErrorWithoutPartialStoresFailed() = runTest(dispatcher) {
+    fun failedWithoutPartialStoresFailed() = runTest(dispatcher) {
         val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
         val vm = createVm(noteId)
         vm.send("问")
         vm.state.first { it.sending }
         val sessionId = aiRepo.observeSessions(noteId).first().single().id
 
-        fake.emit(AiWebEvent.ReplyError("未找到输入框"))
+        fake.emit(AiEvent.Failed("账户余额不足，请前往 DeepSeek 平台充值"))
         vm.state.first { !it.sending && it.banner != null }
 
         val messages = aiRepo.observeMessages(sessionId).first { it.size == 2 }
@@ -188,14 +191,59 @@ class AiChatViewModelTest {
     }
 
     @Test
-    fun notLoggedInShowsBannerAndWeb() = runTest(dispatcher) {
+    fun settingsHintFailureMarksApiKeyMissing() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val vm = createVm(noteId)
+        vm.send("问")
+        vm.state.first { it.sending }
+
+        fake.emit(AiEvent.Failed("API Key 无效，请到设置中检查", settingsHint = true))
+        vm.state.first { !it.sending && it.apiKeyMissing }
+
+        assertTrue(vm.state.value.banner!!.contains("API Key"))
+    }
+
+    @Test
+    fun missingKeyBlocksSendAndShowsBanner() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        settings.setApiKey("")
+        val vm = createVm(noteId)
+
+        assertTrue(vm.state.value.apiKeyMissing)
+        assertFalse(vm.send("问"))
+        assertNull(vm.state.value.currentSessionId)
+        assertEquals(AiSession.KEY_MISSING_REASON, vm.state.value.banner)
+        assertTrue(fake.sent.isEmpty())
+    }
+
+    @Test
+    fun settingsHintFailureWhenIdleOnlyShowsBanner() = runTest(dispatcher) {
         val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
         val vm = createVm(noteId)
         runCurrent()
-        fake.emit(AiWebEvent.LoginState(false))
-        vm.state.first { it.banner != null }
-        assertTrue(vm.state.value.banner!!.contains("登录"))
-        assertTrue(vm.state.value.webVisible)
+
+        fake.emit(AiEvent.Failed(AiSession.KEY_MISSING_REASON, settingsHint = true))
+        vm.state.first { it.apiKeyMissing }
+
+        assertTrue(vm.state.value.messages.isEmpty())
+    }
+
+    @Test
+    fun privacyMustBeAcceptedBeforeSend() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        context.getSharedPreferences("ai_settings", Context.MODE_PRIVATE).edit().clear().commit()
+        val fresh = AiSettingsStore(context, FakeCipher())
+        fresh.setApiKey("sk-test")
+        val vm = createVm(noteId, store = fresh)
+
+        assertFalse(vm.state.value.privacyAccepted)
+        vm.send("问")
+        assertNull(vm.state.value.currentSessionId)
+        assertTrue(fake.sent.isEmpty())
+
+        vm.acceptPrivacy()
+        assertTrue(vm.state.value.privacyAccepted)
+        assertTrue(fresh.isPrivacyAccepted(DeepSeekApiSession.SERVICE_ID))
     }
 
     @Test
@@ -218,7 +266,7 @@ class AiChatViewModelTest {
         vm.send("问")
         vm.state.first { it.sending }
         val sessionId = aiRepo.observeSessions(noteId).first().single().id
-        fake.emit(AiWebEvent.ReplyDone("答"))
+        fake.emit(AiEvent.Done("答"))
         vm.state.first { !it.sending }
 
         vm.deleteSession(sessionId)
@@ -235,26 +283,8 @@ class AiChatViewModelTest {
         vm.state.first { it.snackbar != null }
 
         val notes = noteRepo.observeNotes().first()
-        // 列表投影后元素为 NoteListItem，正文以 summary 呈现（正文很短，summary == content）
         val created = notes.first { it.summary == "第一行\n第二行" }
         assertEquals("第一行", created.title)
-    }
-
-    @Test
-    fun privacyMustBeAcceptedBeforeSend() = runTest(dispatcher) {
-        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
-        context.getSharedPreferences("ai_settings", Context.MODE_PRIVATE).edit().clear().commit()
-        val fresh = AiSettingsStore(context)
-        val vm = createVm(noteId, store = fresh)
-
-        assertFalse(vm.state.value.privacyAccepted)
-        vm.send("问")
-        assertNull(vm.state.value.currentSessionId)
-        assertTrue(fake.sent.isEmpty())
-
-        vm.acceptPrivacy()
-        assertTrue(vm.state.value.privacyAccepted)
-        assertTrue(fresh.isPrivacyAccepted("deepseek"))
     }
 
     @Test
@@ -265,16 +295,17 @@ class AiChatViewModelTest {
         vm.state.first { it.sending }
         val sessionId = aiRepo.observeSessions(noteId).first { it.isNotEmpty() }.single().id
 
-        fake.emit(AiWebEvent.ReplyChunk("半截"))
+        fake.emit(AiEvent.Chunk("半截"))
         vm.state.first { it.streamingText == "半截" }
         vm.stop()
         assertFalse(vm.state.value.sending)
+        assertEquals(1, fake.stopCount)
 
         val messages = aiRepo.observeMessages(sessionId).first { it.size == 2 }
         assertEquals("半截", messages[1].content)
         assertEquals(AiMessageEntity.STATUS_INTERRUPTED, messages[1].status)
 
-        fake.emit(AiWebEvent.ReplyDone("迟到"))
+        fake.emit(AiEvent.Done("迟到"))
         runCurrent()
         assertEquals(2, aiRepo.getMessages(sessionId).size)
     }
@@ -287,7 +318,7 @@ class AiChatViewModelTest {
         vm.state.first { it.sending }
         val sessionId = aiRepo.observeSessions(noteId).first { it.isNotEmpty() }.single().id
 
-        fake.emit(AiWebEvent.ReplyChunk("半截"))
+        fake.emit(AiEvent.Chunk("半截"))
         vm.state.first { it.streamingText == "半截" }
         vm.newChat()
 
@@ -307,10 +338,10 @@ class AiChatViewModelTest {
         vm.state.first { it.sending }
         val sessionId = aiRepo.observeSessions(noteId).first { it.isNotEmpty() }.single().id
 
-        fake.emit(AiWebEvent.ReplyChunk("半截"))
+        fake.emit(AiEvent.Chunk("半截"))
         vm.state.first { it.streamingText == "半截" }
 
-        val secondId = aiRepo.createSession(noteId, "deepseek", "第二个", System.currentTimeMillis())
+        val secondId = aiRepo.createSession(noteId, DeepSeekApiSession.SERVICE_ID, "第二个", System.currentTimeMillis())
         vm.state.first { it.sessions.any { session -> session.id == secondId } }
         vm.selectSession(secondId)
 
@@ -326,18 +357,18 @@ class AiChatViewModelTest {
     }
 
     @Test
-    fun lateReplyChunkAfterDoneIsIgnored() = runTest(dispatcher) {
+    fun lateChunkAfterDoneIsIgnored() = runTest(dispatcher) {
         val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
         val vm = createVm(noteId)
         vm.send("问")
         vm.state.first { it.sending }
         val sessionId = aiRepo.observeSessions(noteId).first { it.isNotEmpty() }.single().id
 
-        fake.emit(AiWebEvent.ReplyDone("答"))
+        fake.emit(AiEvent.Done("答"))
         vm.state.first { !it.sending }
         aiRepo.observeMessages(sessionId).first { it.size == 2 }
 
-        fake.emit(AiWebEvent.ReplyChunk("幽灵"))
+        fake.emit(AiEvent.Chunk("幽灵"))
         runCurrent()
         assertEquals("", vm.state.value.streamingText)
         assertEquals(2, aiRepo.getMessages(sessionId).size)
@@ -359,65 +390,6 @@ class AiChatViewModelTest {
     }
 
     @Test
-    fun pageErrorWithPartialStoresInterruptedWithoutPartialStoresFailed() = runTest(dispatcher) {
-        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
-        val vm = createVm(noteId)
-        vm.send("问一")
-        vm.state.first { it.sending }
-        val sessionId = aiRepo.observeSessions(noteId).first { it.isNotEmpty() }.single().id
-
-        fake.emit(AiWebEvent.ReplyChunk("半截"))
-        vm.state.first { it.streamingText == "半截" }
-        fake.emit(AiWebEvent.PageError("网页加载失败"))
-        vm.state.first { !it.sending && it.banner != null }
-        val afterPartial = aiRepo.observeMessages(sessionId).first { it.size == 2 }
-        assertEquals("半截", afterPartial[1].content)
-        assertEquals(AiMessageEntity.STATUS_INTERRUPTED, afterPartial[1].status)
-
-        vm.send("问二")
-        vm.state.first { it.sending }
-        fake.emit(AiWebEvent.PageError("页面未就绪"))
-        vm.state.first { !it.sending && it.banner == "页面未就绪" }
-        val all = aiRepo.observeMessages(sessionId).first { it.size == 4 }
-        assertEquals(AiMessageEntity.STATUS_FAILED, all[3].status)
-        assertEquals("", all[3].content)
-    }
-
-    @Test
-    fun chatIdIgnoredWhenNotSending() = runTest(dispatcher) {
-        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
-        val vm = createVm(noteId)
-        vm.send("问")
-        vm.state.first { it.sending }
-        fake.emit(AiWebEvent.ReplyDone("答"))
-        vm.state.first { !it.sending }
-
-        fake.emit(AiWebEvent.ChatId("late-chat"))
-        runCurrent()
-        assertNull(aiRepo.observeSessions(noteId).first { it.isNotEmpty() }.single().remoteChatId)
-        assertNull(vm.state.value.sessions.single().remoteChatId)
-    }
-
-    @Test
-    fun deleteCurrentSessionOpensNewWebChat() = runTest(dispatcher) {
-        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
-        val vm = createVm(noteId)
-        vm.send("问")
-        vm.state.first { it.sending }
-        val sessionId = aiRepo.observeSessions(noteId).first { it.isNotEmpty() }.single().id
-        fake.emit(AiWebEvent.ReplyDone("答"))
-        vm.state.first { !it.sending }
-
-        val before = fake.newChatCount
-        vm.deleteSession(sessionId)
-        vm.state.first { it.sessions.isEmpty() }
-
-        assertNull(vm.state.value.currentSessionId)
-        assertTrue(vm.state.value.messages.isEmpty())
-        assertEquals(before + 1, fake.newChatCount)
-    }
-
-    @Test
     fun sendReturnsFalseWhenRejected() = runTest(dispatcher) {
         val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
         val vm = createVm(noteId)
@@ -430,25 +402,7 @@ class AiChatViewModelTest {
     }
 
     @Test
-    fun webViewDetachedDuringStreamingSavesInterrupted() = runTest(dispatcher) {
-        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
-        val vm = createVm(noteId)
-        vm.send("问")
-        vm.state.first { it.sending }
-        val sessionId = aiRepo.observeSessions(noteId).first { it.isNotEmpty() }.single().id
-
-        fake.emit(AiWebEvent.ReplyChunk("半截"))
-        vm.state.first { it.streamingText == "半截" }
-        vm.onWebViewDetached()
-
-        assertFalse(vm.state.value.sending)
-        val messages = aiRepo.observeMessages(sessionId).first { it.size == 2 }
-        assertEquals("半截", messages[1].content)
-        assertEquals(AiMessageEntity.STATUS_INTERRUPTED, messages[1].status)
-    }
-
-    @Test
-    fun watchdogFinalizesWhenNoWebEvents() = runTest(dispatcher) {
+    fun watchdogFinalizesWhenNoTerminalEvent() = runTest(dispatcher) {
         val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
         val vm = createVm(noteId, watchdogTimeoutMs = 1_000L)
         vm.send("问")
@@ -461,37 +415,36 @@ class AiChatViewModelTest {
         val messages = aiRepo.observeMessages(sessionId).first { it.size == 2 }
         assertEquals(AiMessageEntity.STATUS_FAILED, messages[1].status)
         assertTrue(vm.state.value.banner != null)
-        assertTrue(vm.state.value.webVisible)
     }
 
-    private object FakeDriver : AiWebDriver {
-        override val id = "deepseek"
-        override val displayName = "DeepSeek"
-        override val homeUrl = "https://example.com/"
-        override fun chatUrl(remoteChatId: String) = homeUrl + remoteChatId
-        override fun parseChatId(url: String): String? = null
-        override fun loginCheckJs() = ""
-        override fun newChatJs() = ""
-        override fun sendMessageJs(text: String) = ""
-        override fun observeReplyJs() = ""
-        override fun stopObservingJs() = ""
-        override fun stopGeneratingJs() = ""
+    private class FakeCipher : ApiKeyCipher {
+        override fun encrypt(plain: String): String? = "enc:$plain"
+        override fun decrypt(stored: String): String? =
+            stored.removePrefix("enc:").takeIf { stored.startsWith("enc:") }
     }
 
-    private class FakeAiWebSession(override val driver: AiWebDriver) : AiWebSession {
-        private val _events = MutableSharedFlow<AiWebEvent>(extraBufferCapacity = 16)
-        override val events: SharedFlow<AiWebEvent> = _events
+    private class FakeAiSession : AiSession {
+        override val serviceId: String = DeepSeekApiSession.SERVICE_ID
+        override val displayName: String = "DeepSeek"
 
-        val sent = mutableListOf<String>()
-        var newChatCount = 0
+        private val _events = MutableSharedFlow<AiEvent>(extraBufferCapacity = 16)
+        override val events: SharedFlow<AiEvent> = _events
 
-        override fun attach(webView: WebView) = Unit
-        override fun openNewChat() { newChatCount++ }
-        override fun openChat(remoteChatId: String) = Unit
-        override fun send(text: String) { sent += text }
-        override fun stop() = Unit
+        val sent = mutableListOf<List<AiChatMessage>>()
+        var stopCount = 0
+
+        override fun send(messages: List<AiChatMessage>) {
+            sent += messages
+        }
+
+        override fun stop() {
+            stopCount++
+        }
+
         override fun release() = Unit
 
-        fun emit(event: AiWebEvent) { _events.tryEmit(event) }
+        fun emit(event: AiEvent) {
+            _events.tryEmit(event)
+        }
     }
 }

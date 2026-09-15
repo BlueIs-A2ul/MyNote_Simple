@@ -1,7 +1,5 @@
 package com.mynote.app.ui.ai
 
-import android.webkit.WebView
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,10 +19,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerValue
@@ -41,14 +38,12 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -63,12 +58,9 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mynote.app.data.ai.AiChatRepository
-import com.mynote.app.data.ai.AiDriverRegistry
-import com.mynote.app.data.ai.AiWebDriver
-import com.mynote.app.data.ai.AiWebSession
+import com.mynote.app.data.ai.AiSession
 import com.mynote.app.data.db.AiMessageEntity
 import com.mynote.app.data.db.AiSessionEntity
 import com.mynote.app.data.repository.NoteRepository
@@ -86,35 +78,26 @@ fun AiChatScreen(
     hasSelection: Boolean,
     aiRepository: AiChatRepository,
     noteRepository: NoteRepository,
-    registry: AiDriverRegistry,
     settingsStore: AiSettingsStore,
     externalScope: CoroutineScope,
-    webSessionFactory: (AiWebDriver) -> AiWebSession,
+    session: AiSession,
     onApplyResult: (type: String, text: String) -> Unit,
+    onOpenSettings: () -> Unit,
     onBack: () -> Unit
 ) {
     val vm: AiChatViewModel = viewModel(
         key = "ai_chat_$noteId",
         factory = AiChatViewModel.factory(
             noteId, noteTitle, noteContent, aiRepository, noteRepository,
-            settingsStore, externalScope, registry, webSessionFactory
+            settingsStore, externalScope, session
         )
     )
     val state by vm.state.collectAsState()
     var input by rememberSaveable { mutableStateOf("") }
-    var webView by remember { mutableStateOf<WebView?>(null) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val clipboard = LocalClipboardManager.current
-
-    DisposableEffect(Unit) {
-        onDispose {
-            vm.onWebViewDetached()
-            webView?.destroy()
-            webView = null
-        }
-    }
 
     state.snackbar?.let { message ->
         LaunchedEffect(message) {
@@ -123,14 +106,12 @@ fun AiChatScreen(
         }
     }
 
-    BackHandler(enabled = state.webVisible) { vm.toggleWebVisible() }
-
     if (!state.privacyAccepted) {
         AlertDialog(
             onDismissRequest = {},
-            title = { Text("发送到 DeepSeek 网页") },
+            title = { Text("发送到 DeepSeek API") },
             text = {
-                Text("AI 助手会把你输入的内容与笔记正文发送到 DeepSeek 网页处理，回答由网页实时返回。请遵守服务条款，避免发送敏感信息。")
+                Text("AI 助手会把你输入的内容与笔记正文，通过你填写的 API Key 发送给 DeepSeek 官方接口处理，费用由你的账号承担。请遵守服务条款，避免发送敏感信息。")
             },
             confirmButton = {
                 TextButton(onClick = { vm.acceptPrivacy() }) { Text("同意并继续") }
@@ -140,7 +121,6 @@ fun AiChatScreen(
 
     ModalNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = !state.webVisible,
         drawerContent = {
             ModalDrawerSheet(drawerState = drawerState) {
                 Row(
@@ -158,16 +138,16 @@ fun AiChatScreen(
                 }
                 HorizontalDivider()
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(state.sessions, key = { it.id }) { session ->
+                    items(state.sessions, key = { it.id }) { sessionItem ->
                         SessionItem(
-                            session = session,
-                            selected = session.id == state.currentSessionId,
-                            deleteEnabled = !(state.sending && session.id == state.currentSessionId),
+                            session = sessionItem,
+                            selected = sessionItem.id == state.currentSessionId,
+                            deleteEnabled = !(state.sending && sessionItem.id == state.currentSessionId),
                             onClick = {
-                                vm.selectSession(session.id)
+                                vm.selectSession(sessionItem.id)
                                 scope.launch { drawerState.close() }
                             },
-                            onDelete = { vm.deleteSession(session.id) }
+                            onDelete = { vm.deleteSession(sessionItem.id) }
                         )
                     }
                 }
@@ -195,54 +175,32 @@ fun AiChatScreen(
                         IconButton(onClick = { scope.launch { drawerState.open() } }) {
                             Icon(Icons.Default.Menu, contentDescription = "会话列表")
                         }
-                        IconButton(onClick = { vm.toggleWebVisible() }) {
-                            Icon(
-                                Icons.Default.Public,
-                                contentDescription = if (state.webVisible) "返回聊天" else "显示网页"
-                            )
+                        IconButton(onClick = onOpenSettings) {
+                            Icon(Icons.Default.Settings, contentDescription = "AI 设置")
                         }
                     }
                 )
             }
         ) { padding ->
-            Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-                AndroidView(
-                    factory = { context ->
-                        WebView(context).also { view ->
-                            webView = view
-                            vm.onWebViewAttached(view)
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-                if (!state.webVisible) {
-                    ChatLayer(
-                        state = state,
-                        hasSelection = hasSelection,
-                        input = input,
-                        onInputChange = { input = it },
-                        onSend = {
-                            if (vm.send(input)) input = ""
-                        },
-                        onStop = { vm.stop() },
-                        onShowWeb = { vm.toggleWebVisible() },
-                        onInsert = { text -> onApplyResult("insert", text) },
-                        onReplace = { text -> onApplyResult("replace", text) },
-                        onCopy = { text ->
-                            clipboard.setText(AnnotatedString(text))
-                            scope.launch { snackbarHostState.showSnackbar("已复制") }
-                        },
-                        onSaveAsNote = { text -> vm.saveAsNote(text) }
-                    )
-                } else {
-                    SmallFloatingActionButton(
-                        onClick = { vm.toggleWebVisible() },
-                        modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)
-                    ) {
-                        Icon(Icons.Default.Chat, contentDescription = "返回聊天")
-                    }
-                }
-            }
+            ChatLayer(
+                state = state,
+                hasSelection = hasSelection,
+                input = input,
+                onInputChange = { input = it },
+                onSend = {
+                    if (vm.send(input)) input = ""
+                },
+                onStop = { vm.stop() },
+                onInsert = { text -> onApplyResult("insert", text) },
+                onReplace = { text -> onApplyResult("replace", text) },
+                onCopy = { text ->
+                    clipboard.setText(AnnotatedString(text))
+                    scope.launch { snackbarHostState.showSnackbar("已复制") }
+                },
+                onSaveAsNote = { text -> vm.saveAsNote(text) },
+                onOpenSettings = onOpenSettings,
+                modifier = Modifier.padding(padding)
+            )
         }
     }
 }
@@ -279,11 +237,12 @@ private fun ChatLayer(
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
-    onShowWeb: () -> Unit,
     onInsert: (String) -> Unit,
     onReplace: (String) -> Unit,
     onCopy: (String) -> Unit,
-    onSaveAsNote: (String) -> Unit
+    onSaveAsNote: (String) -> Unit,
+    onOpenSettings: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
 
@@ -293,7 +252,10 @@ private fun ChatLayer(
         if (itemCount > 0) listState.animateScrollToItem(itemCount - 1)
     }
 
-    Surface(modifier = Modifier.fillMaxSize().imePadding(), color = MaterialTheme.colorScheme.background) {
+    Surface(
+        modifier = modifier.fillMaxSize().imePadding(),
+        color = MaterialTheme.colorScheme.background
+    ) {
         Column(modifier = Modifier.fillMaxSize()) {
             state.banner?.let { banner ->
                 Surface(
@@ -311,8 +273,8 @@ private fun ChatLayer(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
-                        if (!state.webVisible) {
-                            TextButton(onClick = onShowWeb) { Text("显示网页") }
+                        if (state.apiKeyMissing) {
+                            TextButton(onClick = onOpenSettings) { Text("去设置") }
                         }
                     }
                 }

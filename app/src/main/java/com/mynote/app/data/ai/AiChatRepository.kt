@@ -20,9 +20,6 @@ class AiChatRepository(
     suspend fun createSession(noteId: Long, serviceId: String, title: String, now: Long): Long =
         sessionDao.insert(AiSessionEntity(0, noteId, serviceId, title, null, now, now))
 
-    suspend fun updateRemoteChatId(sessionId: Long, remoteChatId: String) =
-        sessionDao.updateRemoteChatId(sessionId, remoteChatId)
-
     suspend fun touch(sessionId: Long, now: Long) = sessionDao.touch(sessionId, now)
 
     suspend fun appendMessage(

@@ -19,29 +19,44 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mynote.app.BuildConfig
+import com.mynote.app.data.ai.DeepSeekApiClient
+import com.mynote.app.data.ai.DeepSeekModels
 import com.mynote.app.data.db.NoteSortMode
+import com.mynote.app.data.settings.AiSettingsStore
 import com.mynote.app.data.settings.DarkMode
 import com.mynote.app.data.settings.NoteSortStore
 import com.mynote.app.data.settings.ThemeSettingsStore
@@ -58,14 +73,21 @@ fun SettingsScreen(
     themeStore: ThemeSettingsStore,
     sortStore: NoteSortStore,
     trashStore: TrashRetentionStore,
+    aiSettingsStore: AiSettingsStore,
+    apiClient: DeepSeekApiClient,
     onBack: () -> Unit
 ) {
     val vm: SettingsViewModel = viewModel(
-        factory = SettingsViewModel.factory(themeStore, sortStore, trashStore)
+        factory = SettingsViewModel.factory(themeStore, sortStore, trashStore, aiSettingsStore, apiClient)
     )
     val settings by vm.settings.collectAsState()
     val defaultSort by vm.defaultSort.collectAsState()
     val retentionDays by vm.retentionDays.collectAsState()
+    val aiModel by vm.aiModel.collectAsState()
+    val deepThinking by vm.deepThinking.collectAsState()
+    val apiKeyConfigured by vm.apiKeyConfigured.collectAsState()
+    var apiKeyInput by rememberSaveable { mutableStateOf("") }
+    var keyVisible by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -221,6 +243,123 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 6.dp)
             )
+            Spacer(Modifier.height(24.dp))
+            HairlineDivider()
+
+            // ---------- AI 助手 ----------
+            Text(
+                "AI 助手",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+            )
+            Text(
+                "模型",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Spacer(Modifier.height(6.dp))
+            TextTabRow(
+                tabs = DeepSeekModels.all,
+                selected = aiModel,
+                onSelect = { vm.setAiModel(it) },
+                label = { DeepSeekModels.label(it) }
+            )
+            Text(
+                "deepseek-flash 更快更省；deepseek-v4-pro 更强。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .toggleable(
+                        value = deepThinking,
+                        onValueChange = { vm.setDeepThinking(it) },
+                        role = Role.Switch
+                    )
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "深度思考",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Text(
+                        "回答更严谨但更慢，思维链按输出计费",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(checked = deepThinking, onCheckedChange = null)
+            }
+            Text(
+                "API Key",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Spacer(Modifier.height(6.dp))
+            OutlinedTextField(
+                value = apiKeyInput,
+                onValueChange = { apiKeyInput = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                placeholder = {
+                    Text(if (apiKeyConfigured) "已保存（输入新 Key 可替换）" else "sk-…")
+                },
+                visualTransformation = if (keyVisible) VisualTransformation.None
+                else PasswordVisualTransformation(),
+                trailingIcon = {
+                    IconButton(onClick = { keyVisible = !keyVisible }) {
+                        Icon(
+                            if (keyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = if (keyVisible) "隐藏 Key" else "显示 Key"
+                        )
+                    }
+                }
+            )
+            Text(
+                "Key 仅保存在本机（Keystore 加密），不会上传；在 DeepSeek 开放平台创建。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = {
+                    val key = apiKeyInput.trim()
+                    if (key.isEmpty()) {
+                        scope.launch { snackbarHostState.showSnackbar("请先输入 API Key") }
+                    } else if (vm.saveApiKey(key)) {
+                        apiKeyInput = ""
+                        scope.launch { snackbarHostState.showSnackbar("已保存") }
+                    } else {
+                        scope.launch { snackbarHostState.showSnackbar("保存失败：系统密钥库不可用") }
+                    }
+                }) { Text("保存") }
+                if (apiKeyConfigured) {
+                    TextButton(onClick = {
+                        vm.clearApiKey()
+                        apiKeyInput = ""
+                        scope.launch { snackbarHostState.showSnackbar("已清除 API Key") }
+                    }) { Text("清除") }
+                }
+                TextButton(onClick = {
+                    scope.launch {
+                        val key = apiKeyInput.trim().ifEmpty { vm.savedApiKey().orEmpty() }
+                        if (key.isEmpty()) {
+                            snackbarHostState.showSnackbar("请先填写或保存 API Key")
+                        } else {
+                            snackbarHostState.showSnackbar(
+                                vm.testConnection(key) ?: "连接正常，模型可用"
+                            )
+                        }
+                    }
+                }) { Text("测试连接") }
+            }
             Spacer(Modifier.height(24.dp))
             HairlineDivider()
             Spacer(Modifier.height(24.dp))

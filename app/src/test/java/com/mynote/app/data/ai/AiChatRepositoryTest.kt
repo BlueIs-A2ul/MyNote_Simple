@@ -56,17 +56,6 @@ class AiChatRepositoryTest {
     }
 
     @Test
-    fun remoteChatIdAndTouchUpdateSession() = runTest {
-        val noteId = note()
-        val sessionId = repo.createSession(noteId, "deepseek", "t", 100)
-        repo.updateRemoteChatId(sessionId, "chat-1")
-        repo.touch(sessionId, 300)
-        val session = repo.getSession(sessionId)!!
-        assertEquals("chat-1", session.remoteChatId)
-        assertEquals(300, session.updatedAt)
-    }
-
-    @Test
     fun touchReordersSessions() = runTest {
         val noteId = note()
         val first = repo.createSession(noteId, "deepseek", "first", 100)

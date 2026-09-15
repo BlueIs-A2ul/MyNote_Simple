@@ -13,7 +13,7 @@
 - 备份：zip 全量备份 / 导入（按 id 去重、冲突保留更新者）
 - 导出：单条笔记导出 txt 或图片（纯白 PNG、无任何品牌元素；长笔记可选自动分页或单张长图，含内嵌图片）
 - 历史：每次保存自动留存版本（无变化不记；每篇上限 50 条、40 条起提醒），时间线可看字段变更标签与行级 + 行内 diff 对比，一键恢复旧版（恢复也生成一条新记录）
-- AI 助手：编辑页唤起，复用 DeepSeek 网页版（隐藏 WebView 自动发送与抓取回答）；会话按笔记留档，回答可插入正文 / 替换选中 / 复制 / 存为新笔记；首次使用有隐私确认，出错可切到可见网页手动操作
+- AI 助手：编辑页唤起，直连 DeepSeek 官方 API（自填 API Key）流式回答；会话按笔记留档，回答可插入正文 / 替换选中 / 复制 / 存为新笔记；Key 仅本机 Keystore 加密保存，首次使用有隐私确认，支持模型切换（deepseek-flash / deepseek-v4-pro）与深度思考开关
 
 ## 技术栈
 
@@ -24,7 +24,7 @@ Kotlin · Jetpack Compose + Material 3 · MVVM + 单向数据流（UDF） · Roo
 | minSdk / targetSdk | 24 / 34 |
 | JDK | 17 |
 | Gradle | 8.7（Wrapper） |
-| 版本 | 1.5.0；`versionName = major.minor.patch`、`versionCode = major*10000+minor*100+patch`，设置页可见 |
+| 版本 | 1.6.0；`versionName = major.minor.patch`、`versionCode = major*10000+minor*100+patch`，设置页可见 |
 | release 产物 | R8 混淆 + 资源压缩，约 1.7MB，`MyNote-<版本>-release.apk`（按 keystore.properties 签名） |
 
 ## 构建
@@ -37,14 +37,14 @@ Kotlin · Jetpack Compose + Material 3 · MVVM + 单向数据流（UDF） · Roo
 
 ```bat
 .\gradlew :app:assembleDebug          rem debug APK
-.\gradlew :app:testDebugUnitTest      rem 342 个单元测试
+.\gradlew :app:testDebugUnitTest      rem 351 个单元测试
 .\gradlew :app:assembleRelease        rem release（R8 + 资源压缩 + 签名）
 ```
 
 产物：
 
 - debug：`app/build/outputs/apk/debug/app-debug.apk`
-- release：`app/build/outputs/apk/release/MyNote-1.5.0-release.apk`（文件名随 versionName 变化）
+- release：`app/build/outputs/apk/release/MyNote-1.6.0-release.apk`（文件名随 versionName 变化）
 
 ## 项目结构
 
@@ -54,10 +54,10 @@ app/src/main/java/com/mynote/app/
 ├── MainActivity.kt           # 唯一 Activity
 ├── di/AppContainer.kt        # 手写依赖注入（database/imageStore/repository/backup）
 ├── data/
-│   ├── db/                   # NoteEntity / CategoryEntity / NoteRevisionEntity / AiSessionEntity / AiMessageEntity / DAO / AppDatabase（Room v3 + 迁移）
+│   ├── db/                   # NoteEntity / CategoryEntity / NoteRevisionEntity / AiSessionEntity / AiMessageEntity / DAO / AppDatabase（Room v5 + 迁移）
 │   ├── repository/           # NoteRepository（业务逻辑 + 图片垃圾回收）
 │   ├── settings/             # ThemeSettingsStore（SharedPreferences + StateFlow）
-│   ├── ai/                   # AI 网页驱动（AiWebDriver / DeepSeekDriver / WebViewAiSession / 会话仓库）
+│   ├── ai/                   # DeepSeek API 客户端（SSE）/ 会话 / 消息组装 / 会话仓库
 │   ├── image/                # ImageStore（落盘 / 采样压缩 / 缩略图 / GC）
 │   ├── backup/               # BackupManager（zip 备份导入导出 / txt 导出）
 │   └── export/               # NoteImageRenderer / ImageExportManager（图片导出）
@@ -65,7 +65,7 @@ app/src/main/java/com/mynote/app/
 │   ├── theme/                # 主题（8 档色板 / 动态取色应用）
 │   ├── notes/                # 列表 / 编辑 / 解析器 / ViewModel
 │   ├── categories/           # 分类管理
-│   ├── settings/             # 主题设置页 / ViewModel
+│   ├── settings/             # 主题与通用设置页 / ViewModel（含 AI 助手 Key / 模型配置）
 │   ├── export/               # 导出图片预览页 / ViewModel
 │   ├── history/              # 历史时间线 / diff 详情 / 恢复
 │   ├── ai/                   # AI 聊天页 / ViewModel（会话抽屉 / 流式回答 / 回答落地）
@@ -81,8 +81,10 @@ app/src/main/java/com/mynote/app/
 - 主题设置设计：[`docs/superpowers/specs/2026-09-10-theme-settings-design.md`](docs/superpowers/specs/2026-09-10-theme-settings-design.md)
 - 图片导出设计：[`docs/superpowers/specs/2026-09-10-note-image-export-design.md`](docs/superpowers/specs/2026-09-10-note-image-export-design.md)
 - 历史修改记录设计：[`docs/superpowers/specs/2026-09-10-note-history-design.md`](docs/superpowers/specs/2026-09-10-note-history-design.md)
-- AI 网页端助手设计：[`docs/superpowers/specs/2026-09-11-ai-web-assistant-design.md`](docs/superpowers/specs/2026-09-11-ai-web-assistant-design.md)
-- AI 网页端助手计划（含修订记录）：[`docs/superpowers/plans/2026-09-11-ai-web-assistant.md`](docs/superpowers/plans/2026-09-11-ai-web-assistant.md)
+- AI 助手（DeepSeek 官方 API）设计：[`docs/superpowers/specs/2026-09-15-deepseek-api-assistant-design.md`](docs/superpowers/specs/2026-09-15-deepseek-api-assistant-design.md)
+- AI 助手（DeepSeek 官方 API）计划（含修订记录）：[`docs/superpowers/plans/2026-09-15-deepseek-api-assistant.md`](docs/superpowers/plans/2026-09-15-deepseek-api-assistant.md)
+- AI 网页端助手设计（已被 API 方案替换）：[`docs/superpowers/specs/2026-09-11-ai-web-assistant-design.md`](docs/superpowers/specs/2026-09-11-ai-web-assistant-design.md)
+- AI 网页端助手计划（已被 API 方案替换）：[`docs/superpowers/plans/2026-09-11-ai-web-assistant.md`](docs/superpowers/plans/2026-09-11-ai-web-assistant.md)
 - 图片导出计划（含修订记录）：[`docs/superpowers/plans/2026-09-10-note-image-export.md`](docs/superpowers/plans/2026-09-10-note-image-export.md)
 - 历史修改记录计划（含修订记录）：[`docs/superpowers/plans/2026-09-10-note-history.md`](docs/superpowers/plans/2026-09-10-note-history.md)
 - 实现计划（含修订记录）：[`docs/superpowers/plans/2026-08-13-mynote.md`](docs/superpowers/plans/2026-08-13-mynote.md)

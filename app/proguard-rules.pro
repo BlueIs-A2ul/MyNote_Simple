@@ -7,3 +7,9 @@
 -keepclasseswithmembers class com.mynote.app.data.backup.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
+-keepclassmembers class com.mynote.app.data.ai.** {
+    *** Companion;
+}
+-keepclasseswithmembers class com.mynote.app.data.ai.** {
+    kotlinx.serialization.KSerializer serializer(...);
+}

@@ -20,6 +20,7 @@ data class AiSessionEntity(
     val noteId: Long,
     val serviceId: String,
     val title: String,
+    /** 旧网页版遗留列（API 模式不再写入）；保留避免 Room 迁移。 */
     val remoteChatId: String?,
     val createdAt: Long,
     val updatedAt: Long

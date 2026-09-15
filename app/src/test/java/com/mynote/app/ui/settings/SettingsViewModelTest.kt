@@ -2,13 +2,19 @@ package com.mynote.app.ui.settings
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.mynote.app.data.ai.DeepSeekApiClient
+import com.mynote.app.data.ai.DeepSeekModels
 import com.mynote.app.data.db.NoteSortMode
+import com.mynote.app.data.settings.AiSettingsStore
+import com.mynote.app.data.settings.ApiKeyCipher
 import com.mynote.app.data.settings.DarkMode
 import com.mynote.app.data.settings.NoteSortStore
 import com.mynote.app.data.settings.ThemeSettingsStore
 import com.mynote.app.data.settings.TrashRetentionStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -19,22 +25,33 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class SettingsViewModelTest {
 
+    private class FakeCipher : ApiKeyCipher {
+        override fun encrypt(plain: String): String? = "enc:$plain"
+        override fun decrypt(stored: String): String? =
+            stored.removePrefix("enc:").takeIf { stored.startsWith("enc:") }
+    }
+
+    private lateinit var context: Context
     private lateinit var store: ThemeSettingsStore
     private lateinit var sortStore: NoteSortStore
     private lateinit var trashStore: TrashRetentionStore
+    private lateinit var aiStore: AiSettingsStore
     private lateinit var vm: SettingsViewModel
 
     @Before
     fun setup() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
+        context = ApplicationProvider.getApplicationContext()
         context.getSharedPreferences("theme_settings", Context.MODE_PRIVATE)
             .edit().clear().commit()
         context.getSharedPreferences("trash_retention_settings", Context.MODE_PRIVATE)
             .edit().clear().commit()
+        context.getSharedPreferences("ai_settings", Context.MODE_PRIVATE)
+            .edit().clear().commit()
         store = ThemeSettingsStore(context)
         sortStore = NoteSortStore(context)
         trashStore = TrashRetentionStore(context)
-        vm = SettingsViewModel(store, sortStore, trashStore)
+        aiStore = AiSettingsStore(context, FakeCipher())
+        vm = SettingsViewModel(store, sortStore, trashStore, aiStore, DeepSeekApiClient())
     }
 
     @Test
@@ -68,5 +85,39 @@ class SettingsViewModelTest {
         vm.setRetentionDays(7)
         assertEquals(7, trashStore.retentionDays.value)
         assertEquals(7, vm.retentionDays.value)
+    }
+
+    @Test
+    fun aiModelDelegatesAndRejectsUnknown() {
+        assertEquals(DeepSeekModels.FLASH, vm.aiModel.value)
+
+        vm.setAiModel(DeepSeekModels.V4_PRO)
+        assertEquals(DeepSeekModels.V4_PRO, aiStore.model())
+        assertEquals(DeepSeekModels.V4_PRO, vm.aiModel.value)
+
+        vm.setAiModel("nope")
+        assertEquals(DeepSeekModels.V4_PRO, vm.aiModel.value)
+    }
+
+    @Test
+    fun deepThinkingDelegates() {
+        assertFalse(vm.deepThinking.value)
+
+        vm.setDeepThinking(true)
+        assertTrue(aiStore.deepThinking())
+        assertTrue(vm.deepThinking.value)
+    }
+
+    @Test
+    fun apiKeySaveAndClearUpdatesConfiguredFlag() {
+        assertFalse(vm.apiKeyConfigured.value)
+
+        assertTrue(vm.saveApiKey("  sk-1  "))
+        assertTrue(vm.apiKeyConfigured.value)
+        assertEquals("sk-1", vm.savedApiKey())
+
+        vm.clearApiKey()
+        assertFalse(vm.apiKeyConfigured.value)
+        assertNull(vm.savedApiKey())
     }
 }

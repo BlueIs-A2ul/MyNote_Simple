@@ -101,15 +101,15 @@ fun AppNavHost(container: AppContainer) {
                     (prev?.get<Int>(AiNavKeys.SEL_START) ?: 0),
                 aiRepository = container.aiChatRepository,
                 noteRepository = container.noteRepository,
-                registry = container.aiDriverRegistry,
                 settingsStore = container.aiSettingsStore,
                 externalScope = container.applicationScope,
-                webSessionFactory = container.aiWebSessionFactory,
+                session = container.aiSessionFactory(),
                 onApplyResult = { type, text ->
                     prev?.set(AiNavKeys.RESULT_TYPE, type)
                     prev?.set(AiNavKeys.RESULT_TEXT, text)
                     navController.popBackStack()
                 },
+                onOpenSettings = { navController.navigate("settings") },
                 onBack = { navController.popBackStack() }
             )
         }
@@ -140,6 +140,8 @@ fun AppNavHost(container: AppContainer) {
                 themeStore = container.themeSettingsStore,
                 sortStore = container.noteSortStore,
                 trashStore = container.trashRetentionStore,
+                aiSettingsStore = container.aiSettingsStore,
+                apiClient = container.deepSeekApiClient,
                 onBack = { navController.popBackStack() }
             )
         }
