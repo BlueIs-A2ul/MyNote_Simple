@@ -28,6 +28,6 @@ interface AiSession {
 
     companion object {
         /** 未配置 Key 的统一文案（同时作为 settingsHint 判定锚点）。 */
-        const val KEY_MISSING_REASON = "未配置 DeepSeek API Key"
+        const val KEY_MISSING_REASON = "未配置 API Key，请在「设置 → AI 助手」填写"
     }
 }

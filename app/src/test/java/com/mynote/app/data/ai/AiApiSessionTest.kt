@@ -14,7 +14,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class DeepSeekApiSessionTest {
+class AiApiSessionTest {
 
     private class FakeStreamer : ChatStreamer {
         var result: Flow<ApiStreamEvent> = emptyFlow()
@@ -47,8 +47,8 @@ class DeepSeekApiSessionTest {
     @Test
     fun streamsEventsAndPassesSettings() = runTest {
         val streamer = FakeStreamer()
-        val session = DeepSeekApiSession(
-            streamer, { "  key-1  " }, { DeepSeekModels.V4_PRO }, { true }, backgroundScope
+        val session = AiApiSession(
+            streamer, AiProvider.DEEPSEEK.endpoint(), { "  key-1  " }, { DeepSeekModels.V4_PRO }, { true }, backgroundScope
         )
         val received = mutableListOf<AiEvent>()
         backgroundScope.launch { session.events.collect { received += it } }
@@ -74,8 +74,8 @@ class DeepSeekApiSessionTest {
     @Test
     fun reasoningAndUsageAreForwarded() = runTest {
         val streamer = FakeStreamer()
-        val session = DeepSeekApiSession(
-            streamer, { "key" }, { DeepSeekModels.FLASH }, { true }, backgroundScope
+        val session = AiApiSession(
+            streamer, AiProvider.DEEPSEEK.endpoint(), { "key" }, { DeepSeekModels.FLASH }, { true }, backgroundScope
         )
         val received = mutableListOf<AiEvent>()
         backgroundScope.launch { session.events.collect { received += it } }
@@ -105,8 +105,8 @@ class DeepSeekApiSessionTest {
     @Test
     fun missingKeyFailsWithoutCallingStreamer() = runTest {
         val streamer = FakeStreamer()
-        val session = DeepSeekApiSession(
-            streamer, { null }, { DeepSeekModels.FLASH }, { false }, backgroundScope
+        val session = AiApiSession(
+            streamer, AiProvider.DEEPSEEK.endpoint(), { null }, { DeepSeekModels.FLASH }, { false }, backgroundScope
         )
         val received = mutableListOf<AiEvent>()
         backgroundScope.launch { session.events.collect { received += it } }
@@ -125,8 +125,8 @@ class DeepSeekApiSessionTest {
     @Test
     fun errorEventCarriesSettingsHint() = runTest {
         val streamer = FakeStreamer()
-        val session = DeepSeekApiSession(
-            streamer, { "key" }, { DeepSeekModels.FLASH }, { false }, backgroundScope
+        val session = AiApiSession(
+            streamer, AiProvider.DEEPSEEK.endpoint(), { "key" }, { DeepSeekModels.FLASH }, { false }, backgroundScope
         )
         val received = mutableListOf<AiEvent>()
         backgroundScope.launch { session.events.collect { received += it } }
@@ -142,8 +142,8 @@ class DeepSeekApiSessionTest {
     @Test
     fun streamFailureBecomesNetworkError() = runTest {
         val streamer = FakeStreamer()
-        val session = DeepSeekApiSession(
-            streamer, { "key" }, { DeepSeekModels.FLASH }, { false }, backgroundScope
+        val session = AiApiSession(
+            streamer, AiProvider.DEEPSEEK.endpoint(), { "key" }, { DeepSeekModels.FLASH }, { false }, backgroundScope
         )
         val received = mutableListOf<AiEvent>()
         backgroundScope.launch { session.events.collect { received += it } }
@@ -159,8 +159,8 @@ class DeepSeekApiSessionTest {
     @Test
     fun stopCancelsStreamingWithoutDone() = runTest {
         val streamer = FakeStreamer()
-        val session = DeepSeekApiSession(
-            streamer, { "key" }, { DeepSeekModels.FLASH }, { false }, backgroundScope
+        val session = AiApiSession(
+            streamer, AiProvider.DEEPSEEK.endpoint(), { "key" }, { DeepSeekModels.FLASH }, { false }, backgroundScope
         )
         val received = mutableListOf<AiEvent>()
         backgroundScope.launch { session.events.collect { received += it } }
@@ -183,13 +183,29 @@ class DeepSeekApiSessionTest {
     @Test
     fun emptyMessagesDoNotCallStreamer() = runTest {
         val streamer = FakeStreamer()
-        val session = DeepSeekApiSession(
-            streamer, { "key" }, { DeepSeekModels.FLASH }, { false }, backgroundScope
+        val session = AiApiSession(
+            streamer, AiProvider.DEEPSEEK.endpoint(), { "key" }, { DeepSeekModels.FLASH }, { false }, backgroundScope
         )
 
         session.send(emptyList())
         runCurrent()
 
         assertTrue(streamer.calls.isEmpty())
+    }
+
+    @Test
+    fun identityComesFromEndpoint() = runTest {
+        val streamer = FakeStreamer()
+        val siliconFlow = AiApiSession(
+            streamer, AiProvider.SILICON_FLOW.endpoint(), { "key" }, { "m" }, { false }, backgroundScope
+        )
+        val custom = AiApiSession(
+            streamer, AiProvider.CUSTOM.endpoint("https://example.com/v1"), { "key" }, { "m" }, { false }, backgroundScope
+        )
+
+        assertEquals("siliconflow-api", siliconFlow.serviceId)
+        assertEquals("硅基流动", siliconFlow.displayName)
+        assertEquals("openai-compatible", custom.serviceId)
+        assertEquals("自定义", custom.displayName)
     }
 }

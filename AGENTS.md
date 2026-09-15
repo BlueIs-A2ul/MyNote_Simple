@@ -23,7 +23,7 @@ MyNote 安卓备忘录（原生 Android，单模块 `:app`）。本文件只记�
 | 目的 | 命令 |
 |---|---|
 | debug APK | `.\gradlew :app:assembleDebug` |
-| 全部单测（当前 547 个） | `.\gradlew :app:testDebugUnitTest` |
+| 全部单测（当前 582 个） | `.\gradlew :app:testDebugUnitTest` |
 | 单个测试类 | `.\gradlew :app:testDebugUnitTest --tests "com.mynote.app.data.db.NoteDaoTest"` |
 | release（R8 + 资源压缩 + 签名） | `.\gradlew :app:assembleRelease` |
 
@@ -53,4 +53,4 @@ MyNote 安卓备忘录（原生 Android，单模块 `:app`）。本文件只记�
 - 图片导出：`data/export/`（自绘渲染 + 流式缓存导出）+ `ui/export/`（全屏预览 Dialog）。产物为纯白 PNG、无任何品牌元素；渲染用 `NoteImageRenderer.renderPages` 逐页回调，调用方写盘后立即 `recycle()`，峰值内存 ≈ 一页——不要改回"先收集全部页位图"的写法。FileProvider authority 为 `com.mynote.app.fileprovider`，`res/xml/file_paths.xml` 只暴露 `cacheDir/exports`。
 - 导出图片固定纯白，不跟随深色模式/主题色；界面主题在 `ui/theme/`（8 档色板 + 动态取色），设置持久化在 `data/settings/ThemeSettingsStore`。
 - 新功能先写设计 `docs/superpowers/specs/YYYY-MM-DD-*-design.md`、计划 `docs/superpowers/plans/`（计划末尾记「修订记录」），再动代码；文档、注释、提交均为中文。
-- AI 助手：直连 DeepSeek 官方 API（用户自填 Key），`data/ai/DeepSeekApiClient.kt` 用 `HttpURLConnection` 手写 SSE（零新增依赖，请求/流解析纯函数），`DeepSeekApiSession` 实现 `AiSession` 事件流，`AiApiMessageBuilder` 组装历史（每次全量回传，笔记正文只进首条用户消息）；Key 走 `data/settings/KeystoreApiKeyCipher`（AndroidKeyStore AES/GCM）存 SharedPreferences；会话与消息存 `ai_sessions` / `ai_messages`（`serviceId = "deepseek-api"`，旧网页版行兼容展示、`remoteChatId` 为历史列不再写入）；编辑页通过 `savedStateHandle` 传递选区与正文快照、回传 AI 结果；测试用 Fake `AiSession` / 假 `HttpStreamTransport` 替换网络层（Robolectric 不支持 AndroidKeyStore，用假 `ApiKeyCipher`）。模型常量集中在 `DeepSeekModels`（deepseek-flash / deepseek-v4-pro）。
+- AI 助手（多服务商）：`data/ai/AiProvider.kt` 是唯一扩展点——枚举预设（DeepSeek / 硅基流动 / 自定义 OpenAI 兼容）连同地址、思考参数样式 `ThinkingStyle`（`thinking` 对象 / `enable_thinking` 布尔 / 无）、余额样式 `BalanceStyle`（DeepSeek `/user/balance` / 硅基流动 `/user/info` / 无）、`/models` 过滤查询串、默认模型、Key 提示文案都在这里；**新增服务商 = 加一条枚举 + 必要时补样式分支**，存储命名空间、会话身份、设置页 UI、错误映射自动生效。`AiApiClient.kt`（原 DeepSeekApiClient）用 `HttpURLConnection` 手写 SSE（零新增依赖），请求体按端点样式 `buildJsonObject` 组装，手写 SSE 解析在 `AiSseParser`；`AiApiSession` 实现 `AiSession` 事件流（serviceId/displayName 来自端点，隐私确认按 serviceId 隔离）；`AiApiMessageBuilder` 组装历史（每次全量回传，笔记正文只进首条用户消息）。Key 走 `KeystoreApiKeyCipher`（AndroidKeyStore AES/GCM）存 SharedPreferences，**按服务商 serviceId 命名空间隔离**（DeepSeek 沿用历史 key 名 `api_key_encrypted` 等，老用户无感升级）；会话与消息存 `ai_sessions` / `ai_messages`（`remoteChatId` 为历史列不再写入）。测试用 Fake `AiSession` / 假 `HttpStreamTransport` 替换网络层（Robolectric 不支持 AndroidKeyStore，用假 `ApiKeyCipher`）；DeepSeek 模型常量集中在 `DeepSeekModels`（deepseek-flash / deepseek-v4-pro）。

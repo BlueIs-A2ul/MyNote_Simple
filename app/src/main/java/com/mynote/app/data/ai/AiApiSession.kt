@@ -10,19 +10,21 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 
 /**
- * DeepSeek API 会话：校验 Key → 流式执行 → 映射 [AiEvent]。
+ * OpenAI 兼容 API 会话：校验 Key → 流式执行 → 映射 [AiEvent]。
+ * 身份（serviceId / displayName）来自 [AiEndpoint]，同一实现服务任意服务商。
  * 历史组装与落库在 ViewModel；协程随 stop()/release() 取消（连接的断开由客户端负责）。
  */
-class DeepSeekApiSession(
+class AiApiSession(
     private val streamer: ChatStreamer,
+    endpoint: AiEndpoint,
     private val credentials: () -> String?,
     private val model: () -> String,
     private val deepThinking: () -> Boolean,
     private val scope: CoroutineScope
 ) : AiSession {
 
-    override val serviceId: String = SERVICE_ID
-    override val displayName: String = "DeepSeek"
+    override val serviceId: String = endpoint.serviceId
+    override val displayName: String = endpoint.displayName
 
     private val _events = MutableSharedFlow<AiEvent>(
         extraBufferCapacity = 64,
@@ -66,8 +68,4 @@ class DeepSeekApiSession(
     }
 
     override fun release() = stop()
-
-    companion object {
-        const val SERVICE_ID = "deepseek-api"
-    }
 }

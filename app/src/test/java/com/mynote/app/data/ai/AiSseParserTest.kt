@@ -5,11 +5,11 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class DeepSeekSseParserTest {
+class AiSseParserTest {
 
     @Test
     fun parsesDeltaContent() {
-        val frame = DeepSeekSseParser.parse(
+        val frame = AiSseParser.parse(
             """data: {"id":"1","choices":[{"delta":{"content":"你好","role":"assistant"},"index":0,"finish_reason":null}]}"""
         )
         assertEquals("你好", frame?.text)
@@ -19,7 +19,7 @@ class DeepSeekSseParserTest {
 
     @Test
     fun emptyContentIsParsedButNoFinish() {
-        val frame = DeepSeekSseParser.parse(
+        val frame = AiSseParser.parse(
             """data: {"choices":[{"delta":{"content":"","role":"assistant"},"index":0,"finish_reason":null}]}"""
         )
         assertEquals("", frame?.text)
@@ -27,7 +27,7 @@ class DeepSeekSseParserTest {
 
     @Test
     fun parsesFinishReasonAndUsageOnLastChunk() {
-        val frame = DeepSeekSseParser.parse(
+        val frame = AiSseParser.parse(
             """data: {"choices":[{"delta":{"content":""},"index":0,"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}"""
         )
         assertEquals("stop", frame?.finishReason)
@@ -36,13 +36,13 @@ class DeepSeekSseParserTest {
 
     @Test
     fun parsesDoneMarker() {
-        val frame = DeepSeekSseParser.parse("data: [DONE]")
+        val frame = AiSseParser.parse("data: [DONE]")
         assertEquals(true, frame?.done)
     }
 
     @Test
     fun parsesReasoningContent() {
-        val frame = DeepSeekSseParser.parse(
+        val frame = AiSseParser.parse(
             """data: {"choices":[{"delta":{"reasoning_content":"思考中"},"index":0}]}"""
         )
         assertEquals("思考中", frame?.reasoning)
@@ -52,7 +52,7 @@ class DeepSeekSseParserTest {
 
     @Test
     fun parsesReasoningAndContentTogether() {
-        val frame = DeepSeekSseParser.parse(
+        val frame = AiSseParser.parse(
             """data: {"choices":[{"delta":{"reasoning_content":"想","content":"答"}}]}"""
         )
         assertEquals("想", frame?.reasoning)
@@ -61,7 +61,7 @@ class DeepSeekSseParserTest {
 
     @Test
     fun parsesUsageOnEmptyChoices() {
-        val frame = DeepSeekSseParser.parse(
+        val frame = AiSseParser.parse(
             """data: {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}"""
         )
         assertEquals(AiUsage(3, 1, 4), frame?.usage)
@@ -71,49 +71,49 @@ class DeepSeekSseParserTest {
 
     @Test
     fun toleratesMissingOrNullUsage() {
-        val partial = DeepSeekSseParser.parse(
+        val partial = AiSseParser.parse(
             """data: {"choices":[{"delta":{"content":"好"}}],"usage":{"prompt_tokens":3,"completion_tokens":null}}"""
         )
         assertEquals("好", partial?.text)
         assertEquals(AiUsage(3, 0, 0), partial?.usage)
 
-        val nullUsage = DeepSeekSseParser.parse(
+        val nullUsage = AiSseParser.parse(
             """data: {"choices":[{"delta":{"content":"好"}}],"usage":null}"""
         )
         assertEquals("好", nullUsage?.text)
         assertNull(nullUsage?.usage)
 
-        val absent = DeepSeekSseParser.parse("""data: {"choices":[{"delta":{"content":"好"}}]}""")
+        val absent = AiSseParser.parse("""data: {"choices":[{"delta":{"content":"好"}}]}""")
         assertNull(absent?.usage)
     }
 
     @Test
     fun ignoresUsageWithoutTokenFields() {
         assertNull(
-            DeepSeekSseParser.parse("""data: {"choices":[],"usage":{"prompt_tokens":null}}""")
+            AiSseParser.parse("""data: {"choices":[],"usage":{"prompt_tokens":null}}""")
         )
     }
 
     @Test
     fun parsesErrorFrame() {
-        val frame = DeepSeekSseParser.parse("""data: {"error":{"message":"Invalid token","type":"authentication_error"}}""")
+        val frame = AiSseParser.parse("""data: {"error":{"message":"Invalid token","type":"authentication_error"}}""")
         assertEquals("Invalid token", frame?.error)
     }
 
     @Test
     fun ignoresNoiseLines() {
-        assertNull(DeepSeekSseParser.parse(""))
-        assertNull(DeepSeekSseParser.parse("   "))
-        assertNull(DeepSeekSseParser.parse(": keep-alive"))
-        assertNull(DeepSeekSseParser.parse("event: message"))
-        assertNull(DeepSeekSseParser.parse("data:"))
-        assertNull(DeepSeekSseParser.parse("data: not-json"))
-        assertNull(DeepSeekSseParser.parse("""data: {"choices":[]}"""))
+        assertNull(AiSseParser.parse(""))
+        assertNull(AiSseParser.parse("   "))
+        assertNull(AiSseParser.parse(": keep-alive"))
+        assertNull(AiSseParser.parse("event: message"))
+        assertNull(AiSseParser.parse("data:"))
+        assertNull(AiSseParser.parse("data: not-json"))
+        assertNull(AiSseParser.parse("""data: {"choices":[]}"""))
     }
 
     @Test
     fun handlesTrailingWhitespaceAndCr() {
-        val frame = DeepSeekSseParser.parse(
+        val frame = AiSseParser.parse(
             "data: {\"choices\":[{\"delta\":{\"content\":\"好\"}}]}  \r"
         )
         assertEquals("好", frame?.text)

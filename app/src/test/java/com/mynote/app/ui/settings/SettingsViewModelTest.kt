@@ -2,9 +2,11 @@ package com.mynote.app.ui.settings
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.mynote.app.data.ai.AiEndpoint
+import com.mynote.app.data.ai.AiProbe
+import com.mynote.app.data.ai.AiProvider
 import com.mynote.app.data.ai.BalanceLine
 import com.mynote.app.data.ai.BalanceState
-import com.mynote.app.data.ai.DeepSeekApiClient
 import com.mynote.app.data.ai.DeepSeekModels
 import com.mynote.app.data.ai.ProbeResult
 import com.mynote.app.data.db.NoteSortMode
@@ -48,16 +50,25 @@ class SettingsViewModelTest {
     private lateinit var aiStore: AiSettingsStore
     private lateinit var vm: SettingsViewModel
 
-    /** 假探测：测试可改 [probeResult]；[lastProbeKey] 记录收到的 Key。 */
+    /** 假探测：测试可改 [probeResult]/[balanceState]；记录收到的 Key 与端点。 */
     private var probeResult: ProbeResult = ProbeResult.Failed("未配置")
+    private var balanceState: BalanceState = BalanceState.Failed("未配置")
     private var lastProbeKey: String? = null
-    private val fakeProbe: suspend (String) -> ProbeResult = { key ->
-        lastProbeKey = key
-        probeResult
+    private var lastEndpoint: AiEndpoint? = null
+
+    private val fakeProbe = object : AiProbe {
+        override suspend fun probe(apiKey: String): ProbeResult {
+            lastProbeKey = apiKey
+            return probeResult
+        }
+
+        override suspend fun fetchBalance(apiKey: String): BalanceState = balanceState
     }
 
-    /** 假余额查询：本测试类只验证注入缝不触网。 */
-    private val fakeBalance: suspend (String) -> BalanceState = { BalanceState.Failed("未配置") }
+    private val clientFactory: (AiEndpoint) -> AiProbe = { endpoint ->
+        lastEndpoint = endpoint
+        fakeProbe
+    }
 
     @Before
     fun setup() {
@@ -73,7 +84,7 @@ class SettingsViewModelTest {
         sortStore = NoteSortStore(context)
         trashStore = TrashRetentionStore(context)
         aiStore = AiSettingsStore(context, FakeCipher())
-        vm = SettingsViewModel(store, sortStore, trashStore, aiStore, DeepSeekApiClient(), fakeProbe, fakeBalance)
+        vm = SettingsViewModel(store, sortStore, trashStore, aiStore, clientFactory)
     }
 
     @After
@@ -132,6 +143,64 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun defaultProviderIsDeepSeek() {
+        assertEquals(AiProvider.DEEPSEEK, vm.aiProvider.value)
+        assertEquals("https://api.deepseek.com", vm.endpoint().baseUrl)
+        assertEquals("deepseek-api", vm.endpoint().serviceId)
+    }
+
+    @Test
+    fun providerSwitchRefreshesScopedState() {
+        vm.setAiModel(DeepSeekModels.V4_PRO)
+        vm.setDeepThinking(true)
+        vm.saveApiKey("deepseek-key")
+
+        vm.setProvider(AiProvider.SILICON_FLOW)
+
+        assertEquals(AiProvider.SILICON_FLOW, vm.aiProvider.value)
+        assertEquals(listOf("deepseek-ai/DeepSeek-V4-Flash"), vm.availableModels.value)
+        assertEquals("deepseek-ai/DeepSeek-V4-Flash", vm.aiModel.value)
+        assertFalse("思考开关按服务商隔离", vm.deepThinking.value)
+        assertFalse("Key 按服务商隔离", vm.apiKeyConfigured.value)
+        assertEquals("https://api.siliconflow.cn/v1", vm.endpoint().baseUrl)
+
+        vm.setProvider(AiProvider.DEEPSEEK)
+
+        assertEquals(DeepSeekModels.V4_PRO, vm.aiModel.value)
+        assertTrue(vm.deepThinking.value)
+        assertTrue(vm.apiKeyConfigured.value)
+        assertEquals("deepseek-key", vm.savedApiKey())
+    }
+
+    @Test
+    fun customBaseUrlValidationAndEndpoint() {
+        vm.setProvider(AiProvider.CUSTOM)
+
+        assertTrue(vm.setCustomBaseUrl("https://example.com/v1/"))
+        assertEquals("https://example.com/v1", vm.customBaseUrl.value)
+        assertEquals("https://example.com/v1", vm.endpoint().baseUrl)
+        assertEquals("openai-compatible", vm.endpoint().serviceId)
+        assertEquals("自定义", vm.endpoint().displayName)
+
+        assertFalse("非 http(s) 地址应被拒绝", vm.setCustomBaseUrl("ftp://example.com"))
+        assertEquals("https://example.com/v1", vm.customBaseUrl.value)
+
+        assertTrue("空白等价清除", vm.setCustomBaseUrl("   "))
+        assertEquals("", vm.customBaseUrl.value)
+    }
+
+    @Test
+    fun customProviderAllowsFreeModelInput() {
+        vm.setProvider(AiProvider.CUSTOM)
+        vm.setCustomBaseUrl("https://example.com/v1")
+
+        vm.setAiModel("gpt-4o-mini")
+
+        assertEquals("gpt-4o-mini", vm.aiModel.value)
+        assertEquals("gpt-4o-mini", aiStore.model(AiProvider.CUSTOM))
+    }
+
+    @Test
     fun testConnectionUpdatesModelsAndSwitchesStaleModel() = runTest(dispatcher) {
         vm.setAiModel(DeepSeekModels.V4_PRO)
         probeResult = ProbeResult.Ok(listOf(DeepSeekModels.FLASH, "deepseek-x"))
@@ -144,6 +213,22 @@ class SettingsViewModelTest {
         assertEquals(DeepSeekModels.FLASH, vm.aiModel.value)
         assertEquals(DeepSeekModels.FLASH, aiStore.model())
         assertTrue(message.startsWith("连接正常，可用模型："))
+    }
+
+    @Test
+    fun testConnectionUsesSelectedProviderEndpoint() = runTest(dispatcher) {
+        vm.setProvider(AiProvider.SILICON_FLOW)
+        probeResult = ProbeResult.Ok(listOf("deepseek-ai/DeepSeek-V4-Flash"))
+
+        vm.testConnection("sf-key")
+
+        assertEquals("siliconflow-api", lastEndpoint?.serviceId)
+        assertEquals("https://api.siliconflow.cn/v1", lastEndpoint?.baseUrl)
+        assertEquals(
+            listOf("deepseek-ai/DeepSeek-V4-Flash"),
+            aiStore.models(AiProvider.SILICON_FLOW)
+        )
+        assertEquals("DeepSeek 列表不受影响", DeepSeekModels.all, aiStore.models(AiProvider.DEEPSEEK))
     }
 
     @Test
@@ -171,18 +256,42 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun queryBalanceDelegatesToProbe() = runTest(dispatcher) {
+        balanceState = BalanceState.Ok(
+            isAvailable = true,
+            lines = listOf(BalanceLine("CNY", "110.00", "10.00", "100.00"))
+        )
+
+        assertEquals("余额 CNY 110.00（赠金 10.00 / 充值 100.00）", vm.queryBalance("sk-1"))
+    }
+
+    @Test
     fun modelAfterRefreshKeepsCurrentWhenStillInList() {
-        assertEquals("deepseek-x", modelAfterRefresh("deepseek-x", listOf("deepseek-y", "deepseek-x")))
+        assertEquals(
+            "deepseek-x",
+            modelAfterRefresh("deepseek-x", listOf("deepseek-y", "deepseek-x"), DeepSeekModels.all)
+        )
     }
 
     @Test
     fun modelAfterRefreshPicksFirstWhenCurrentMissing() {
-        assertEquals("deepseek-y", modelAfterRefresh("deepseek-v4-pro", listOf("deepseek-y", "deepseek-x")))
+        assertEquals(
+            "deepseek-y",
+            modelAfterRefresh("deepseek-v4-pro", listOf("deepseek-y", "deepseek-x"), DeepSeekModels.all)
+        )
     }
 
     @Test
-    fun modelAfterRefreshFallsBackToDefaultOnEmptyList() {
-        assertEquals(DeepSeekModels.DEFAULT, modelAfterRefresh("deepseek-x", emptyList()))
+    fun modelAfterRefreshFallsBackToDefaultsOnEmptyList() {
+        assertEquals(
+            DeepSeekModels.DEFAULT,
+            modelAfterRefresh("deepseek-x", emptyList(), DeepSeekModels.all)
+        )
+        assertEquals(
+            "deepseek-ai/DeepSeek-V4-Flash",
+            modelAfterRefresh("", emptyList(), AiProvider.SILICON_FLOW.defaultModels)
+        )
+        assertEquals("", modelAfterRefresh("", emptyList(), emptyList()))
     }
 
     @Test
@@ -209,13 +318,16 @@ class SettingsViewModelTest {
 
     @Test
     fun connectionMessageListsModelsWhenBuiltinModelsPresent() {
-        val message = connectionMessage(ProbeResult.Ok(DeepSeekModels.all))
+        val message = connectionMessage(ProbeResult.Ok(DeepSeekModels.all), AiProvider.DEEPSEEK)
         assertEquals("连接正常，可用模型：deepseek-flash、deepseek-v4-pro", message)
     }
 
     @Test
     fun connectionMessageWarnsWhenBuiltinModelsMissing() {
-        val message = connectionMessage(ProbeResult.Ok(listOf(DeepSeekModels.FLASH, "deepseek-next")))
+        val message = connectionMessage(
+            ProbeResult.Ok(listOf(DeepSeekModels.FLASH, "deepseek-next")),
+            AiProvider.DEEPSEEK
+        )
         assertEquals(
             "连接正常，可用模型：deepseek-flash、deepseek-next（内置模型与官方不一致，请留意）",
             message
@@ -223,8 +335,20 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun connectionMessageSkipsWarningWhenProviderHasNoBuiltinModels() {
+        val message = connectionMessage(
+            ProbeResult.Ok(listOf("gpt-4o-mini")),
+            AiProvider.CUSTOM
+        )
+        assertEquals("连接正常，可用模型：gpt-4o-mini", message)
+    }
+
+    @Test
     fun connectionMessageReturnsFailureText() {
-        val message = connectionMessage(ProbeResult.Failed("API Key 无效，请到设置中检查"))
+        val message = connectionMessage(
+            ProbeResult.Failed("API Key 无效，请到设置中检查"),
+            AiProvider.DEEPSEEK
+        )
         assertEquals("API Key 无效，请到设置中检查", message)
     }
 
@@ -235,6 +359,17 @@ class SettingsViewModelTest {
             lines = listOf(BalanceLine("CNY", "110.00", "10.00", "100.00"))
         )
         assertEquals("余额 CNY 110.00（赠金 10.00 / 充值 100.00）", balanceMessage(state))
+    }
+
+    @Test
+    fun balanceMessageUsesCustomLabels() {
+        val state = BalanceState.Ok(
+            isAvailable = true,
+            lines = listOf(
+                BalanceLine("CNY", "22.65", "7.40", "15.25", grantedLabel = "可用")
+            )
+        )
+        assertEquals("余额 CNY 22.65（可用 7.40 / 充值 15.25）", balanceMessage(state))
     }
 
     @Test

@@ -2,10 +2,11 @@ package com.mynote.app.di
 
 import android.content.Context
 import androidx.room.Room
+import com.mynote.app.data.ai.AiApiClient
+import com.mynote.app.data.ai.AiApiSession
 import com.mynote.app.data.ai.AiChatRepository
+import com.mynote.app.data.ai.AiEndpoint
 import com.mynote.app.data.ai.AiSession
-import com.mynote.app.data.ai.DeepSeekApiClient
-import com.mynote.app.data.ai.DeepSeekApiSession
 import com.mynote.app.data.backup.BackupManager
 import com.mynote.app.data.db.AppDatabase
 import com.mynote.app.data.export.ImageExportManager
@@ -76,21 +77,29 @@ class AppContainer(context: Context) {
 
     val aiSettingsStore: AiSettingsStore by lazy { AiSettingsStore(context) }
 
-    val deepSeekApiClient: DeepSeekApiClient by lazy { DeepSeekApiClient() }
+    /** 当前服务商端点：预设地址 + 自定义服务商的用户地址。 */
+    fun aiEndpoint(): AiEndpoint =
+        aiSettingsStore.provider().endpoint(aiSettingsStore.customBaseUrl())
+
+    /** 设置页「测试连接 / 查询余额」用的客户端工厂（按当前服务商构造）。 */
+    val aiApiClientFactory: (AiEndpoint) -> AiApiClient = { endpoint -> AiApiClient(endpoint) }
 
     /** AI 助手输入草稿；提示词输入随会话持久化，切走/回来自动恢复。 */
     val aiDraftStore: AiDraftStore by lazy { PrefsAiDraftStore(context) }
 
     /**
      * 每次进入 AI 页新建一个会话与独立客户端（取消隔离，条目 62）；
-     * 读写设置走 Provider，设置页改 Key / 模型立即生效。
+     * 服务商 / Key / 模型 / 思考开关均在发请求时从设置读取，设置页改动立即生效。
      */
     val aiSessionFactory: () -> AiSession = {
-        DeepSeekApiSession(
-            streamer = DeepSeekApiClient(),
-            credentials = { aiSettingsStore.apiKey() },
-            model = { aiSettingsStore.model() },
-            deepThinking = { aiSettingsStore.deepThinking() },
+        val provider = aiSettingsStore.provider()
+        val endpoint = provider.endpoint(aiSettingsStore.customBaseUrl())
+        AiApiSession(
+            streamer = AiApiClient(endpoint),
+            endpoint = endpoint,
+            credentials = { aiSettingsStore.apiKey(provider) },
+            model = { aiSettingsStore.model(provider) },
+            deepThinking = { aiSettingsStore.deepThinking(provider) },
             scope = applicationScope
         )
     }

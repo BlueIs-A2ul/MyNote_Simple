@@ -9,7 +9,7 @@ import com.mynote.app.data.ai.AiChatRepository
 import com.mynote.app.data.ai.AiEvent
 import com.mynote.app.data.ai.AiSession
 import com.mynote.app.data.ai.AiUsage
-import com.mynote.app.data.ai.DeepSeekApiSession
+import com.mynote.app.data.ai.AiProvider
 import com.mynote.app.data.db.AiMessageEntity
 import com.mynote.app.data.db.AppDatabase
 import com.mynote.app.data.image.ImageStore
@@ -65,7 +65,7 @@ class AiChatViewModelTest {
         aiRepo = AiChatRepository(db.aiSessionDao(), db.aiMessageDao())
         noteRepo = NoteRepository(db.noteDao(), db.categoryDao(), db.noteRevisionDao(), ImageStore(context), db)
         settings = AiSettingsStore(context, FakeCipher())
-        settings.acceptPrivacy(DeepSeekApiSession.SERVICE_ID)
+        settings.acceptPrivacy(AiProvider.DEEPSEEK.serviceId)
         settings.setApiKey("sk-test")
         fake = FakeAiSession()
     }
@@ -101,6 +101,14 @@ class AiChatViewModelTest {
     }
 
     @Test
+    fun stateCarriesProviderNameFromSession() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val vm = createVm(noteId)
+
+        assertEquals(AiProvider.DEEPSEEK.displayName, vm.state.value.providerName)
+    }
+
+    @Test
     fun firstSendCreatesSessionAndIncludesNoteContext() = runTest(dispatcher) {
         val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
         val vm = createVm(noteId)
@@ -109,7 +117,7 @@ class AiChatViewModelTest {
 
         val session = aiRepo.observeSessions(noteId).first { it.isNotEmpty() }.single()
         assertEquals("帮我总结", session.title)
-        assertEquals(DeepSeekApiSession.SERVICE_ID, session.serviceId)
+        assertEquals(AiProvider.DEEPSEEK.serviceId, session.serviceId)
 
         val sent = fake.sent.single()
         assertEquals(AiChatMessage.ROLE_USER, sent.last().role)
@@ -271,7 +279,7 @@ class AiChatViewModelTest {
 
         vm.acceptPrivacy()
         assertTrue(vm.state.value.privacyAccepted)
-        assertTrue(fresh.isPrivacyAccepted(DeepSeekApiSession.SERVICE_ID))
+        assertTrue(fresh.isPrivacyAccepted(AiProvider.DEEPSEEK.serviceId))
     }
 
     @Test
@@ -385,7 +393,7 @@ class AiChatViewModelTest {
         fake.emit(AiEvent.Chunk("半截"))
         vm.state.first { it.streamingText == "半截" }
 
-        val secondId = aiRepo.createSession(noteId, DeepSeekApiSession.SERVICE_ID, "第二个", System.currentTimeMillis())
+        val secondId = aiRepo.createSession(noteId, AiProvider.DEEPSEEK.serviceId, "第二个", System.currentTimeMillis())
         vm.state.first { it.sessions.any { session -> session.id == secondId } }
         vm.selectSession(secondId)
 
@@ -686,8 +694,8 @@ class AiChatViewModelTest {
     }
 
     private class FakeAiSession : AiSession {
-        override val serviceId: String = DeepSeekApiSession.SERVICE_ID
-        override val displayName: String = "DeepSeek"
+        override val serviceId: String = AiProvider.DEEPSEEK.serviceId
+        override val displayName: String = AiProvider.DEEPSEEK.displayName
 
         private val _events = MutableSharedFlow<AiEvent>(extraBufferCapacity = 16)
         override val events: SharedFlow<AiEvent> = _events

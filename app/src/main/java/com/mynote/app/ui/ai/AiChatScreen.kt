@@ -114,9 +114,9 @@ fun AiChatScreen(
     if (!state.privacyAccepted) {
         AlertDialog(
             onDismissRequest = {},
-            title = { Text("发送到 DeepSeek API") },
+            title = { Text("发送到 ${state.providerName}") },
             text = {
-                Text("AI 助手会把你输入的内容与笔记正文，通过你填写的 API Key 发送给 DeepSeek 官方接口处理，费用由你的账号承担。请遵守服务条款，避免发送敏感信息。")
+                Text("AI 助手会把你输入的内容与笔记正文，通过你填写的 API Key 发送给${state.providerName}接口处理，费用由你的账号承担。请遵守服务条款，避免发送敏感信息。")
             },
             confirmButton = {
                 TextButton(onClick = { vm.acceptPrivacy() }) { Text("同意并继续") }

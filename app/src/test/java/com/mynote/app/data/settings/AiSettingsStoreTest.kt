@@ -2,6 +2,7 @@ package com.mynote.app.data.settings
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.mynote.app.data.ai.AiProvider
 import com.mynote.app.data.ai.DeepSeekModels
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -163,5 +164,97 @@ class AiSettingsStoreTest {
         store.acceptPrivacy("deepseek-api")
         assertTrue(store.isPrivacyAccepted("deepseek-api"))
         assertFalse(store.isPrivacyAccepted("deepseek"))
+    }
+
+    @Test
+    fun providerDefaultsToDeepSeekAndRoundTrips() {
+        assertEquals(AiProvider.DEEPSEEK, store.provider())
+
+        store.setProvider(AiProvider.SILICON_FLOW)
+
+        assertEquals(AiProvider.SILICON_FLOW, store.provider())
+        assertEquals(AiProvider.SILICON_FLOW, AiSettingsStore(context, FakeCipher()).provider())
+    }
+
+    @Test
+    fun providerFallsBackWhenStoredValueUnknown() {
+        context.getSharedPreferences("ai_settings", Context.MODE_PRIVATE)
+            .edit().putString("ai_provider", "legacy-web").commit()
+
+        assertEquals(AiProvider.DEEPSEEK, store.provider())
+    }
+
+    @Test
+    fun keysAreScopedPerProviderAndDeepSeekKeepsLegacyKeyName() {
+        store.setApiKey("sk-deepseek", AiProvider.DEEPSEEK)
+        store.setApiKey("sk-silicon", AiProvider.SILICON_FLOW)
+
+        val prefs = context.getSharedPreferences("ai_settings", Context.MODE_PRIVATE)
+        assertEquals("enc:sk-deepseek", prefs.getString("api_key_encrypted", null))
+        assertEquals("enc:sk-silicon", prefs.getString("api_key_encrypted_siliconflow-api", null))
+
+        assertEquals("sk-deepseek", store.apiKey(AiProvider.DEEPSEEK))
+        assertEquals("sk-silicon", store.apiKey(AiProvider.SILICON_FLOW))
+
+        store.setApiKey("", AiProvider.SILICON_FLOW)
+        assertEquals("sk-deepseek", store.apiKey(AiProvider.DEEPSEEK))
+        assertNull(store.apiKey(AiProvider.SILICON_FLOW))
+    }
+
+    @Test
+    fun legacyDeepSeekKeyIsReadByDefaultProvider() {
+        context.getSharedPreferences("ai_settings", Context.MODE_PRIVATE)
+            .edit().putString("api_key_encrypted", "enc:legacy-key").commit()
+
+        assertEquals("legacy-key", store.apiKey())
+        assertTrue(store.hasApiKey())
+    }
+
+    @Test
+    fun modelsAreScopedPerProviderWithOwnDefaults() {
+        assertEquals(DeepSeekModels.all, store.models(AiProvider.DEEPSEEK))
+        assertEquals(AiProvider.SILICON_FLOW.defaultModels, store.models(AiProvider.SILICON_FLOW))
+
+        store.setModels(listOf("deepseek-ai/DeepSeek-V4"), AiProvider.SILICON_FLOW)
+
+        assertEquals(listOf("deepseek-ai/DeepSeek-V4"), store.models(AiProvider.SILICON_FLOW))
+        assertEquals("DeepSeek 列表不受影响", DeepSeekModels.all, store.models(AiProvider.DEEPSEEK))
+    }
+
+    @Test
+    fun modelAndThinkingAreScopedPerProvider() {
+        store.setModel(DeepSeekModels.V4_PRO, AiProvider.DEEPSEEK)
+        store.setDeepThinking(true, AiProvider.DEEPSEEK)
+
+        assertEquals(DeepSeekModels.V4_PRO, store.model(AiProvider.DEEPSEEK))
+        assertTrue(store.deepThinking(AiProvider.DEEPSEEK))
+
+        assertEquals(AiProvider.SILICON_FLOW.defaultModels.first(), store.model(AiProvider.SILICON_FLOW))
+        assertFalse(store.deepThinking(AiProvider.SILICON_FLOW))
+    }
+
+    @Test
+    fun customProviderAllowsFreeModelInput() {
+        store.setProvider(AiProvider.CUSTOM)
+        assertEquals("", store.model())
+
+        store.setModel("gpt-4o-mini", AiProvider.CUSTOM)
+
+        assertEquals("gpt-4o-mini", store.model(AiProvider.CUSTOM))
+        assertEquals("gpt-4o-mini", store.model())
+
+        store.setModel("   ", AiProvider.CUSTOM)
+        assertEquals("gpt-4o-mini", store.model(AiProvider.CUSTOM))
+    }
+
+    @Test
+    fun customBaseUrlNormalizesAndClears() {
+        assertEquals("", store.customBaseUrl())
+
+        store.setCustomBaseUrl("  https://example.com/v1/  ")
+        assertEquals("https://example.com/v1", store.customBaseUrl())
+
+        store.setCustomBaseUrl("   ")
+        assertEquals("", store.customBaseUrl())
     }
 }

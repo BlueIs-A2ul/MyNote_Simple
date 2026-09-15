@@ -15,10 +15,21 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class DeepSeekApiClientTest {
+class AiApiClientTest {
+
+    private val deepSeek = AiProvider.DEEPSEEK.endpoint()
+    private val siliconFlow = AiProvider.SILICON_FLOW.endpoint()
+    private val custom = AiProvider.CUSTOM.endpoint("https://example.com/v1/")
+
+    private fun client(
+        transport: HttpStreamTransport,
+        endpoint: AiEndpoint = deepSeek,
+        retryDelayMs: Long = 1_000
+    ) = AiApiClient(endpoint, transport, retryDelayMs)
 
     private val messages = listOf(
         AiChatMessage(AiChatMessage.ROLE_USER, "你好"),
@@ -40,7 +51,7 @@ class DeepSeekApiClientTest {
             )
         )
 
-        val events = DeepSeekApiClient(transport).stream("key", "deepseek-flash", false, messages).toList()
+        val events = client(transport).stream("key", "deepseek-flash", false, messages).toList()
 
         assertEquals(
             listOf(
@@ -61,7 +72,7 @@ class DeepSeekApiClientTest {
     fun requestBodyCarriesModelMessagesAndThinkingFlag() = runTest {
         val transport = FakeTransport(FakeConnection(body = sse("data: [DONE]")))
 
-        DeepSeekApiClient(transport).stream("key", "deepseek-v4-pro", true, messages).toList()
+        client(transport).stream("key", "deepseek-v4-pro", true, messages).toList()
 
         assertTrue("正常请求体应包含 thinking 键", transport.body!!.contains("\"thinking\""))
         val root = Json.parseToJsonElement(transport.body!!).jsonObject
@@ -77,10 +88,43 @@ class DeepSeekApiClientTest {
     fun thinkingDisabledByDefault() = runTest {
         val transport = FakeTransport(FakeConnection(body = sse("data: [DONE]")))
 
-        DeepSeekApiClient(transport).stream("key", "deepseek-flash", false, messages).toList()
+        client(transport).stream("key", "deepseek-flash", false, messages).toList()
 
         val root = Json.parseToJsonElement(transport.body!!).jsonObject
         assertEquals("disabled", root["thinking"]!!.jsonObject["type"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun siliconFlowUsesEnableThinkingField() = runTest {
+        val transport = FakeTransport(FakeConnection(body = sse("data: [DONE]")))
+
+        client(transport, endpoint = siliconFlow).stream("key", "deepseek-ai/DeepSeek-V4-Flash", true, messages).toList()
+
+        assertEquals("https://api.siliconflow.cn/v1/chat/completions", transport.url)
+        val body = transport.body!!
+        assertTrue("硅基流动应发送 enable_thinking", body.contains("\"enable_thinking\":true"))
+        assertFalse("硅基流动不应发送 thinking 对象", body.contains("\"thinking\""))
+    }
+
+    @Test
+    fun siliconFlowDisablesThinkingExplicitly() = runTest {
+        val transport = FakeTransport(FakeConnection(body = sse("data: [DONE]")))
+
+        client(transport, endpoint = siliconFlow).stream("key", "m", false, messages).toList()
+
+        assertTrue(transport.body!!.contains("\"enable_thinking\":false"))
+    }
+
+    @Test
+    fun customEndpointOmitsThinkingAndNormalizesBaseUrl() = runTest {
+        val transport = FakeTransport(FakeConnection(body = sse("data: [DONE]")))
+
+        client(transport, endpoint = custom).stream("key", "my-model", true, messages).toList()
+
+        assertEquals("https://example.com/v1/chat/completions", transport.url)
+        val body = transport.body!!
+        assertFalse(body.contains("\"thinking\""))
+        assertFalse(body.contains("enable_thinking"))
     }
 
     @Test
@@ -89,7 +133,7 @@ class DeepSeekApiClientTest {
             FakeConnection(statusCode = 401, errorBody = """{"error":{"message":"Authentication Fails"}}""")
         )
 
-        val events = DeepSeekApiClient(transport).stream("bad", "deepseek-flash", false, messages).toList()
+        val events = client(transport).stream("bad", "deepseek-flash", false, messages).toList()
 
         val error = events.single() as ApiStreamEvent.Error
         assertEquals("API Key 无效，请到设置中检查", error.message)
@@ -99,13 +143,14 @@ class DeepSeekApiClientTest {
     @Test
     fun httpErrorsMapToChineseMessages() = runTest {
         val cases = mapOf(
-            402 to "账户余额不足，请前往 DeepSeek 平台充值",
+            402 to "账户余额不足或无访问权限，请检查服务商账户",
+            403 to "账户余额不足或无访问权限，请检查服务商账户",
             429 to "请求过于频繁，请稍后重试",
-            500 to "DeepSeek 服务器繁忙，请稍后重试",
-            503 to "DeepSeek 服务器繁忙，请稍后重试"
+            500 to "服务商服务器繁忙，请稍后重试",
+            503 to "服务商服务器繁忙，请稍后重试"
         )
         for ((status, expected) in cases) {
-            val events = DeepSeekApiClient(FakeTransport(FakeConnection(statusCode = status)), retryDelayMs = 0)
+            val events = client(FakeTransport(FakeConnection(statusCode = status)), retryDelayMs = 0)
                 .stream("key", "deepseek-flash", false, messages).toList()
             assertEquals("HTTP $status", expected, (events.single() as ApiStreamEvent.Error).message)
         }
@@ -117,9 +162,34 @@ class DeepSeekApiClientTest {
             FakeConnection(statusCode = 422, errorBody = """{"error":{"message":"invalid model"}}""")
         )
 
-        val events = DeepSeekApiClient(transport).stream("key", "nope", false, messages).toList()
+        val events = client(transport).stream("key", "nope", false, messages).toList()
 
         assertEquals("请求被拒绝（参数错误）：invalid model", (events.single() as ApiStreamEvent.Error).message)
+    }
+
+    @Test
+    fun http400DetailFallsBackToTopLevelMessage() = runTest {
+        val transport = FakeTransport(
+            FakeConnection(
+                statusCode = 400,
+                errorBody = """{"code":20012,"message":"invalid param","data":"x"}"""
+            )
+        )
+
+        val events = client(transport, endpoint = siliconFlow).stream("key", "m", false, messages).toList()
+
+        assertEquals("请求被拒绝（参数错误）：invalid param", (events.single() as ApiStreamEvent.Error).message)
+    }
+
+    @Test
+    fun http400DetailFallsBackToPlainStringBody() = runTest {
+        val transport = FakeTransport(
+            FakeConnection(statusCode = 400, errorBody = "\"Bad Request\"")
+        )
+
+        val events = client(transport).stream("key", "m", false, messages).toList()
+
+        assertEquals("请求被拒绝（参数错误）：Bad Request", (events.single() as ApiStreamEvent.Error).message)
     }
 
     @Test
@@ -133,7 +203,7 @@ class DeepSeekApiClientTest {
             )
         )
 
-        val events = DeepSeekApiClient(transport).stream("key", "deepseek-flash", false, messages).toList()
+        val events = client(transport).stream("key", "deepseek-flash", false, messages).toList()
 
         assertEquals(ApiStreamEvent.Chunk("半截"), events[0])
         assertEquals("quota exceeded", (events[1] as ApiStreamEvent.Error).message)
@@ -150,7 +220,7 @@ class DeepSeekApiClientTest {
             )
         )
 
-        val events = DeepSeekApiClient(transport).stream("key", "deepseek-flash", false, messages).toList()
+        val events = client(transport).stream("key", "deepseek-flash", false, messages).toList()
 
         assertEquals(ApiStreamEvent.Finished("很长", "length", null), events.last())
     }
@@ -170,7 +240,7 @@ class DeepSeekApiClientTest {
             )
         )
 
-        val events = DeepSeekApiClient(transport).stream("key", "deepseek-v4-pro", true, messages).toList()
+        val events = client(transport).stream("key", "deepseek-v4-pro", true, messages).toList()
 
         assertEquals(
             listOf(
@@ -195,7 +265,7 @@ class DeepSeekApiClientTest {
             )
         )
 
-        val events = DeepSeekApiClient(transport).stream("key", "deepseek-flash", false, messages).toList()
+        val events = client(transport).stream("key", "deepseek-flash", false, messages).toList()
 
         assertEquals(ApiStreamEvent.Finished("a", null, AiUsage(9, 3, 12)), events.last())
     }
@@ -208,7 +278,7 @@ class DeepSeekApiClientTest {
             throw IOException("boom")
         }
 
-        val events = DeepSeekApiClient(transport, retryDelayMs = 0)
+        val events = client(transport, retryDelayMs = 0)
             .stream("key", "deepseek-flash", false, messages).toList()
 
         assertEquals("网络错误，请检查网络后重试", (events.single() as ApiStreamEvent.Error).message)
@@ -220,7 +290,7 @@ class DeepSeekApiClientTest {
         var closed = false
         val transport = FakeTransport(FakeConnection(body = sse("data: [DONE]")) { closed = true })
 
-        DeepSeekApiClient(transport).stream("key", "deepseek-flash", false, messages).toList()
+        client(transport).stream("key", "deepseek-flash", false, messages).toList()
 
         assertTrue(closed)
     }
@@ -239,7 +309,7 @@ class DeepSeekApiClientTest {
                 runCatching { blocking.close() }
             }
         }
-        val client = DeepSeekApiClient(
+        val client = client(
             HttpStreamTransport { _, _, _, _ ->
                 opened.countDown()
                 connection
@@ -276,7 +346,7 @@ class DeepSeekApiClientTest {
             )
             val transport = FakeTransport(first, second)
 
-            val events = DeepSeekApiClient(transport, retryDelayMs = 0)
+            val events = client(transport, retryDelayMs = 0)
                 .stream("key", "deepseek-flash", false, messages).toList()
 
             assertEquals("HTTP $status 应重试一次", 2, transport.calls)
@@ -298,7 +368,7 @@ class DeepSeekApiClientTest {
             FakeConnection(statusCode = 429)
         )
 
-        val events = DeepSeekApiClient(transport, retryDelayMs = 0)
+        val events = client(transport, retryDelayMs = 0)
             .stream("key", "deepseek-flash", false, messages).toList()
 
         assertEquals(2, transport.calls)
@@ -320,7 +390,7 @@ class DeepSeekApiClientTest {
             )
         )
 
-        val events = DeepSeekApiClient(transport, retryDelayMs = 0)
+        val events = client(transport, retryDelayMs = 0)
             .stream("key", "deepseek-flash", true, messages).toList()
 
         assertEquals("422 应去掉 thinking 重试一次", 2, transport.calls)
@@ -336,18 +406,47 @@ class DeepSeekApiClientTest {
     }
 
     @Test
+    fun retryOn422DropsEnableThinkingForSiliconFlow() = runTest {
+        val transport = FakeTransport(
+            FakeConnection(statusCode = 422, errorBody = """{"message":"enable_thinking is not supported"}"""),
+            FakeConnection(body = sse("data: [DONE]"))
+        )
+
+        client(transport, endpoint = siliconFlow, retryDelayMs = 0)
+            .stream("key", "m", true, messages).toList()
+
+        assertEquals(2, transport.calls)
+        assertTrue(transport.bodies[0].contains("enable_thinking"))
+        assertFalse(transport.bodies[1].contains("enable_thinking"))
+    }
+
+    @Test
     fun `422RetriedOnlyOnceThenMapsError`() = runTest {
         val transport = FakeTransport(
             FakeConnection(statusCode = 422, errorBody = """{"error":{"message":"thinking is not supported"}}"""),
             FakeConnection(statusCode = 422, errorBody = """{"error":{"message":"invalid model"}}""")
         )
 
-        val events = DeepSeekApiClient(transport, retryDelayMs = 0)
+        val events = client(transport, retryDelayMs = 0)
             .stream("key", "nope", false, messages).toList()
 
         assertEquals("422 只应重试一次", 2, transport.calls)
         assertTrue("重试请求体不应携带 thinking", !transport.bodies[1].contains("\"thinking\""))
         assertEquals("请求被拒绝（参数错误）：invalid model", (events.single() as ApiStreamEvent.Error).message)
+    }
+
+    @Test
+    fun customEndpoint422DoesNotRetryWithoutThinking() = runTest {
+        val transport = FakeTransport(
+            FakeConnection(statusCode = 422, errorBody = """{"message":"bad param"}"""),
+            FakeConnection(body = sse("data: [DONE]"))
+        )
+
+        val events = client(transport, endpoint = custom, retryDelayMs = 0)
+            .stream("key", "m", true, messages).toList()
+
+        assertEquals("无思考字段的端点 422 不应重试", 1, transport.calls)
+        assertEquals("请求被拒绝（参数错误）：bad param", (events.single() as ApiStreamEvent.Error).message)
     }
 
     @Test
@@ -358,7 +457,7 @@ class DeepSeekApiClientTest {
             )
         )
 
-        val result = DeepSeekApiClient(transport).probe("key")
+        val result = client(transport).probe("key")
 
         assertEquals(ProbeResult.Ok(listOf(DeepSeekModels.FLASH, DeepSeekModels.V4_PRO)), result)
         assertEquals("GET", transport.method)
@@ -367,10 +466,20 @@ class DeepSeekApiClientTest {
     }
 
     @Test
+    fun probeAppendsModelsQueryForSiliconFlow() = runTest {
+        val transport = FakeTransport(FakeConnection(body = """{"data":[{"id":"a/b"}]}"""))
+
+        val result = client(transport, endpoint = siliconFlow).probe("key")
+
+        assertEquals("https://api.siliconflow.cn/v1/models?sub_type=chat", transport.url)
+        assertEquals(ProbeResult.Ok(listOf("a/b")), result)
+    }
+
+    @Test
     fun probeReportsAuthFailure() = runTest {
         val transport = FakeTransport(FakeConnection(statusCode = 401))
 
-        val result = DeepSeekApiClient(transport).probe("bad")
+        val result = client(transport).probe("bad")
 
         assertEquals(ProbeResult.Failed("API Key 无效，请到设置中检查"), result)
     }
@@ -379,7 +488,7 @@ class DeepSeekApiClientTest {
     fun probeRejectsMalformedBody() = runTest {
         val transport = FakeTransport(FakeConnection(body = "not-json"))
 
-        val result = DeepSeekApiClient(transport).probe("key")
+        val result = client(transport).probe("key")
 
         assertEquals(ProbeResult.Failed("返回数据无法解析"), result)
     }
@@ -388,20 +497,20 @@ class DeepSeekApiClientTest {
     fun probeNetworkFailureBecomesMessage() = runTest {
         val transport = HttpStreamTransport { _, _, _, _ -> throw IOException("boom") }
 
-        val result = DeepSeekApiClient(transport).probe("key")
+        val result = client(transport).probe("key")
 
         assertEquals(ProbeResult.Failed("网络错误，请检查网络后重试"), result)
     }
 
     @Test
-    fun fetchBalanceParsesLines() = runTest {
+    fun fetchBalanceParsesDeepSeekLines() = runTest {
         val transport = FakeTransport(
             FakeConnection(
                 body = """{"is_available":true,"balance_infos":[{"currency":"CNY","total_balance":"110.00","granted_balance":"10.00","topped_up_balance":"100.00"}]}"""
             )
         )
 
-        val result = DeepSeekApiClient(transport).fetchBalance("key")
+        val result = client(transport).fetchBalance("key")
 
         assertEquals(
             BalanceState.Ok(true, listOf(BalanceLine("CNY", "110.00", "10.00", "100.00"))),
@@ -413,36 +522,87 @@ class DeepSeekApiClientTest {
 
     @Test
     fun fetchBalanceToleratesMissingFields() = runTest {
-        val unavailable = DeepSeekApiClient(
+        val unavailable = client(
             FakeTransport(FakeConnection(body = """{"is_available":false}"""))
         ).fetchBalance("key")
         assertEquals(BalanceState.Ok(false, emptyList()), unavailable)
 
-        val partialLine = DeepSeekApiClient(
+        val partialLine = client(
             FakeTransport(FakeConnection(body = """{"is_available":true,"balance_infos":[{"currency":"USD"}]}"""))
         ).fetchBalance("key")
         assertEquals(BalanceState.Ok(true, listOf(BalanceLine("USD", "", "", ""))), partialLine)
 
-        val noCurrency = DeepSeekApiClient(
+        val noCurrency = client(
             FakeTransport(FakeConnection(body = """{"is_available":true,"balance_infos":[{"total_balance":"1.00"}]}"""))
         ).fetchBalance("key")
         assertEquals(BalanceState.Ok(true, emptyList()), noCurrency)
     }
 
     @Test
+    fun fetchBalanceParsesSiliconFlowWrappedData() = runTest {
+        val transport = FakeTransport(
+            FakeConnection(
+                body = """{"code":20000,"message":"OK","status":true,"data":{"balance":"7.40","chargeBalance":"15.25","totalBalance":"22.65"}}"""
+            )
+        )
+
+        val result = client(transport, endpoint = siliconFlow).fetchBalance("key")
+
+        assertEquals("https://api.siliconflow.cn/v1/user/info", transport.url)
+        assertEquals(
+            BalanceState.Ok(
+                true,
+                listOf(BalanceLine("CNY", "22.65", "7.40", "15.25", grantedLabel = "可用"))
+            ),
+            result
+        )
+    }
+
+    @Test
+    fun fetchBalanceParsesSiliconFlowTopLevelFields() = runTest {
+        val transport = FakeTransport(
+            FakeConnection(body = """{"balance":"0.00","chargeBalance":"1.00","totalBalance":"1.00"}""")
+        )
+
+        val result = client(transport, endpoint = siliconFlow).fetchBalance("key")
+
+        assertEquals(
+            BalanceState.Ok(
+                false,
+                listOf(BalanceLine("CNY", "1.00", "0.00", "1.00", grantedLabel = "可用"))
+            ),
+            result
+        )
+    }
+
+    @Test
+    fun fetchBalanceUnsupportedForCustomEndpoint() = runTest {
+        var calls = 0
+        val transport = HttpStreamTransport { _, _, _, _ ->
+            calls++
+            FakeConnection(body = "{}")
+        }
+
+        val result = client(transport, endpoint = custom).fetchBalance("key")
+
+        assertEquals(BalanceState.Failed("当前服务商不支持余额查询"), result)
+        assertEquals("不支持时不应发起请求", 0, calls)
+    }
+
+    @Test
     fun fetchBalanceReportsHttpFailure() = runTest {
         val transport = FakeTransport(FakeConnection(statusCode = 402))
 
-        val result = DeepSeekApiClient(transport).fetchBalance("key")
+        val result = client(transport).fetchBalance("key")
 
-        assertEquals(BalanceState.Failed("账户余额不足，请前往 DeepSeek 平台充值"), result)
+        assertEquals(BalanceState.Failed("账户余额不足或无访问权限，请检查服务商账户"), result)
     }
 
     @Test
     fun fetchBalanceNetworkFailureBecomesMessage() = runTest {
         val transport = HttpStreamTransport { _, _, _, _ -> throw IOException("boom") }
 
-        val result = DeepSeekApiClient(transport).fetchBalance("key")
+        val result = client(transport).fetchBalance("key")
 
         assertEquals(BalanceState.Failed("网络错误，请检查网络后重试"), result)
     }

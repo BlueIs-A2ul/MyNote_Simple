@@ -34,6 +34,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,8 +54,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mynote.app.BuildConfig
-import com.mynote.app.data.ai.DeepSeekApiClient
-import com.mynote.app.data.ai.DeepSeekModels
+import com.mynote.app.data.ai.AiApiClient
+import com.mynote.app.data.ai.AiEndpoint
+import com.mynote.app.data.ai.AiProbe
+import com.mynote.app.data.ai.AiProvider
 import com.mynote.app.data.db.NoteSortMode
 import com.mynote.app.data.settings.AiSettingsStore
 import com.mynote.app.data.settings.DarkMode
@@ -74,23 +77,40 @@ fun SettingsScreen(
     sortStore: NoteSortStore,
     trashStore: TrashRetentionStore,
     aiSettingsStore: AiSettingsStore,
-    apiClient: DeepSeekApiClient,
+    clientFactory: (AiEndpoint) -> AiProbe = { AiApiClient(it) },
     onBack: () -> Unit
 ) {
     val vm: SettingsViewModel = viewModel(
-        factory = SettingsViewModel.factory(themeStore, sortStore, trashStore, aiSettingsStore, apiClient)
+        factory = SettingsViewModel.factory(themeStore, sortStore, trashStore, aiSettingsStore, clientFactory)
     )
     val settings by vm.settings.collectAsState()
     val defaultSort by vm.defaultSort.collectAsState()
     val retentionDays by vm.retentionDays.collectAsState()
+    val aiProvider by vm.aiProvider.collectAsState()
+    val customBaseUrl by vm.customBaseUrl.collectAsState()
     val aiModel by vm.aiModel.collectAsState()
     val availableModels by vm.availableModels.collectAsState()
     val deepThinking by vm.deepThinking.collectAsState()
     val apiKeyConfigured by vm.apiKeyConfigured.collectAsState()
     var apiKeyInput by rememberSaveable { mutableStateOf("") }
     var keyVisible by rememberSaveable { mutableStateOf(false) }
+    var baseUrlInput by rememberSaveable { mutableStateOf(customBaseUrl) }
+    var customModelInput by rememberSaveable { mutableStateOf(aiModel) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // 切换服务商时把自定义地址/模型输入框同步为该服务商的持久化值
+    LaunchedEffect(aiProvider) {
+        baseUrlInput = vm.customBaseUrl.value
+        customModelInput = vm.aiModel.value
+    }
+
+    /** 测试连接/查询余额前的输入校验；返回非空表示缺少哪一项。 */
+    fun missingInputHint(): String? = when {
+        aiProvider == AiProvider.CUSTOM && customBaseUrl.isBlank() -> "请先填写接口地址"
+        resolveApiKey(apiKeyInput) { vm.savedApiKey() }.isEmpty() -> "请先填写或保存 API Key"
+        else -> null
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -255,48 +275,105 @@ fun SettingsScreen(
                 modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
             )
             Text(
-                "模型",
+                "服务商",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onBackground
             )
             Spacer(Modifier.height(6.dp))
             TextTabRow(
-                tabs = availableModels,
-                selected = aiModel,
-                onSelect = { vm.setAiModel(it) },
-                label = { DeepSeekModels.label(it) }
+                tabs = AiProvider.entries.toList(),
+                selected = aiProvider,
+                onSelect = { vm.setProvider(it) },
+                label = { it.displayName }
             )
+            if (aiProvider == AiProvider.CUSTOM) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "接口地址",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Spacer(Modifier.height(6.dp))
+                val baseUrlInvalid = !isBaseUrlInputValid(baseUrlInput)
+                OutlinedTextField(
+                    value = baseUrlInput,
+                    onValueChange = {
+                        baseUrlInput = it
+                        if (isBaseUrlInputValid(it)) vm.setCustomBaseUrl(it)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    isError = baseUrlInvalid,
+                    placeholder = { Text("https://example.com/v1") }
+                )
+                Text(
+                    if (baseUrlInvalid) "地址需以 http:// 或 https:// 开头"
+                    else "需包含版本路径（如 /v1），请求将直连该地址",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (baseUrlInvalid) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+            }
+            Spacer(Modifier.height(12.dp))
             Text(
-                "deepseek-flash 更快更省；deepseek-v4-pro 更强。测试连接成功后会更新为官方最新模型列表。",
+                "模型",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Spacer(Modifier.height(6.dp))
+            if (aiProvider.freeModelInput) {
+                OutlinedTextField(
+                    value = customModelInput,
+                    onValueChange = {
+                        customModelInput = it
+                        vm.setAiModel(it)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    placeholder = { Text("例如 gpt-4o-mini") }
+                )
+            } else {
+                TextTabRow(
+                    tabs = availableModels,
+                    selected = aiModel,
+                    onSelect = { vm.setAiModel(it) },
+                    label = { it }
+                )
+            }
+            Text(
+                aiProvider.modelHint,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 6.dp)
             )
-            Spacer(Modifier.height(12.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .toggleable(
-                        value = deepThinking,
-                        onValueChange = { vm.setDeepThinking(it) },
-                        role = Role.Switch
-                    )
-                    .padding(vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "深度思考",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    Text(
-                        "回答更严谨但更慢，思维链按输出计费",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            if (aiProvider.supportsThinking) {
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .toggleable(
+                            value = deepThinking,
+                            onValueChange = { vm.setDeepThinking(it) },
+                            role = Role.Switch
+                        )
+                        .padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "深度思考",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        Text(
+                            "回答更严谨但更慢，思维链按输出计费",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(checked = deepThinking, onCheckedChange = null)
                 }
-                Switch(checked = deepThinking, onCheckedChange = null)
             }
             Text(
                 "API Key",
@@ -310,7 +387,7 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 placeholder = {
-                    Text(if (apiKeyConfigured) "已保存（输入新 Key 可替换）" else "sk-…")
+                    Text(if (apiKeyConfigured) "已保存（输入新 Key 可替换）" else aiProvider.apiKeyPlaceholder)
                 },
                 visualTransformation = if (keyVisible) VisualTransformation.None
                 else PasswordVisualTransformation(),
@@ -324,7 +401,7 @@ fun SettingsScreen(
                 }
             )
             Text(
-                "Key 仅保存在本机（Keystore 加密），不会上传；在 DeepSeek 开放平台创建。",
+                "Key 仅保存在本机（Keystore 加密），不会上传；" + aiProvider.keyHint,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 6.dp)
@@ -350,24 +427,28 @@ fun SettingsScreen(
                 }
                 TextButton(onClick = {
                     scope.launch {
-                        val key = resolveApiKey(apiKeyInput) { vm.savedApiKey() }
-                        if (key.isEmpty()) {
-                            snackbarHostState.showSnackbar("请先填写或保存 API Key")
+                        val hint = missingInputHint()
+                        if (hint != null) {
+                            snackbarHostState.showSnackbar(hint)
                         } else {
+                            val key = resolveApiKey(apiKeyInput) { vm.savedApiKey() }
                             snackbarHostState.showSnackbar(vm.testConnection(key))
                         }
                     }
                 }) { Text("测试连接") }
-                TextButton(onClick = {
-                    scope.launch {
-                        val key = resolveApiKey(apiKeyInput) { vm.savedApiKey() }
-                        if (key.isEmpty()) {
-                            snackbarHostState.showSnackbar("请先填写或保存 API Key")
-                        } else {
-                            snackbarHostState.showSnackbar(vm.queryBalance(key))
+                if (aiProvider.supportsBalance) {
+                    TextButton(onClick = {
+                        scope.launch {
+                            val hint = missingInputHint()
+                            if (hint != null) {
+                                snackbarHostState.showSnackbar(hint)
+                            } else {
+                                val key = resolveApiKey(apiKeyInput) { vm.savedApiKey() }
+                                snackbarHostState.showSnackbar(vm.queryBalance(key))
+                            }
                         }
-                    }
-                }) { Text("查询余额") }
+                    }) { Text("查询余额") }
+                }
             }
             Spacer(Modifier.height(24.dp))
             HairlineDivider()
@@ -398,3 +479,9 @@ private fun sortModeLabel(mode: NoteSortMode): String = when (mode) {
 /** 取待用 API Key：优先输入框内容，为空回退已保存的 Key。 */
 private fun resolveApiKey(input: String, saved: () -> String?): String =
     input.trim().ifEmpty { saved().orEmpty() }
+
+/** 自定义接口地址输入是否可接受：未填写（等价清除）或 http(s) 开头。 */
+private fun isBaseUrlInputValid(url: String): Boolean {
+    val trimmed = url.trim()
+    return trimmed.isEmpty() || trimmed.startsWith("http://") || trimmed.startsWith("https://")
+}

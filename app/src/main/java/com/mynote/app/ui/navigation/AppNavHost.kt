@@ -178,7 +178,7 @@ fun AppNavHost(container: AppContainer) {
                 sortStore = container.noteSortStore,
                 trashStore = container.trashRetentionStore,
                 aiSettingsStore = container.aiSettingsStore,
-                apiClient = container.deepSeekApiClient,
+                clientFactory = container.aiApiClientFactory,
                 onBack = { navController.popBackStack() }
             )
         }

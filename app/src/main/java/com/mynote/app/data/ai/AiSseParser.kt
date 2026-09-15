@@ -10,10 +10,10 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * 解析单行 SSE（DeepSeek Chat Completions 流式响应）。
+ * 解析单行 SSE（OpenAI 兼容 Chat Completions 流式响应，DeepSeek / 硅基流动等适用）。
  * 返回 null 表示忽略该行（空行 / 注释 / 未知字段 / 坏 JSON / 既无正文思考也无 usage）。
  */
-object DeepSeekSseParser {
+object AiSseParser {
 
     data class Frame(
         val text: String? = null,

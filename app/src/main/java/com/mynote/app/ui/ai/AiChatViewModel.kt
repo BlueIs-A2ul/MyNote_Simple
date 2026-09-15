@@ -51,7 +51,9 @@ class AiChatViewModel(
         val apiKeyMissing: Boolean = false,
         val snackbar: String? = null,
         val lastUsage: AiUsage? = null,
-        val draft: String = ""
+        val draft: String = "",
+        /** 当前服务商展示名（隐私弹窗/文案用），来自会话身份。 */
+        val providerName: String = ""
     )
 
     private val _state = MutableStateFlow(
@@ -59,7 +61,8 @@ class AiChatViewModel(
             privacyAccepted = settingsStore.isPrivacyAccepted(session.serviceId),
             apiKeyMissing = !settingsStore.hasApiKey(),
             banner = if (settingsStore.hasApiKey()) null else AiSession.KEY_MISSING_REASON,
-            draft = draftStore.get(aiDraftKey(noteId, null))
+            draft = draftStore.get(aiDraftKey(noteId, null)),
+            providerName = session.displayName
         )
     )
     val state: StateFlow<UiState> = _state
