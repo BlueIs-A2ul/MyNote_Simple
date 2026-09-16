@@ -252,7 +252,6 @@ class NoteEditViewModel(
 internal fun hasUnsavedChanges(
     isNew: Boolean,
     saved: NoteEntity?,
-    initialCategoryId: Long?,
     title: String,
     content: String,
     categoryId: Long?,
@@ -401,7 +400,7 @@ fun NoteEditScreen(
     val context = LocalContext.current
 
     val isNewNote = (noteId == null || noteId == 0L) && draftId == null
-    val dirty = hasUnsavedChanges(isNewNote, note, initialCategoryId, title, content.text, selectedCategoryId, pinned, noteDate)
+    val dirty = hasUnsavedChanges(isNewNote, note, title, content.text, selectedCategoryId, pinned, noteDate)
     val canSave = !(isNewNote && title.isBlank() && content.text.isBlank())
 
     // 退后台静默保存草稿：标题/正文非空的新笔记会入库，空白新笔记不落库

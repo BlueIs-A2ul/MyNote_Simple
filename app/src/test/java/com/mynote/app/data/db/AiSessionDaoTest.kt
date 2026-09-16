@@ -3,6 +3,7 @@ package com.mynote.app.data.db
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.mynote.app.data.ai.AiProvider
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -33,7 +34,7 @@ class AiSessionDaoTest {
 
     private fun session(noteId: Long, title: String = "会话", updatedAt: Long = 1) =
         AiSessionEntity(
-            noteId = noteId, serviceId = "deepseek", title = title,
+            noteId = noteId, serviceId = AiProvider.DEEPSEEK.serviceId, title = title,
             remoteChatId = null, createdAt = 1, updatedAt = updatedAt
         )
 
@@ -60,7 +61,7 @@ class AiSessionDaoTest {
         val noteId = db.noteDao().insert(NoteEntity(0, "t", "c", 1, 1, null, false, null))
         val id = db.aiSessionDao().insert(session(noteId))
         db.aiSessionDao().touch(id, 999)
-        assertEquals(999, db.aiSessionDao().getById(id)!!.updatedAt)
+        assertEquals(999, db.aiSessionDao().observeByNote(noteId).first().single().updatedAt)
     }
 
     @Test

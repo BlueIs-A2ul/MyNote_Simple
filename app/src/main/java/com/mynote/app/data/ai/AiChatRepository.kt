@@ -15,8 +15,6 @@ class AiChatRepository(
 
     fun observeMessages(sessionId: Long): Flow<List<AiMessageEntity>> = messageDao.observeBySession(sessionId)
 
-    suspend fun getSession(id: Long): AiSessionEntity? = sessionDao.getById(id)
-
     suspend fun createSession(noteId: Long, serviceId: String, title: String, now: Long): Long =
         sessionDao.insert(AiSessionEntity(0, noteId, serviceId, title, null, now, now))
 

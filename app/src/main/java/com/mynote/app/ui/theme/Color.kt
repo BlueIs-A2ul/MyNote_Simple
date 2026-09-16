@@ -43,7 +43,7 @@ val PaperCategoryColors = listOf(
     Color(0xFF7FA8A5)
 )
 
-/** 兼容旧调用点：新建分类的随机取色改用纸感色板。 */
+/** 分类色板的常用别名（与 [PaperCategoryColors] 同一列表；历史命名保留，供分类 UI 与编辑页引用）。 */
 val NoteColors = PaperCategoryColors
 
 /** 把库里已存的高饱和分类色按色相最近邻映射到纸感色板（不改数据库）。 */

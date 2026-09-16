@@ -16,7 +16,4 @@ interface AiMessageDao {
 
     @Insert
     suspend fun insert(message: AiMessageEntity): Long
-
-    @Query("UPDATE ai_messages SET content = :content, status = :status WHERE id = :id")
-    suspend fun updateContentAndStatus(id: Long, content: String, status: String)
 }

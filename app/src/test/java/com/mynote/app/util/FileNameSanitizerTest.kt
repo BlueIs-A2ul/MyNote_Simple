@@ -56,4 +56,15 @@ class FileNameSanitizerTest {
         // 81 个字符：截断到 80 后结尾是 "."，应被去除，最终 79 个字符。
         assertEquals("a".repeat(79), FileNameSanitizer.sanitize("a".repeat(79) + ".."))
     }
+
+    @Test
+    fun customMaxLengthIsHonored() {
+        assertEquals("a".repeat(40), FileNameSanitizer.sanitize("a".repeat(120), maxLength = 40))
+    }
+
+    @Test
+    fun truncationDoesNotLeaveTrailingWhitespace() {
+        // 截断点落在空白处时不得留下尾随空格（图片导出侧的原有语义，合并后两侧共享）。
+        assertEquals("a", FileNameSanitizer.sanitize("a" + " ".repeat(100) + "b", maxLength = 40))
+    }
 }

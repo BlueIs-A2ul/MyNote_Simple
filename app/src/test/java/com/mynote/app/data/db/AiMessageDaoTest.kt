@@ -3,6 +3,7 @@ package com.mynote.app.data.db
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.mynote.app.data.ai.AiProvider
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -35,7 +36,7 @@ class AiMessageDaoTest {
         val noteId = db.noteDao().insert(NoteEntity(0, "t", "c", 1, 1, null, false, null))
         return db.aiSessionDao().insert(
             AiSessionEntity(
-                noteId = noteId, serviceId = "deepseek", title = "会话",
+                noteId = noteId, serviceId = AiProvider.DEEPSEEK.serviceId, title = "会话",
                 remoteChatId = null, createdAt = 1, updatedAt = 1
             )
         )
@@ -51,18 +52,6 @@ class AiMessageDaoTest {
         db.aiMessageDao().insert(message(sessionId, AiMessageEntity.ROLE_ASSISTANT, "a1", 200))
         val list = db.aiMessageDao().observeBySession(sessionId).first()
         assertEquals(listOf("q1", "a1"), list.map { it.content })
-    }
-
-    @Test
-    fun updateContentAndStatusForInterrupted() = runTest {
-        val sessionId = newSession()
-        val id = db.aiMessageDao().insert(
-            message(sessionId, AiMessageEntity.ROLE_ASSISTANT, "半截", 100, AiMessageEntity.STATUS_FAILED)
-        )
-        db.aiMessageDao().updateContentAndStatus(id, "半截完整一点", AiMessageEntity.STATUS_INTERRUPTED)
-        val row = db.aiMessageDao().getBySession(sessionId).single()
-        assertEquals("半截完整一点", row.content)
-        assertEquals(AiMessageEntity.STATUS_INTERRUPTED, row.status)
     }
 
     @Test

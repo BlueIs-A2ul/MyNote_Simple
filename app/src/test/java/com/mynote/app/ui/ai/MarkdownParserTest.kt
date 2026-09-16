@@ -79,7 +79,7 @@ class MarkdownParserTest {
         assertEquals(listOf(MdBlock.Paragraph("--")), MarkdownParser.parse("--"))
     }
 
-    // ---------- 围栏代码块（移植旧 CodeBlockParserTest） ----------
+    // ---------- 围栏代码块（v1.9.0 起由 MarkdownParser 接管，原 CodeBlockParser 已移除） ----------
 
     @Test
     fun singleCodeBlockSplitsSurroundingText() {

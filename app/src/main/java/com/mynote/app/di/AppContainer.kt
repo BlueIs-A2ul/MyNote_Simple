@@ -77,10 +77,6 @@ class AppContainer(context: Context) {
 
     val aiSettingsStore: AiSettingsStore by lazy { AiSettingsStore(context) }
 
-    /** 当前服务商端点：预设地址 + 自定义服务商的用户地址。 */
-    fun aiEndpoint(): AiEndpoint =
-        aiSettingsStore.provider().endpoint(aiSettingsStore.customBaseUrl())
-
     /** 设置页「测试连接 / 查询余额」用的客户端工厂（按当前服务商构造）。 */
     val aiApiClientFactory: (AiEndpoint) -> AiApiClient = { endpoint -> AiApiClient(endpoint) }
 

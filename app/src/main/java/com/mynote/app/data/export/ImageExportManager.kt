@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.core.content.FileProvider
+import com.mynote.app.util.FileNameSanitizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -21,15 +22,9 @@ class ImageExportManager(private val context: Context) {
     private val exportsDir: File
         get() = File(context.cacheDir, "exports")
 
-    /** 去掉文件名非法字符并截断；空标题回退「笔记」。 */
-    fun sanitizeName(title: String): String {
-        val cleaned = title
-            .replace(Regex("""[\\/:*?"<>|\u0000-\u001F]"""), "_")
-            .take(40)
-            .trim()
-            .trim('.')
-        return cleaned.ifBlank { "笔记" }
-    }
+    /** 去掉文件名非法字符并截断；空标题回退「笔记」。清洗规则与 txt 导出共用 `FileNameSanitizer`，仅上限不同。 */
+    fun sanitizeName(title: String): String =
+        FileNameSanitizer.sanitize(title, fallback = "笔记", maxLength = BASE_NAME_MAX_LENGTH)
 
     /** 文件名基名：`标题-yyyyMMdd`。 */
     fun baseName(title: String, timestamp: Long = System.currentTimeMillis()): String =
@@ -133,4 +128,9 @@ class ImageExportManager(private val context: Context) {
     /** 文件名用公历/西文数字，避免非公历 Locale 产生 2569 之类的年份。 */
     private fun dateStamp(timestamp: Long): String =
         SimpleDateFormat("yyyyMMdd", Locale.US).format(Date(timestamp))
+
+    private companion object {
+        /** 图片导出基名上限（基名后还要拼 `-yyyyMMdd` 与分页序号，故比 txt 导出的 80 短）。 */
+        const val BASE_NAME_MAX_LENGTH = 40
+    }
 }

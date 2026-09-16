@@ -9,12 +9,4 @@ object DeepSeekModels {
     const val DEFAULT = FLASH
 
     val all = listOf(FLASH, V4_PRO)
-
-    fun label(id: String): String = when (id) {
-        FLASH -> "deepseek-flash"
-        V4_PRO -> "deepseek-v4-pro"
-        else -> id
-    }
-
-    fun isValid(id: String): Boolean = id in all
 }

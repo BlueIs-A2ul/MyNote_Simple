@@ -8,11 +8,12 @@ object AiPromptBuilder {
     private const val TRUNCATED_NOTICE = "（正文过长，已截断）"
 
     /**
-     * 网页上下文未建立时（新会话 / 上下文丢失）附带笔记正文；
-     * 已有上下文时只发用户输入（设计 §7）。
+     * 组装首条用户消息：`includeNoteContext` 为 true 时（历史里还没有 user 消息）附带笔记正文，
+     * 之后各轮只回传用户输入，避免每轮重复整篇正文（接线见 `AiApiMessageBuilder`）。
      *
      * @param maxNoteChars 正文（剥离图片标记后的纯文本）字符上限，超出部分截断并追加
-     *   「（正文过长，已截断）」；标题不计入上限。默认不限，保持旧行为不变。
+     *   「（正文过长，已截断）」；标题不计入上限。生产调用方总会显式传入预算值，
+     *   默认值仅供不关心预算的调用方使用。
      */
     fun build(
         noteTitle: String,

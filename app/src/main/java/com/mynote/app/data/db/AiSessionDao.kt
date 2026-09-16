@@ -11,9 +11,6 @@ interface AiSessionDao {
     @Query("SELECT * FROM ai_sessions WHERE noteId = :noteId ORDER BY updatedAt DESC, id DESC")
     fun observeByNote(noteId: Long): Flow<List<AiSessionEntity>>
 
-    @Query("SELECT * FROM ai_sessions WHERE id = :id")
-    suspend fun getById(id: Long): AiSessionEntity?
-
     @Insert
     suspend fun insert(session: AiSessionEntity): Long
 
