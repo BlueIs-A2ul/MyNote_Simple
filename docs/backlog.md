@@ -69,6 +69,36 @@
 | 68 | 字体切换 | P2 | L | 评估后暂缓（用户拍板不实现，见条目 68） | — |
 | 69 | AI 服务商可切换（硅基流动 / 自定义兼容） | P1 | L | 已完成（2026-09-15，v1.10.0） | — |
 | 70 | AI 模型选择体验优化（连接文案 / 可搜索模型选择） | P1 | S/M | 已完成（2026-09-15，v1.10.1） | — |
+| 71 | 图片 GC 宽限期（避免删掉刚落盘的新图） | P0 | S | 已建议（2026-09-15，待实现） | 批次E |
+| 72 | 缩短回收站保留期前确认并报告影响条数 | P0 | S | 已建议（2026-09-15，待实现） | 批次E |
+| 73 | 编辑页 draftId 持久化（进程死亡不重复插入） | P0 | S/M | 已建议（2026-09-15，待实现） | 批次E |
+| 74 | 导入写图原子化（临时文件 + rename） | P0 | M | 已建议（2026-09-15，待实现） | 批次E |
+| 75 | 导入分类冲突改为复用同名分类 | P0 | S | 已建议（2026-09-15，待实现） | 批次E |
+| 76 | 批量/回收站操作异常处理 + IN 列表切块 | P0 | S/M | 已建议（2026-09-15，待实现） | 批次E |
+| 77 | API Key 输入框不进 saved instance state | P1 | S | 已建议（2026-09-15，待实现） | 批次F |
+| 78 | 导出/导入脱离 composition 作用域 | P1 | M | 已建议（2026-09-15，待实现） | 批次F |
+| 79 | 图片 GC 与备份的内存口径（投影 / 流式） | P1 | M | 已建议（2026-09-15，待实现） | 批次F |
+| 80 | 导入与 GC 边界加固合集 | P1 | S/M | 已建议（2026-09-15，待实现） | 批次F |
+| 81 | AI 服务商身份与聊天页保持一致 | P1 | M | 已建议（2026-09-15，待实现） | 批次G |
+| 82 | 看门狗超时与重发必须真正停流 | P1 | S | 已建议（2026-09-15，待实现） | 批次G |
+| 83 | 空回答按失败处理 + finish_reason + 重试入口 | P1 | S | 已建议（2026-09-15，待实现） | 批次G |
+| 84 | 历史裁剪保持 user/assistant 配对 | P1 | S | 已建议（2026-09-15，待实现） | 批次G |
+| 85 | 流式 Markdown 渲染节流（避免 O(n²)） | P1 | M | 已建议（2026-09-15，待实现） | 批次G |
+| 86 | 自定义地址明文 http 策略与错误文案 | P1 | S | 已建议（2026-09-15，待实现） | 批次G |
+| 87 | Markdown 链接 scheme 白名单 | P1 | S | 已建议（2026-09-15，待实现） | 批次G |
+| 88 | AI 体验小坑合集 | P2 | S/M | 已建议（2026-09-15，待实现） | 批次G |
+| 89 | 搜索 LIKE 转义 + 高亮词 trim + 深命中线索 | P1 | S | 已建议（2026-09-15，待实现） | 批次H |
+| 90 | 保留期文案与回收站口径统一 | P1 | S | 已建议（2026-09-15，待实现） | 批次H |
+| 91 | 多选随搜索/数据收敛（不删看不见的笔记） | P1 | S | 已建议（2026-09-15，待实现） | 批次H |
+| 92 | 首帧加载态统一 + debounce 首帧不延迟 | P2 | S | 已建议（2026-09-15，待实现） | 批次H |
+| 93 | 历史页与导航层级修正 | P2 | S/M | 已建议（2026-09-15，待实现） | 批次H |
+| 94 | 编辑页加载态与保存失败反馈 | P1 | S/M | 已建议（2026-09-15，待实现） | 批次I |
+| 95 | 「不保存」抑制标志 + 保存期间只读输入 | P1 | S | 已建议（2026-09-15，待实现） | 批次I |
+| 96 | 旋转保留对话框与待写文件状态 | P2 | M | 已建议（2026-09-15，待实现） | 批次I |
+| 97 | 图片编辑体验（标记可视化 / 删图入口 / 孤儿图） | P2 | M | 已建议（2026-09-15，待实现） | 批次I |
+| 98 | 导出缺图统计与渲染同口径 + txt 图片说明 | P1 | S/M | 已建议（2026-09-15，待实现） | 批次I |
+| 99 | 无障碍一批（输入框标签 / 日历圆点 / 多选语义 / 触点） | P2 | M | 已建议（2026-09-15，待实现） | 批次J |
+| 100 | 撤销栈封顶 + 字数统计缓存 + 平台加固合集 | P2 | S/M | 已建议（2026-09-15，待实现） | 批次J |
 
 ---
 
@@ -383,6 +413,166 @@
 
 ---
 
+## 五域审计批次（2026-09-15，条目 71–100）
+
+> 来源：五域并行只读审计（数据持久化 / 编辑页状态 / AI 助手 / 列表搜索导航 / 跨域生命周期）+ 主线逐条复核。已读码坐实、均落到 file:line；行号基于 `f616283`（v1.10.1 + 首批缺陷修复后）。
+> 同批已修复的 5 项**不在本清单内**（预览模式崩溃、AI 流式分片赋值、AI 第二轮丢正文、保存键卡死、撤销合并丢整段起点），见修订记录。
+> 优先级口径：P0 = 可能丢数据/删错文件；P1 = 用户可感知的功能或隐私问题；P2 = 体验打磨与加固。
+
+### 批次 E · 数据安全与一致性（P0）
+
+### 71. 图片 GC 宽限期（避免删掉「已落盘但引用未落库」的新图）★
+- 现状：`ImageStore.collectGarbage` 是「不在引用集即删」的无保护全扫（`ImageStore.kt:67-75`），引用集只来自**已提交的 DB 状态**（`NoteRepository.kt:241-248`）；而图片文件先于任何 DB 行落盘（插图 `NoteEditScreen.kt:141-150`、导入 `BackupManager.kt:146-151`）。GC 触发点很多：`saveNote`（`:116`）、`purgeNote/purgeNotes`（`:190/:197`）、`purgeExpiredDeletedNotes`（`:209`，`MainActivity.kt:30-36` 每次 Activity 创建都跑，`TrashViewModel.kt:35-40` 打开回收站也跑）。
+- 影响：插图后旋转/切深浅色/重建 Activity，恰逢启动清理 → 文件被删 → 随后保存写入 `![](img/x)` → **永久裂图**（历史快照里也是坏标记）。
+- 建议：`collectGarbage` 跳过 `lastModified` 在宽限期内的新文件（如 10 分钟）；导入侧更彻底的做法是先落 `notes_images_pending/`，事务提交后 `renameTo`。价值：高 × S
+
+### 72. 缩短回收站保留期前必须确认并报告影响条数 ★
+- 现状：设置页点档位即生效、无确认（`SettingsScreen.kt:262-267` → `SettingsViewModel.kt:71` → `TrashRetentionStore.kt:21-25`）；真正清理在下次冷启动（`MainActivity.kt:30-36`）或打开回收站时（`TrashViewModel.kt:35-40`）按新 TTL **物理删除**（`NoteRepository.kt:201-211`，含历史与图片 GC）。
+- 影响：30 天改 7 天后，回收站里 7 天以上的笔记被静默永久删除，无撤销入口；用户预期只是「以后删除的只留 7 天」。
+- 建议：点选时弹确认框，文案含「回收站中 N 条超期笔记会立即永久删除」（N 由 `observeDeleted()` 按新 TTL 计数）；或改为变更后立即清理并 snackbar 报告条数。价值：高 × S
+
+### 73. 编辑页 draftId 持久化（进程死亡后不再重复插入）
+- 现状：`_draftId` 只在 VM 里（`NoteEditScreen.kt:119-120`），`save()` / `saveDraft()` 靠它避免二次插入（`:173`、`:207-215`），而屏幕侧 `title/content/initialized` 都是 `rememberSaveable`，唯独目标 id 没有。
+- 影响：新建笔记退后台（ON_STOP 已静默插入）→ 进程被系统回收 → 回来 `noteId==null && draftId==null` → 点保存**再插一条**，列表出现两条近似重复笔记，旧草稿再也不会被更新。
+- 建议：把目标 id 提到 `rememberSaveable(noteId)` 或导航 entry 的 `SavedStateHandle`，显式传给 `save/saveDraft`；VM 不再自己藏目标。价值：中高 × S/M
+
+### 74. 导入写图原子化（临时文件 + rename）
+- 现状：`importZip` 边解压边 `imageStore.writeFile(name, zip)`（`BackupManager.kt:138-157`），DB 写入直到 `:171` 才开事务；`ImageStore.writeFile` 无 try/catch、无半成品清理，且 `FileOutputStream` 会先截断同名文件（`ImageStore.kt:62-64`）。
+- 影响：① 导入中旋转屏幕 → 协程被取消（`NotesScreen.kt:97,157-178` 用的是 `rememberCoroutineScope`）→ 事务回滚但**整包图片已落盘**，一条笔记都没导入且无提示；② 重导同一备份时磁盘满/包损坏 → 同名图片被截断，**本地已有笔记**开始显示坏图。
+- 建议：`writeFile` 改「写临时文件 → 成功后 `renameTo`」，失败删临时文件；导入把图片落到暂存目录、事务提交后再提升。价值：中 × M
+
+### 75. 导入分类冲突改为复用同名分类
+- 现状：`BackupManager.kt:174-191` —— `getById(cat.id) != null` 时无条件 `update`，不检查该名字是否已被**另一个 id** 的本地分类占用，而 `categories.name` 是唯一索引（`CategoryEntity.kt:7`）；只有「id 不存在」分支才走 `getByName` 复用。
+- 影响：A 机 `{1:工作, 2:生活}` 导入 B 机 `{1:生活}` 的备份 → 改名撞唯一索引 → `SQLiteConstraintException` → **整个导入事务回滚**（一条笔记都没进来），用户只看到「导入失败」；同 id 还会静默吞掉本地一个不相干分类的名字。注意：`BackupManagerTest.kt:297-317` 目前把这个冲突当成「预期整体回滚」写进了测试，修完需同步改。
+- 建议：先算 `byId`/`byName`，冲突时优先复用 `byName.id` 并只重写颜色，仅两者皆无时 insert。价值：中 × S
+
+### 76. 批量操作异常处理 + IN 列表切块
+- 现状：`NotesViewModel.kt:111-120`（`runBatch`）与 `TrashViewModel.kt:42-68` 无 try/catch，异常沿 `viewModelScope`（无 `CoroutineExceptionHandler`）抛出即崩溃；`NoteDao.kt:118-119` 的 `IN (:ids)` 由 Room 展开为 N 个绑定参数，**API ≤ 30 的 SQLite 变量上限是 999**（minSdk 24）。
+- 影响：1000+ 条笔记「全选 → 删除/移动/置顶」或 1000+ 条回收站「清空」→ `too many SQL variables` → 崩溃，且用户看不到任何反馈；另 `TrashViewModel.purgeAll` 用 `notes.value`（初值空列表）→ 极端时序下 `getByIds(emptyList())` 会生成非法的 `IN ()`（已核对 KSP 生成的 `NoteDao_Impl`）。
+- 建议：`getNotesByIds` 内 `ids.chunked(900)`；`runBatch`/回收站操作包 try/catch，失败给一句文案并保留选中态；`purgeAll` 空列表直接返回。价值：中 × S/M
+
+### 批次 F · 隐私与可靠性（P1）
+
+### 77. API Key 输入框不进 saved instance state
+- 现状：`SettingsScreen.kt:102` 用 `rememberSaveable` 保存用户刚粘贴的明文 Key，而同页文案声明「Key 仅保存在本机（Keystore 加密）」（`:434-435`）。
+- 影响：尚未点保存就旋转/进程重建 → 明文 Key 进入 Activity 的 saved instance state Bundle（系统进程持有、可被序列化落盘），与承诺不符。
+- 建议：改成 `remember`（旋转后清空输入框，已保存的 Key 不受影响）。价值：中 × S
+
+### 78. 导出/导入脱离 composition 作用域
+- 现状：`NotesScreen.kt:97`（`rememberCoroutineScope`）驱动导出 `:139-147` 与导入 `:159-177`；`NoteEditScreen.kt` 的 txt 导出同理；`exporting/importing` 是 `remember`。`runCatching` 还吞掉了 `CancellationException`。
+- 影响：导出大备份时旋转屏幕 → 协程取消 → **留下半截 zip 且没有任何提示**，用户以为备份成功；导入同样是「静默中断」（DB 有事务保护，但完成提示丢失）。
+- 建议：把这两件事放进存活期更长的作用域（VM 或 `container.applicationScope`），结果经 VM `StateFlow` 回传给 `LaunchedEffect` 弹 snackbar；失败/取消都要有提示。价值：中 × M
+
+### 79. 图片 GC 与备份的内存口径
+- 现状：`collectImageGarbage` 用 `noteDao.getAll()`（`SELECT * FROM notes`，`NoteDao.kt:124-125`）把所有笔记完整正文读进内存再正则扫描（`NoteRepository.kt:242-243`）；而 revision 侧早已用 SQL `LIKE` 预筛并注释「避免全量载入内存」（`NoteRevisionDao.kt:37-39`）。备份侧 `BackupManager.kt:102,105-112,145` 把全库拼成一个 JSON 字符串再做第二份 `ByteArray`，导入又 `zip.readBytes()` 整包载入，且无条目大小上限。
+- 影响：与「内存占用小」硬约束冲突；大库低端机在启动清理/清空回收站/备份时有 OOM 与卡顿风险。
+- 建议：新增与 revision 对称的 `SELECT content FROM notes WHERE content LIKE '%![](img/%'`（引用集语义等价），GC 改用它；备份改流式写 JSON、导入限制单条目大小。价值：中 × M
+
+### 80. 导入与 GC 边界加固合集
+- 现状：① 导入直落时间戳（`BackupManager.kt:92-93`），`updatedAt = Long.MAX_VALUE` 的笔记会永远置顶且此后导入「更新不动」；② `deleteCategory` 的 `clearCategory` + `delete` 不在同一事务（`NoteRepository.kt:233-236`），中途失败会留下悬空 `categoryId`；③ 导入不限制 `notes.json` 大小（`:145`）；④ zip 条目名白名单 `^[A-Za-z0-9._-]+$`（`:48`）放行 `..`/`.`，`img/..` 会抛「导入失败」而非「不是有效的备份文件」；⑤ `thumb_*` 无条件删除（`ImageStore.kt:70-73`），旧备份里正文引用的 `thumb_xxx` 会被下次 GC 秒删；⑥ 列表类查询的 `ORDER BY` 无 tiebreaker（`NoteDao.kt` 全部列表查询；对比 `NoteRevisionDao.kt:16` 有 `id DESC`），叠加上 `NotesScreen.kt:443` 的 `animateItem()` 会出现「等值时间戳下行自己跳」。
+- 建议：逐项小改（时间戳钳制到 `[0, now+1d]`、`deleteCategory` 包事务、条目大小上限、白名单加纯点名校验、`thumb_` 仅在无引用时删、ORDER BY 末尾补 `, id DESC`）。价值：中 × S/M
+
+### 批次 G · AI 助手（P1）
+
+### 81. AI 服务商身份与聊天页保持一致
+- 现状：`AppNavHost.kt:119` 在目的地 lambda 里 `container.aiSessionFactory()` 建会话，而 `AppContainer.kt:90-101` 把 provider **闭包捕获**（endpoint / serviceId / key / model / thinking 全按旧 provider 取），聊天页 push 在设置页之下、返回时 VM 不重建；而 `AiChatViewModel.kt:144` 的 `hasApiKey()` 用的是**当前** provider。
+- 影响：DeepSeek 已配 Key 时打开聊天 → 设置里切到未配 Key 的硅基流动 → 返回发送被「未配置 API Key」拦下；用户照提示填了硅基流动的 Key 后再发，请求**仍然发给 DeepSeek**（账单与预期不符）。同 provider 换模型则立刻生效但顶栏副标题仍是旧模型名，与 `UiState.modelName` 注释宣称的正好相反。
+- 建议：给 VM 传一个「当前服务商/设置版本」的 `StateFlow`，变化时重建 session 并刷新 `providerName/modelName`；或离开聊天页时强制重建该 BackStackEntry。价值：中高 × M
+
+### 82. 看门狗超时与重发必须真正停流
+- 现状：看门狗超时分支只 `finalizeAssistant` + 横幅，**不调用 `session.stop()`**（`AiChatViewModel.kt:293-306`，对照 `stop()` `:217-221` 是先 stop）；`AiApiSession.send()` 只 `job?.cancel()` 而不 `streamer.cancel()`（`AiApiSession.kt:44-46`），而阻塞中的 `readLine()` 不响应协程取消（`AiApiClient.kt:172` 自述）。
+- 影响：超时后旧 HTTP 连接继续跑到服务端生成完（token 照常计费后被丢弃）；用户点「重试」也不会打断旧流。
+- 建议：超时分支补 `session.stop()`；`send()` 在 `job?.cancel()` 后补 `streamer.cancel()`；测试补 `assertEquals(1, fake.stopCount)` 断言。价值：中 × S
+
+### 83. 空回答按失败处理 + finish_reason 规则 + 重试入口
+- 现状：HTTP 200 但读不到任何 `data:` 行时直接 `emit(Finished(""))`（`AiApiClient.kt:170-198`），`AiApiSession.kt:55` 转发 `Done("")` 并**丢弃 finishReason**，`AiChatViewModel.finalizeAssistant` 无判空（`:385-398`）→ 落库 `content=""`、`status=done`。
+- 影响：服务商/网关忽略 `stream:true` 返回整段普通 JSON 时，有效回答被静默丢弃，界面显示「（没有内容）」；因 `status==done`，重试按钮不出现，用户只能重打字。设计文档要求的 `content_filter / insufficient_system_resource / aborted` 无内容按失败落库也未实现。
+- 建议：`Done` 且文本空白 → 走 Failed 分支（不落库 + 横幅「回答为空，请重试」）；`AiSession` 透传/使用 `finishReason`；补 `Done("")` 用例。价值：中 × S
+
+### 84. 历史裁剪保持 user/assistant 配对
+- 现状：`AiApiMessageBuilder.trimHistory`（`:49-64`）用 `kept = [0] + subList(firstMiddle, size-1) + [last]`，`firstMiddle` 逐条 +1、不区分角色。
+- 影响：长会话超 60k 字符后，保留列表可能出现「凭空出现的回答」（其对应提问已被丢弃）或连续两条 user；模型容易回答被丢弃的那个问题。
+- 建议：按 user+assistant 成对丢弃（`firstMiddle` 每次 +2 或对齐到 user 边界），并补「保留列表 role 交替」断言。价值：中 × S
+
+### 85. 流式 Markdown 渲染节流（避免 O(n²)）
+- 现状：每个 SSE 分片都更新 `streamingText`（`AiChatViewModel.kt:337-341`，修好分片追加后每片都会触发 UI），而 `MarkdownContent.kt:37` 以 `content` 为 key 全量重解析、每块再 `MarkdownInline.build`（`:93-99`），流式气泡把所有块放在同一个 LazyColumn item（`AiChatScreen.kt:363-370`），且每片都 `scrollToItem`（`:301-303`）。
+- 影响：长回答流式时主线程 O(n²) 解析 + 重排 → 掉帧、发热（此前被「只显示最后一片」掩盖，修复后会立刻暴露）。
+- 建议：VM 侧对 `streamingText` 做 60–100ms 节流合并（零依赖），或只对最后一个未闭合块增量渲染；`UiState` 标 `@Immutable` 减少无效重组。价值：中 × M
+
+### 86. 自定义地址明文 http 策略与错误文案
+- 现状：设置页显式接受并宣传 `http://`（`SettingsViewModel.kt:85-93`、`SettingsScreen.kt:316-323,586-589`），但 manifest 无 `usesCleartextTraffic`/`networkSecurityConfig`（`res/xml/` 只有 `file_paths.xml`）、targetSdk 34 → 运行时明文被系统阻断，`IOException` 被吞成 `NETWORK_ERROR`（`AiApiClient.kt:255-262,417`）。
+- 影响：局域网自建（Ollama / LM Studio 等 `http://192.168.x.x:11434/v1`）永远只会得到「网络错误，请检查网络后重试」，用户没有任何线索；空地址同理（聊天页不校验地址非空）。
+- 建议：二选一 —— UI 只接受 https 并给出明确文案，或加作用域受限的明文放行配置；同时把 `UnknownServiceException` 映射成专有提示，并在聊天页前置校验地址非空。需真机确认（Robolectric 不复现明文策略）。价值：中 × S
+
+### 87. Markdown 链接 scheme 白名单
+- 现状：`MarkdownInline.kt:101-120` 用 `LinkAnnotation.Url(...)` 且不传 `linkInteractionListener`，点击交给 Compose 默认 `LocalUriHandler.openUri`（`Intent.ACTION_VIEW`，无 try/catch、无 scheme 过滤）。
+- 影响：回答里出现 `file://`、`javascript:`、`intent://` 或未知 scheme 时，用户一点可能抛 `ActivityNotFoundException`/`FileUriExposedException`（进程内崩溃）或直接跳到任意第三方 App。
+- 建议：传 `linkInteractionListener`，只放行 http/https，其余给 snackbar 提示；scheme 过滤抽成纯函数便于单测。价值：中 × S
+
+### 88. AI 体验小坑合集
+- 现状：① 「测试连接」不保存输入框里的 Key（`SettingsScreen.kt:459-469` vs `:441-451`）→ 测试成功但进聊天仍「未配置 API Key」；② 跨服务商共用同一个 `apiKeyInput`（`:102`）→ 切 tab 后未保存的输入残留，可能存错服务商；③ 选区折叠时「替换选中」静默 no-op（`AiResultApplier.kt:20` + `NoteEditScreen.kt:350-357` 已消费结果）；④ 空回答上点「插入正文」插入空串且无提示；⑤ 自定义服务商模型留空 → `"model": ""` → 服务商 400「参数错误」，设置页事前不校验；⑥ 删除会话不清理 `ai_drafts` 键（`AiChatViewModel.kt:223-231`），随删笔记无限累积；⑦ 会话抽屉不显示所属服务商（`serviceId` 已入库但未展示，多服务商无法区分）；⑧ 深度思考内容随回答完成即清空（设计如此），计费的思维链事后无法回看/复制；⑨ 无单条消息删除/编辑（能力缺口）。
+- 建议：逐项小改（保存 Key、输入框按服务商隔离、折叠选区给提示、空回答禁用落地按钮、模型必填校验、purge 时清草稿键、抽屉显示服务商）。价值：中 × S/M
+
+### 批次 H · 列表 / 搜索 / 导航（P1–P2）
+
+### 89. 搜索 LIKE 转义 + 高亮词 trim + 深命中线索
+- 现状：三处 `LIKE '%' || :query || '%'` 无 `ESCAPE`（`NoteDao.kt:56,59,62`），仓库只做 `trim()`（`NoteRepository.kt:34-38`）；而高亮用的是**未 trim 的原始 query**（`NotesScreen.kt:440` → `NoteRow.kt:59-63`）；投影只取 `substr(content,1,400)`（`NoteDao.kt:21/56`）。
+- 影响：搜 `_` / `%` 会命中几乎全部笔记（而高亮一处都找不到 → 「全命中却零高亮」），字面 `%` 永远搜不准；输入「会议 」（尾随空格，中文输入法常见）能搜到但不高亮；命中在正文 400 字之后时该行完全没有命中线索。
+- 建议：`LIKE ... ESCAPE '\'` + 绑定前转义 `\ % _`；高亮用 `query.trim()`；深命中改由 DAO 回传「命中位置超出投影」标记，行内给一句小字说明。价值：中 × S
+
+### 90. 保留期文案与回收站口径统一
+- 现状：两处破坏性确认框把保留期写死成「30 天」（`NoteEditScreen.kt:793` 单条删除、`NotesScreen.kt:511` 批量删除），而设置页与回收站用的是可配置的 `TrashRetentionStore`（`TrashScreen.kt:97,172`）；回收站恢复/彻底删除即使什么都没做也会提示「已恢复/已彻底删除」（`TrashViewModel.kt:42-54` 用 `getNote(id)?.let{}` 后无条件 `onDone()`），且 `_purging` 在 launch 内设置，双击可绕过；剩余天数向下取整、不足 1 天一律显示「即将自动清理」，而清理实际只发生在冷启动或打开回收站；术语上回收站里的「删除」实为永久删除，主页批量软删却提示「已删除 N 条」。
+- 建议：保留期文案参数化（抽纯函数，两处共用）；回收站按 `getNote != null` 决定文案；剩余天数上取整并改「剩余不足 1 天」；行按钮改「彻底删除」、批量提示改「已移入回收站 N 条」。可选：回收站支持搜索（`deletedAt IS NOT NULL` 变体），缓解误删后难找回。价值：中 × S
+
+### 91. 多选随搜索/数据收敛（不删看不见的笔记）
+- 现状：`onQueryChange` 只改关键词、不清多选（`NotesViewModel.kt:59-61`，对比 `onFilterSelect:63-67` 会清）；搜索栏在多选下仍显示（`NotesScreen.kt:326`）；`runBatch`（`:111-120`）按 id 重读但不与当前可见集取交集；`selectAll` 读 `notes.value`，防抖窗口内可能选中上一轮结果集。
+- 影响：搜「a」→ 长按选中 A → 关键词改「b」（A 不在结果里、屏幕上没有任何选中标记）→ 顶栏仍显示「已选 1 项」→ 删除 → **A 被删掉，而它根本不在用户眼前**；选中项被他处删除后计数也会虚高。
+- 建议：`onQueryChange` 非空变更时 `exitSelection()`；`runBatch` 与可见集取交集；`notes` 更新时裁剪已消失的 id。价值：中高 × S
+
+### 92. 首帧加载态统一 + debounce 首帧不延迟
+- 现状：`query.debounce(200)` 连初始空串一起延迟（`NotesViewModel.kt:43`）→ 冷启动主页必然先闪 ≥200ms 的「加载中…」（Room 其实几毫秒就返回）；分类页与回收站则相反——用 `emptyList()` 作初值，进页面先闪「暂无分类 / 回收站是空的」（`CategoriesViewModel.kt:20-21`、`TrashViewModel.kt:24-26`），而主页明确用 `null` 表示加载中（`NotesViewModel.kt:40-53`）。
+- 建议：`debounce { if (it.isEmpty()) 0L else 200L }`；分类页/回收站改为 `null`/`loaded` 初值并复用现有加载占位。价值：中 × S
+
+### 93. 历史页与导航层级修正
+- 现状：历史恢复成功后 `popBackStack("notes", inclusive = false)`（`AppNavHost.kt:146-151`）会连带弹掉编辑器（甚至从日历进来的路径也被扔回主页）；笔记已不存在时仍显示「保存一次后开始记录」（`NoteHistoryScreen.kt:123-130`）；全文视图用 `Column + verticalScroll` 一次性布局整篇（`:236-245`），而 diff 视图反而是 LazyColumn；恢复提示的消费时序为「显示后才消费」（`NotesScreen.kt:185-189`）→ 旋转会重弹、中途离开则永不消费。
+- 建议：只弹一层（`popBackStack()`）并写到 `previousBackStackEntry`；空态区分「笔记不存在」；全文改 LazyColumn；先消费再 showSnackbar。价值：中 × S/M
+
+### 批次 I · 编辑页 / 平台（P1–P2）
+
+### 94. 编辑页加载态与保存失败反馈
+- 现状：`canSave` 对存量笔记恒为 true（`NoteEditScreen.kt:404-405`），回填有「用户先敲字就不再回填」的守卫（`:322-336`），而 `saveNote` 目标行不存在时 `existing == null → return id` 静默成功（`NoteRepository.kt:91-93`）；`save()` 无 catch，DB 异常直接逃出 `viewModelScope`。
+- 影响：① 冷启动/迁移后用空编辑器敲了标题就保存 → 正文被空文本覆盖（可经历史快照找回）；② 笔记在别处被删除/彻底清理 → 点保存**什么都没写**却直接退回列表，用户以为存住了；③ 任何 DB 失败 → 崩溃而不是「保存失败」。
+- 建议：新增 `loaded = isNewNote || note != null`，未加载时正文只读并显示占位、保存禁用；`saveNote` 目标缺失时返回失败信号，UI 提示「笔记已不存在，无法保存」；`save/saveDraft/delete` 包 try/catch 并给文案。价值：中高 × S/M
+
+### 95. 「不保存」抑制标志 + 保存期间只读输入
+- 现状：ON_STOP 兜底只看 `dirty && !isSaving`（`NoteEditScreen.kt:407-411`），「不保存」分支直接 `onBack()`（`:774`），没有抑制标志；`saveDraft` 一进协程就在 `withTransaction` 处挂起，而 `popBackStack` 会让 VM 走向 `onCleared()` 取消 `viewModelScope` → **是否写入取决于时序**（设计文档 `plans/2026-09-13-edit-ux-fixes.md:293` 的验收标准明确要求「不保存 → 列表无新笔记」）。另外保存期间两个输入框没有 `readOnly = isSaving`（`:520`、`:582`）→ 点保存后补敲的字不属于这次保存，且没有任何「保存中」提示。
+- 建议：加 `discarded` 标志并在 ON_STOP 守卫里排除（判定抽成可单测的纯函数）；`isSaving` 时输入框 `readOnly` + 顶栏显示「保存中…」。价值：中 × S
+
+### 96. 旋转保留对话框与待写文件状态
+- 现状：`NoteEditScreen.kt:301-313` 的 `menuOpen/showCategorySheet/showDatePicker/showAddCategoryDialog/showDeleteDialog/showExportDialog/showImageExport/showUnsavedDialog/previewFile/exporting` 全是 `remember`，新建分类输入框的 `name` 也是（`:738`）；`NoteExportDialog.kt:95-96` 的 `pendingFiles/writing` 同为 `remember`，而 SAF 回调用 `files != null` 把关（`:113-114`）。
+- 影响：输入「工作安排」后旋转 → 对话框与已输入内容一起消失；导出选好目录后旋转 → 对话框与 `pendingFiles` 都没了，**既不写文件也不报错**。
+- 建议：承载用户意图的开关与输入改 `rememberSaveable`；`pendingFiles/writing` 提到 `NoteExportDialog` 已有的 `DialogViewModelStoreOwner`（`:63-65`）里，或在重建时检测待写文件并重渲染。价值：中 × M
+
+### 97. 图片编辑体验（标记可视化 / 删图入口 / 孤儿图）
+- 现状：编辑态正文就是纯 `BasicTextField`，图片以 `![](img/<uuid>.webp)` 原文显示（`:582-605`），删图必须手工精确删掉整段标记（删漏一个括号正则就不再匹配）；插图后撤销、或插图后未保存直接返回，文件都留在 `notes_images/`（GC 只在 `saveNote` 判定移除标记时触发，`updateDraft` 明确不 GC）。
+- 建议：预览模式长按图片 → 「删除这张图片」（等价于移除标记，保存走既有 GC）；底部给「共 N 张图片」计数；会话内记录本次插入的文件名，撤销/离开时清理已不再被正文引用的那些；补一条「半截标记按普通文本处理」的解析测试。价值：中 × M
+
+### 98. 导出缺图统计与渲染同口径 + txt 图片说明
+- 现状：缺图统计走 `imageDimensions`（只读文件头，`NoteImageRenderer.kt:255-258,452-461`），真正绘制走 `decodeImage`（完整解码，`:463-472`）且失败时静默 `return@forEach`（`:367`）——「头可读、像素被截断」的图片会被静默丢掉却不计数；`renderToCache` 也不回收实际跳过清单。另 txt 导出原样保留 `![](img/uuid)` 标记且不说明图片未导出（`BackupManager.kt:218-234`），而系统分享路径反而会追加「含 N 张图片，未包含」。
+- 建议：`renderPages` 回传被跳过的图片名集合并并入 `unreadableImageCount`（统计与渲染同一口径）；txt 导出与分享口径对齐（剥标记 + 末尾说明）。价值：中 × S/M
+
+### 批次 J · 体验打磨与平台加固（P2）
+
+### 99. 无障碍一批
+- 现状：编辑页两个输入框都没有 `semantics`/标签（占位文字画在 `decorationBox` 里，TalkBack 读作两个无名编辑框，`NoteEditScreen.kt:518-542,582-605`）；预览里的图片共用 `contentDescription = "图片"`（`:570`），全屏预览只能点图片本身关闭（`NoteImagePreviewDialog.kt:26-44`）；日历的 4dp 圆点无语义、格子固定 44dp/36dp（`CalendarScreen.kt:180-217`）；多选只靠底色表达（`NotesScreen.kt:442` + `NoteRow.kt:70-84`，无 `semantics { selected }`、无 Role）；分类页色点 24dp 且无描述（`CategoriesScreen.kt:228-236`）。
+- 建议：输入框加 `semantics { contentDescription = "标题"/"正文" }`；预览图补可读的关闭按钮；日历格子按 `DateMark.count` 给「9月10日，3 篇笔记」；多选行加 `selected` 语义；色点点击区补到 48dp 并加描述。价值：中 × M
+
+### 100. 撤销栈封顶 + 字数统计缓存 + 平台加固合集
+- 现状：① `NoteUndoController` 只按**条数**限流（`maxEntries = 100`，存整份 `TextFieldValue`），长笔记常驻约 100 份全文副本（`NoteUndoController.kt:14,36-38`）；② 字数统计每次重组都对全文跑正则（`NoteEditScreen.kt:545` → `NoteContentParser.kt:34`）；③ `collectAsState`（约 30 处，如 `NotesScreen.kt:89-95`、`MainActivity.kt:23`）而非 `collectAsStateWithLifecycle`（依赖已在）；④ Keystore 往返在主线程（`AiChatViewModel.kt:61-70` 构造期读 Key、`SettingsViewModel.kt:60,106-118` 按钮回调直调）；⑤ `enableEdgeToEdge` 放在 `LaunchedEffect(darkTheme)` 里（`MainActivity.kt:40-50`）→ 首帧无 edge-to-edge，可能跳一下；⑥ 图片解码 `catch (e: Exception)` 兜不住 `OutOfMemoryError`，且顺带吞掉 `CancellationException`（`ImageStore.kt:50`）；⑦ 超长正文经 `rememberSaveable` 进 Bundle（`NoteEditScreen.kt:293-295`），AI 入口又把正文与选区写进导航 `SavedStateHandle`（`AppNavHost.kt:94-99,111-113`）→ 超长笔记有 `TransactionTooLargeException`/状态被丢弃的风险（**需真机确认**）。
+- 建议：撤销栈加「保留字符数」上限（或改存 delta）；字数统计用 `derivedStateOf` 缓存；`collectAsStateWithLifecycle`；Key 读写移入 `withContext(Dispatchers.IO)` + 用 `StateFlow` 暴露「已配置」；`enableEdgeToEdge` 移出 `LaunchedEffect`；`catch` 补 `OutOfMemoryError`/重抛 `CancellationException`；长正文只把 `noteId/draftId` 放进 Bundle、正文靠 DB 草稿回读。价值：中 × S/M
+
+---
+
 ## 协同开发建议
 
 **文件冲突地图**（同一文件的多条目不可并行改）：
@@ -407,6 +597,16 @@
 7. **决策后执行**：#14、#15。
 
 **每批收尾**：全量 `:app:testDebugUnitTest` 通过 + 手动真机验证清单项 + 按 AGENTS.md 递增版本、同步 README；文档状态回写本清单。
+
+**五域审计批次（71–100）的推进建议**：
+
+1. **批次 E（P0 数据安全，串行一人）**：#71 → #72 → #73 → #74 → #75 → #76。都动 `NoteRepository` / `ImageStore` / `BackupManager`，互相有交集，建议一次做完再统一回归（#71 与 #74 同属「文件先落盘」家族，最好同批）。
+2. **批次 F（隐私与可靠性）**：#77 可独立并行（只动设置页）；#78/#79 各一处集中改动；#80 是若干独立小修，适合填充式完成。
+3. **批次 G（AI）**：#82/#83 都是 `AiChatViewModel` + `AiApiSession` 的小改，可先做；#81 需要产品口径（设置变化是否立刻作用于已打开的聊天页）；#84/#85/#86/#87 相互独立可并行；#88 是合集，建议最后扫尾。
+4. **批次 H（列表/搜索/导航）**：#89/#90/#91 都动 `NotesScreen`/`NoteDao`，串行；#92/#93 独立。
+5. **批次 I（编辑页/平台）**：#94/#95 同文件（`NoteEditScreen` 的保存与状态机）串行；#96/#97/#98 相对独立。
+6. **批次 J（打磨）**：#99/#100 建议作为收尾批，逐项独立可并行。
+7. **真机验证项**：#86（明文策略）、#100 的第 ⑦ 项（Bundle 体积）、#100 的第 ⑤ 项（首帧 edge-to-edge）以及所有 Compose 组合期行为（#95/#96）只能上真机确认——本仓库没有 Compose UI 测试基础设施，补它需新增依赖，违反硬约束。
 
 ## 修订记录
 
@@ -436,3 +636,4 @@
 | 2026-09-15 | **版本演进欠账清理·文档批（非发布批，不改版本号）**：build-guide 单测数 376 → 582、release 产物体积统一为约 2.0MB；backlog 条目状态回写（36 已完成、37/38 已作废、40 缩略图部分已撤销、46 部分完成），总览表补齐 51–70 行（此前状态需在表格与正文两处维护，正是上述矛盾的成因）；补记一次从未记录的回退——v1.6.1 整体移除缩略图机制（`ImageStore` 仅保留 `thumb_*` 遗留清理）；已发布特性的设计文档状态由「实现中/待实现」回写为「已实现（版本）」，两份网页驱动 AI 文档加「已被 API 方案替换」横幅。校正历史口径：v1.6.0 修订记录的 351 经逐提交核对应为 352。 |
 | 2026-09-15 | **版本演进欠账清理·代码批**：删除零调用者声明 `AppContainer.aiEndpoint()`、`AiChatRepository.getSession()`、`AiSessionDao.getById()`；删除被「半截回答按新消息落库」取代的 `AiMessageDao.updateContentAndStatus()`（v1.7.0 起无调用）与被动态模型列表取代的 `DeepSeekModels.label/isValid`（v1.10.1 起无调用）；删除 `hasUnsavedChanges` 从未使用的 `initialCategoryId` 参数（v1.6.1 脏值口径调整后遗留）；两套「标题→文件名」清洗（`FileNameSanitizer` 80/`note` 与 `ImageExportManager` 40/`笔记`）收敛为同一实现 + `maxLength` 参数（两侧输出不变，顺带修正截断点落在空白处会留尾随空格的瑕疵）；`PaperTopBar` 弃用图标换 `Icons.AutoMirrored.Filled.ArrowBack`；测试内历史 `serviceId="deepseek"` 统一为 `AiProvider.DEEPSEEK.serviceId`。全量单测 584 → 582 全绿（删 4 个随被替代实现失效或重复的用例、新增 2 个清洗参数化用例）。 |
 | 2026-09-15 | **首批缺陷修复（用户可感知 5 项）**：① **预览模式崩溃**——预览态下正文输入框不在组合中，插图 / 贴 AI 结果 / 标题 IME「下一项」三处 `requestFocus()` 会抛 `IllegalStateException`（已对 Compose 1.7.3 字节码核实），新增纯 Kotlin `BodyFocusGate` 门控：预览中只登记待处理请求，切回编辑态再补一次聚焦；② **AI 流式只显示/只保存最后一个分片**——`Chunk` 契约为增量（`delta.content`）而 VM 用赋值，改为追加，停止/看门狗/退页落库的半截回答恢复完整；③ **AI 第二轮起丢失笔记正文**——落库的是裸输入，`AiApiMessageBuilder` 改为请求时对首条 user 幂等重包正文（新增 `AiPromptBuilder.NOTE_CONTEXT_HEADER` / `hasNoteContext`）；④ **保存键可能永久变灰**——`save()` 与 `saveDraft()` 原先共用 `saving` 标志，退后台草稿在途时点保存被静默拦下 → 界面 `isSaving` 永不复位、兜底一并失效；改为 `saveJob` / `draftJob` 分离，保存先 `join()` 在途草稿；⑤ **撤销合并丢整段起点**——`record()` 合并时不再改写栈顶，另用 `lastBefore` 判定邻接，`undo/redo/reset` 清空锚点：一次撤销恢复整段，且撤销后继续输入会新开一格。全量单测 582 → 593 全绿（新增 11 个用例，另修正 4 处把错误语义固化的旧断言）。 |
+| 2026-09-15 | **五域审计入库（条目 71–100，全部「已建议，待实现」）**：数据持久化 / 编辑页状态 / AI 助手 / 列表搜索导航 / 跨域生命周期五路只读审计（已读码坐实并落到 file:line，行号基于 `f616283`），按批次 E（P0 数据安全 6 条）/ F（隐私与可靠性 4 条）/ G（AI 7 条 + 小坑合集）/ H（列表搜索导航 5 条）/ I（编辑页平台 5 条）/ J（打磨与平台加固 2 条）排期，总览表与"协同开发建议"同步补齐推进顺序与真机验证项。其中 6 条标注为高危：图片 GC 误删刚落盘的新图（71）、缩短保留期静默永久删除（72）、进程死亡后编辑页重复插入（73）、导入写图非原子（74）、AI 服务商身份不一致导致请求发给旧服务商（81）、编辑页未加载完可保存覆盖/静默丢弃（94）。同批已修复的 5 项不在本清单（见上一行）。 |
