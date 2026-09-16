@@ -136,9 +136,9 @@ class NoteUndoControllerTest {
         recordAt(controller, "ab", 200L)
         recordAt(controller, "abc", 300L)
 
-        // 整段连打只占一格：一次撤销回退整段，再撤销无可用快照
-        assertEquals(value("abc"), controller.undo(value("abcd")))
-        assertNull(controller.undo(value("abc")))
+        // 整段连打只占一格且保存的是「整段起点」：一次撤销回到连打之前，再撤销无可用快照
+        assertEquals(value(""), controller.undo(value("abcd")))
+        assertNull(controller.undo(value("")))
     }
 
     @Test
@@ -147,8 +147,22 @@ class NoteUndoControllerTest {
         recordAt(controller, "abc", 0L)
         recordAt(controller, "ab", 100L)
 
-        assertEquals(value("ab"), controller.undo(value("a")))
-        assertNull(controller.undo(value("ab")))
+        // 连续删除合并为一格，撤销回到删除前（"abc"），而非只回退一个字符
+        assertEquals(value("abc"), controller.undo(value("a")))
+        assertNull(controller.undo(value("abc")))
+    }
+
+    /** 撤销之后立刻继续输入必须新开一格：不能被撤销前的 lastBefore 合并掉。 */
+    @Test
+    fun recordAfterUndoStartsNewStep() {
+        val controller = NoteUndoController()
+        recordAt(controller, "ab", 0L)
+        recordAt(controller, "abc", 1_000L) // 超出窗口 → 独立一格
+        assertEquals(value("abc"), controller.undo(value("abcd")))
+
+        // 与上一次 record（"abc"）仅差一个字符且落在窗口内：若不清理撤销前的锚点会被误判为合并
+        recordAt(controller, "abc", 1_100L)
+        assertEquals(value("abc"), controller.undo(value("abcd")))
     }
 
     @Test
@@ -170,9 +184,9 @@ class NoteUndoControllerTest {
         recordAt(controller, "ab", 100L, force = true) // 结构性变更强制新格：与「a」断开
         recordAt(controller, "abc", 200L) // 其后普通输入照常合并进「ab」格
 
-        // 撤销依次回退「abc」与「a」两格（force 在「ab」处断开），而非三格
-        assertEquals(value("abc"), controller.undo(value("abcd")))
-        assertEquals(value("a"), controller.undo(value("abc")))
+        // 撤销依次回退到「ab」（force 处的断点，即该段起点）与「a」两格，而非三格
+        assertEquals(value("ab"), controller.undo(value("abcd")))
+        assertEquals(value("a"), controller.undo(value("ab")))
         assertNull(controller.undo(value("a")))
     }
 
@@ -182,8 +196,8 @@ class NoteUndoControllerTest {
         recordAt(controller, "ac", 0L)
         recordAt(controller, "abc", 100L) // 中间插入一个字符
 
-        assertEquals(value("abc"), controller.undo(value("abcd")))
-        assertNull(controller.undo(value("abc")))
+        assertEquals(value("ac"), controller.undo(value("abcd")))
+        assertNull(controller.undo(value("ac")))
     }
 
     @Test
@@ -192,9 +206,9 @@ class NoteUndoControllerTest {
         controller.record(valueWithSelection("a", 0), atMillis = 0L)
         controller.record(valueWithSelection("a", 1), atMillis = 50L)
 
-        // 同文本仅选区变化：合并为一条
-        assertEquals(value("a"), controller.undo(valueWithSelection("a", 1)))
-        assertNull(controller.undo(value("a")))
+        // 同文本仅选区变化：合并为一条，且保留的是这一段起点（选区 0）
+        assertEquals(valueWithSelection("a", 0), controller.undo(valueWithSelection("a", 1)))
+        assertNull(controller.undo(valueWithSelection("a", 0)))
     }
 
     @Test

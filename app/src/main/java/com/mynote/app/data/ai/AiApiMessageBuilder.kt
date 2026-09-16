@@ -4,7 +4,9 @@ import com.mynote.app.data.db.AiMessageEntity
 
 /**
  * 把本地会话历史 + 本次输入组装成 API messages。
- * API 无服务端会话，每次请求都必须携带完整历史；笔记正文只进首条用户消息（后续历史里已包含）。
+ * API 无服务端会话，每次请求都必须携带完整历史；笔记正文只进首条用户消息。
+ * 注意：本地落库的首条用户消息是**裸输入**（聊天记录不展示提示词包装），因此这里在请求时
+ * 兜底重包一次——否则第二轮起 `history` 里已有 user 消息，正文就再也不会被发送。
  * 为控制上下文体积，正文与历史均按预算裁剪（设计 §2.5）。
  */
 object AiApiMessageBuilder {
@@ -34,6 +36,15 @@ object AiApiMessageBuilder {
             merged += AiChatMessage(role, content)
         }
         val messages = trimHistory(merged).toMutableList()
+        // 首条若是裸输入，补回笔记正文（幂等：已带表头则原样保留）
+        messages.firstOrNull()
+            ?.takeIf { it.role == AiChatMessage.ROLE_USER && !AiPromptBuilder.hasNoteContext(it.content) }
+            ?.let { first ->
+                messages[0] = AiChatMessage(
+                    AiChatMessage.ROLE_USER,
+                    AiPromptBuilder.build(noteTitle, noteContent, first.content, true, MAX_NOTE_CHARS)
+                )
+            }
         messages += AiChatMessage(
             AiChatMessage.ROLE_USER,
             AiPromptBuilder.build(noteTitle, noteContent, input, includeNoteContext, MAX_NOTE_CHARS)

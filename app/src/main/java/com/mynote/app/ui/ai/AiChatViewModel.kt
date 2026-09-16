@@ -336,7 +336,8 @@ class AiChatViewModel(
         when (event) {
             is AiEvent.Chunk -> {
                 if (!_state.value.sending) return
-                _state.update { it.copy(streamingText = event.text) }
+                // Chunk 是增量分片（服务端 delta），必须追加；全文另有 Done 事件携带
+                _state.update { it.copy(streamingText = it.streamingText + event.text) }
                 resetWatchdog()
             }
             is AiEvent.Reasoning -> {

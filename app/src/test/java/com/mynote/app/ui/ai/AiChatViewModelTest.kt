@@ -347,6 +347,27 @@ class AiChatViewModelTest {
         assertEquals(2, aiRepo.getMessages(sessionId).size)
     }
 
+    /** Chunk 是增量分片：多片必须按序拼接，停止后落库的是完整半截而不是最后一片。 */
+    @Test
+    fun stopStoresConcatenatedPartial() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val vm = createVm(noteId)
+        vm.send("问")
+        vm.state.first { it.sending }
+        val sessionId = aiRepo.observeSessions(noteId).first { it.isNotEmpty() }.single().id
+
+        fake.emit(AiEvent.Chunk("半截"))
+        vm.state.first { it.streamingText == "半截" }
+        fake.emit(AiEvent.Chunk("回答"))
+        vm.state.first { it.streamingText == "半截回答" }
+        vm.stop()
+        assertFalse(vm.state.value.sending)
+
+        val messages = aiRepo.observeMessages(sessionId).first { it.size == 2 }
+        assertEquals("半截回答", messages[1].content)
+        assertEquals(AiMessageEntity.STATUS_INTERRUPTED, messages[1].status)
+    }
+
     @Test
     fun stopClearsReasoningText() = runTest(dispatcher) {
         val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
@@ -511,7 +532,7 @@ class AiChatViewModelTest {
         assertEquals("心跳", vm.state.value.reasoningText)
 
         advanceTimeBy(900)
-        fake.emit(AiEvent.Chunk("第一段第二段"))
+        fake.emit(AiEvent.Chunk("第二段"))
         runCurrent()
         assertEquals("第一段第二段", vm.state.value.streamingText)
 

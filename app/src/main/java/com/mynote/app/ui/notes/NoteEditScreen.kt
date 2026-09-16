@@ -97,6 +97,7 @@ import com.mynote.app.ui.theme.PaperPalette
 import com.mynote.app.util.CalendarDates
 import com.mynote.app.util.FileNameSanitizer
 import com.mynote.app.util.TimeFormat
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -119,8 +120,9 @@ class NoteEditViewModel(
     private val _draftId = MutableStateFlow<Long?>(null)
     val draftId: StateFlow<Long?> = _draftId
 
-    // 保存/删除在途标志：连点第二次调用直接忽略，防止重复插入与双重退出回调
-    private var saving = false
+    // 保存/草稿/删除在途作业：连点第二次直接忽略，防止重复插入与双重退出回调
+    private var saveJob: Job? = null
+    private var draftJob: Job? = null
     private var deleting = false
 
     init {
@@ -166,10 +168,14 @@ class NoteEditViewModel(
         noteDate: Long?,
         onDone: (String?) -> Unit
     ) {
-        if (saving) return
-        saving = true
-        viewModelScope.launch {
+        // 只有「正式保存」在途时才拦截连点；退后台草稿写入在途不拦截——否则 onDone 永不回调，
+        // 界面 isSaving 会永久卡在 true（保存键变灰、退后台兜底也一并失效）。
+        if (saveJob?.isActive == true) return
+        val pendingDraft = draftJob
+        saveJob = viewModelScope.launch {
             try {
+                // 先等草稿落库：新笔记的 draftId 由草稿写入设置，抢跑会重复插入一条
+                pendingDraft?.join()
                 val targetId = noteId?.takeIf { it != 0L } ?: _draftId.value
                 val before = if (targetId != null) repository.countRevisions(targetId) else 0
                 val id = repository.saveNote(targetId, title, content, categoryId, pinned, color, noteDate)
@@ -183,7 +189,7 @@ class NoteEditViewModel(
                 }
                 onDone(warning)
             } finally {
-                saving = false
+                saveJob = null
             }
         }
     }
@@ -200,9 +206,9 @@ class NoteEditViewModel(
         color: Int?,
         noteDate: Long?
     ) {
-        if (saving) return
-        saving = true
-        viewModelScope.launch {
+        // 正式保存在途时无需再写草稿；草稿自身重复触发也直接忽略
+        if (saveJob?.isActive == true || draftJob?.isActive == true) return
+        draftJob = viewModelScope.launch {
             try {
                 val targetId = noteId?.takeIf { it != 0L } ?: _draftId.value
                 when {
@@ -215,7 +221,7 @@ class NoteEditViewModel(
                     }
                 }
             } finally {
-                saving = false
+                draftJob = null
             }
         }
     }
@@ -318,6 +324,13 @@ fun NoteEditScreen(
     val contentFocusRequester = remember { FocusRequester() }
     val titleFocusRequester = remember { FocusRequester() }
     val undoController = remember { NoteUndoController() }
+    // 预览模式下正文输入框不在组合中，直接 requestFocus() 会抛 IllegalStateException
+    val bodyFocusGate = remember { BodyFocusGate() }
+
+    // 由预览切回编辑时，补一次被延后的正文聚焦（插图中/贴入 AI 结果时处于预览态的情况）
+    LaunchedEffect(previewMode) {
+        if (bodyFocusGate.onPreviewModeChanged(previewMode)) contentFocusRequester.requestFocus()
+    }
 
     LaunchedEffect(note) {
         val n = note ?: return@LaunchedEffect
@@ -352,8 +365,8 @@ fun NoteEditScreen(
             if (type == "replace") AiResultApplier.Type.REPLACE else AiResultApplier.Type.INSERT,
             text
         )
-        // 贴入结果后恢复正文焦点，与插图路径一致
-        contentFocusRequester.requestFocus()
+        // 贴入结果后恢复正文焦点，与插图路径一致；预览态无法聚焦，延后到切回编辑
+        if (bodyFocusGate.requestBodyFocus(previewMode)) contentFocusRequester.requestFocus()
         onAiResultConsumed()
     }
 
@@ -370,8 +383,8 @@ fun NoteEditScreen(
                     // 记录插图前的状态，插图可撤销；结构性变更强制新开一格
                     undoController.record(content, force = true)
                     content = AiResultApplier.apply(content, AiResultApplier.Type.INSERT, markup)
-                    // 选图返回后正文焦点已丢：恢复焦点，光标落在插入点之后
-                    contentFocusRequester.requestFocus()
+                    // 选图返回后正文焦点已丢：恢复焦点，光标落在插入点之后（预览态延后到切回编辑）
+                    if (bodyFocusGate.requestBodyFocus(previewMode)) contentFocusRequester.requestFocus()
                 },
                 onFailed = {
                     scope.launch { snackbarHostState.showSnackbar("图片插入失败，请换一张") }
@@ -528,7 +541,12 @@ fun NoteEditScreen(
                     singleLine = true,
                     // 「下一项」直接跳到正文，避免标题写完再手动点正文
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                    keyboardActions = KeyboardActions(onNext = { contentFocusRequester.requestFocus() }),
+                    keyboardActions = KeyboardActions(
+                        onNext = {
+                            // 预览态下正文输入框不在组合中，只能延后聚焦，否则会抛异常
+                            if (bodyFocusGate.requestBodyFocus(previewMode)) contentFocusRequester.requestFocus()
+                        }
+                    ),
                     decorationBox = { innerTextField ->
                         if (title.isEmpty()) {
                             Text(

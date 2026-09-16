@@ -4,8 +4,14 @@ import com.mynote.app.ui.notes.NoteContentParser
 
 object AiPromptBuilder {
 
+    /** 附带笔记正文的消息表头；`AiApiMessageBuilder` 用它做幂等判定。 */
+    const val NOTE_CONTEXT_HEADER = "【笔记正文】"
+
     /** 正文超限被截断时追加的提示语。 */
     private const val TRUNCATED_NOTICE = "（正文过长，已截断）"
+
+    /** 该消息是否已附带笔记正文（避免重复包裹）。 */
+    fun hasNoteContext(text: String): Boolean = text.trimStart().startsWith(NOTE_CONTEXT_HEADER)
 
     /**
      * 组装首条用户消息：`includeNoteContext` 为 true 时（历史里还没有 user 消息）附带笔记正文，
@@ -32,6 +38,6 @@ object AiPromptBuilder {
             plain
         }
         val titleLine = noteTitle.trim().takeIf { it.isNotEmpty() }?.let { "# $it\n" } ?: ""
-        return "【笔记正文】\n$titleLine$body\n\n【要求】\n$input"
+        return "$NOTE_CONTEXT_HEADER\n$titleLine$body\n\n【要求】\n$input"
     }
 }

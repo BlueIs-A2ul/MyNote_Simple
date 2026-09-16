@@ -17,11 +17,15 @@ class NoteUndoController(private val maxEntries: Int = 100) {
     private val redoStack = ArrayDeque<TextFieldValue>()
     private var lastRecordMillis = 0L
 
+    /** 最近一次 record 的「修改前值」，用于判定相邻单字符合并；合并时不得改动 undo 栈顶。 */
+    private var lastBefore: TextFieldValue? = null
+
     val canUndo: Boolean get() = undoStack.isNotEmpty()
     val canRedo: Boolean get() = redoStack.isNotEmpty()
 
     /**
      * 记录一次编辑前的快照；任何新编辑都会清空 redo 栈。超出 maxEntries 丢弃最旧。
+     * 命中合并窗口时不压栈——栈顶保持为「整段起点」，这样一次撤销即可回退整段。
      * @param before 修改前的编辑状态
      * @param atMillis 记录时刻，用于判定合并窗口
      * @param force true 时跳过合并、强制新开一格
@@ -29,13 +33,16 @@ class NoteUndoController(private val maxEntries: Int = 100) {
     fun record(before: TextFieldValue, atMillis: Long = System.currentTimeMillis(), force: Boolean = false) {
         redoStack.clear()
         if (!force && mergeable(before, atMillis)) {
-            // 同一段连续输入/纯选区移动：用本次状态替换栈顶，避免一格一字符
-            undoStack.removeLast()
+            // 同一段连续输入/纯选区移动：沿用栈顶（该段起点），避免一格一字符
+            lastBefore = before
+            lastRecordMillis = atMillis
+            return
         }
         undoStack.addLast(before)
         while (undoStack.size > maxEntries) {
             undoStack.removeFirst()
         }
+        lastBefore = before
         lastRecordMillis = atMillis
     }
 
@@ -43,6 +50,8 @@ class NoteUndoController(private val maxEntries: Int = 100) {
     fun undo(current: TextFieldValue): TextFieldValue? {
         val before = undoStack.removeLastOrNull() ?: return null
         redoStack.addLast(current)
+        // 撤销后继续输入必须新开一格：清掉锚点，避免与撤销前的记录被误判为同一段
+        lastBefore = null
         return before
     }
 
@@ -50,6 +59,7 @@ class NoteUndoController(private val maxEntries: Int = 100) {
     fun redo(current: TextFieldValue): TextFieldValue? {
         val after = redoStack.removeLastOrNull() ?: return null
         undoStack.addLast(current)
+        lastBefore = null
         return after
     }
 
@@ -58,13 +68,14 @@ class NoteUndoController(private val maxEntries: Int = 100) {
         undoStack.clear()
         redoStack.clear()
         lastRecordMillis = 0L
+        lastBefore = null
     }
 
     /** 窗口内 + 文本相同（仅选区变化）或相邻单字符增删时才合并。 */
     private fun mergeable(before: TextFieldValue, atMillis: Long): Boolean {
         if (undoStack.isEmpty()) return false
         if (atMillis - lastRecordMillis > MERGE_WINDOW_MS) return false
-        val prev = undoStack.last()
+        val prev = lastBefore ?: return false
         return prev.text == before.text || isAdjacentSingleCharEdit(prev.text, before.text)
     }
 

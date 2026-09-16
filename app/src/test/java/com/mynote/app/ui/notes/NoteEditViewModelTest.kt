@@ -191,6 +191,25 @@ class NoteEditViewModelTest {
         assertEquals(2, repo.countRevisions(id))
     }
 
+    /**
+     * 退后台草稿写入在途时点「保存」：必须照常执行并回调。
+     * 若被静默拦下（旧实现共用 saving 标志），屏幕侧 isSaving 永不复位 → 保存键永久变灰、
+     * 退后台兜底也一并失效，后续编辑静默丢失。
+     */
+    @Test
+    fun saveWhileDraftInFlightStillInvokesCallback() = runTest(dispatcher) {
+        vm.saveDraft("标题", "正文", null, false, null, null) // 草稿作业在途（未推进虚拟时间）
+
+        val done = CompletableDeferred<String?>()
+        vm.save("标题", "改后正文", null, false, null, null) { done.complete(it) }
+        advanceUntilIdle()
+
+        // 旧实现会静默拦下这次保存 → 回调永不到来（本行一直挂起，runTest 超时失败）
+        assertNull(done.await())
+        assertEquals(1, db.noteDao().getAll().size)
+        assertEquals("改后正文", db.noteDao().getAll().single().content)
+    }
+
     @Test
     fun savePersistsNoteDate() = runTest(dispatcher) {
         val day = CalendarDates.dayStart(2026, 9, 15)
