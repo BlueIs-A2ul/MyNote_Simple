@@ -26,7 +26,7 @@ Kotlin · Jetpack Compose + Material 3 · MVVM + 单向数据流（UDF） · Roo
 | JDK | 17 |
 | Gradle | 8.7（Wrapper） |
 | 版本 | 1.10.1；`versionName = major.minor.patch`、`versionCode = major*10000+minor*100+patch`，设置页可见 |
-| release 产物 | R8 混淆 + 资源压缩，约 2.1MB，`MyNote-<版本>-release.apk`（按 keystore.properties 签名） |
+| release 产物 | R8 混淆 + 资源压缩，约 2.0MB（随版本浮动），`MyNote-<版本>-release.apk`（按 keystore.properties 签名） |
 
 ## 构建
 
@@ -57,7 +57,7 @@ app/src/main/java/com/mynote/app/
 ├── data/
 │   ├── db/                   # NoteEntity / CategoryEntity / NoteRevisionEntity / AiSessionEntity / AiMessageEntity / DAO / AppDatabase（Room v6 + 迁移）
 │   ├── repository/           # NoteRepository（业务逻辑 + 图片垃圾回收）
-│   ├── settings/             # ThemeSettingsStore（SharedPreferences + StateFlow）
+│   ├── settings/             # ThemeSettingsStore（主题）/ NoteSortStore（默认排序）/ TrashRetentionStore（回收站保留期）/ OnboardingStore（欢迎笔记标记）/ AiSettingsStore（AI Key/模型，按服务商隔离）
 │   ├── ai/                   # OpenAI 兼容 API 客户端（SSE，多服务商端点）/ 会话 / 消息组装 / 会话仓库
 │   ├── image/                # ImageStore（落盘 / 采样压缩 / GC）
 │   ├── backup/               # BackupManager（zip 备份导入导出 / txt 导出）
@@ -97,3 +97,6 @@ app/src/main/java/com/mynote/app/
 - 历史修改记录计划（含修订记录）：[`docs/superpowers/plans/2026-09-10-note-history.md`](docs/superpowers/plans/2026-09-10-note-history.md)
 - 实现计划（含修订记录）：[`docs/superpowers/plans/2026-08-13-mynote.md`](docs/superpowers/plans/2026-08-13-mynote.md)
 - 构建指南（问题记录 + 环境说明）：[`docs/build-guide.md`](docs/build-guide.md)
+- 待办清单与逐版本修订记录：[`docs/backlog.md`](docs/backlog.md)
+- AI 回答 Markdown 渲染设计：[`docs/superpowers/specs/2026-09-15-ai-markdown-rendering-design.md`](docs/superpowers/specs/2026-09-15-ai-markdown-rendering-design.md)
+- AI 回答 Markdown 渲染计划（含修订记录）：[`docs/superpowers/plans/2026-09-15-ai-markdown-rendering.md`](docs/superpowers/plans/2026-09-15-ai-markdown-rendering.md)

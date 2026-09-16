@@ -1,7 +1,8 @@
 # AI 网页端助手（DeepSeek 先行）— 设计文档
 
 - 日期：2026-09-11
-- 状态：设计已确认（brainstorming 会话），待实现
+- 状态：❌ 已被替换 —— 本设计描述的 WebView 网页驱动方案已于 v1.6.0 整体删除，改为直连官方 API（见 `docs/superpowers/specs/2026-09-15-deepseek-api-assistant-design.md`），多服务商现状见 `docs/superpowers/specs/2026-09-15-ai-provider-support-design.md`。本文仅存历史，文中 `AiWebDriver` / `WebViewAiSession` 等标识符在代码中已不存在。
+- 原始状态：设计已确认（brainstorming 会话），待实现
 - 关联：`docs/superpowers/specs/2026-09-10-note-history-design.md`（同为编辑页能力 / DB 迁移先例）、`AGENTS.md`、`README.md`
 - 前置结论（用户已确认）：
   - 接入 **DeepSeek 网页版**（`chat.deepseek.com`），不走官方 API、不自建代理；

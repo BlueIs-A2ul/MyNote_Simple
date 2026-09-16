@@ -1,7 +1,7 @@
 # 纸感极简 UI 改版 — 设计文档
 
 - 日期：2026-09-11
-- 状态：设计已确认，待实现
+- 状态：已实现（纸感色板/中性色/组件均已落地于 `ui/theme/` 与 `ui/components/`；详见同名 plan 的修订记录）
 - 关联：`docs/superpowers/specs/2026-09-10-theme-settings-design.md`（主题色管理）、`docs/superpowers/specs/2026-08-13-mynote-design.md`
 
 ## 1. 背景与问题

@@ -1,5 +1,7 @@
 # AI 网页端助手（DeepSeek 先行）实现计划
 
+> ❌ **已被替换（仅存历史）**：本计划的 WebView 网页驱动方案已于 v1.6.0 整体删除，实现改为直连官方 API（`docs/superpowers/plans/2026-09-15-deepseek-api-assistant.md`）。计划中的 `AiWebDriver` / `DeepSeekDriver` / `WebViewAiSession` 等文件在代码中已不存在，勿按本文施工。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在编辑页接入 DeepSeek 网页版 AI 助手：app 内聊天 UI + 隐藏 WebView 自动发送/抓取流式回答 + 按笔记本地留档 + 回答落地（插入/替换/复制/存新笔记），服务适配层可扩展到豆包/Kimi。

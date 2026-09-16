@@ -1,7 +1,7 @@
 # AI 回答 Markdown 渲染 — 设计文档
 
 - 日期：2026-09-15
-- 状态：设计已确认（用户确认 A 档语法 + 全部推荐项，并授权自行写文档与实现）
+- 状态：已实现（2026-09-15，v1.9.0；新增 `MarkdownParser` / `MarkdownInline` / `MarkdownPlainText` / `MarkdownContent`，移除 `CodeBlockParser`）
 - 关联：`docs/backlog.md` 条目 61（代码块极简渲染，本设计将其升级为完整 Markdown）、`docs/superpowers/specs/2026-09-15-ai-assistant-optimization-design.md`（AI 助手基线）
 - 范围：仅 AI 助手回答气泡与流式气泡的 Markdown 渲染；用户气泡、深度思考区、输入框保持纯文本。不改数据库、不改 ViewModel、不新增三方依赖（硬约束）。
 

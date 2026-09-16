@@ -1,7 +1,7 @@
 # AI 助手切换到 DeepSeek 官方 API（自带 Key）— 设计文档
 
 - 日期：2026-09-15
-- 状态：设计已确认（brainstorming 会话），待实现
+- 状态：已实现（2026-09-15，v1.6.0）。⚠ 本文为单服务商口径，标识符 `DeepSeekApiClient` / `DeepSeekApiSession` / `DeepSeekSseParser` 已由 v1.10.0 更名为 `AiApiClient` / `AiApiSession` / `AiSseParser` 并升级为多服务商（见 `docs/superpowers/specs/2026-09-15-ai-provider-support-design.md`）。
 - 关联：`docs/superpowers/specs/2026-09-11-ai-web-assistant-design.md`（被本设计替换）、`AGENTS.md`、`README.md`
 - 前置结论（用户已确认）：
   - **用 API 模式替换网页驱动**：删除 WebView 驱动全套（`AiWebDriver` / `DeepSeekDriver` / `AiDriverRegistry` / `WebViewAiSession` / `AiWebEventParser` 及对应测试），不再保留"显示网页 / 登录态 / 网页会话"路径；

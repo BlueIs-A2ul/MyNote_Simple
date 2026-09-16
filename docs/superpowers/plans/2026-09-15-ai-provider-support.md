@@ -1,6 +1,6 @@
 # AI 服务商可切换（DeepSeek / 硅基流动 / 自定义）实现计划
 
-**Goal:** 按 `docs/superpowers/specs/2026-09-15-ai-provider-support-design.md` 实现多服务商支持，版本 1.9.0。
+**Goal:** 按 `docs/superpowers/specs/2026-09-15-ai-provider-support-design.md` 实现多服务商支持，版本 1.9.0（⚠ 实际发布版本定为 **1.10.0**——1.9.0 已被并行的 Markdown 渲染批占用，见文末修订记录）。
 
 **约定：** 中文注释/提交；零新增依赖；无 DB 迁移；DeepSeek 旧 prefs key 与 serviceId 保持兼容；`AppContainer` 提交前确认并行会话已落地（避免夹带对方改动）。
 
