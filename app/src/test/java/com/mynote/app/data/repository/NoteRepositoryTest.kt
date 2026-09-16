@@ -200,12 +200,58 @@ class NoteRepositoryTest {
         assertNotNull(repo.getNote(freshId))
     }
 
+    /**
+     * 把图片目录里的文件「变旧」，越过 GC 宽限期（条目 71 保护刚落盘的新图）。
+     * 断言真正的孤儿回收前必须先调用，否则文件会被宽限期保护起来，测不出回收逻辑。
+     */
+    private fun ageImageFiles() {
+        val past = System.currentTimeMillis() - ImageStore.GC_GRACE_MS - 1_000
+        imageStore.dir().listFiles()?.forEach { it.setLastModified(past) }
+    }
+
+    // ---------- 条目 76：批量查询切块 ----------
+
+    @Test
+    fun chunkIdsSplitsLargeListsWithinSqliteVariableLimit() {
+        val batches = chunkIds((1L..1000L).toList())
+        assertEquals(listOf(900, 100), batches.map { it.size })
+        assertTrue(chunkIds(emptyList()).isEmpty())
+    }
+
+    @Test
+    fun getNotesByIdsHandlesLargeIdListsAndEmptyList() = runTest {
+        val id = repo.saveNote(null, "t", "c", null, false, null)
+        // 1000 个 id（含大量不存在的）：切块后正常返回，不抛 too many SQL variables
+        val found = repo.getNotesByIds((id..(id + 999)).toList())
+        assertEquals(1, found.size)
+        assertEquals(id, found.single().id)
+        assertTrue(repo.getNotesByIds(emptyList()).isEmpty())
+    }
+
+    // ---------- 条目 72：保留期影响评估 ----------
+
+    @Test
+    fun countExpiredDeletedNotesCountsOnlyBeyondTtl() = runTest {
+        val old = repo.saveNote(null, "old", "c", null, false, null)
+        val fresh = repo.saveNote(null, "fresh", "c", null, false, null)
+        repo.deleteNote(repo.getNote(old)!!)
+        repo.deleteNote(repo.getNote(fresh)!!)
+        val now = System.currentTimeMillis()
+        val day = 24L * 3600 * 1000
+        db.noteDao().update(repo.getNote(old)!!.copy(deletedAt = now - 20 * day))
+        db.noteDao().update(repo.getNote(fresh)!!.copy(deletedAt = now - 3 * day))
+
+        assertEquals(1, repo.countExpiredDeletedNotes(now = now, ttlMs = 7 * day))
+        assertEquals(0, repo.countExpiredDeletedNotes(now = now, ttlMs = 90 * day))
+    }
+
     @Test
     fun softDeleteKeepsImagesUntilPurge() = runTest {
         imageStore.writeFile("trash.webp", byteArrayOf(1))
         val id = repo.saveNote(null, "t", "![](img/trash.webp)", null, false, null)
         repo.deleteNote(repo.getNote(id)!!)
         assertTrue(imageStore.physicalFile("trash.webp").exists())
+        ageImageFiles()
         repo.purgeNote(repo.getNote(id)!!)
         assertFalse(imageStore.physicalFile("trash.webp").exists())
     }
@@ -244,6 +290,7 @@ class NoteRepositoryTest {
         repo.saveNote(id, "t", "no image", null, false, null)
         // 通过彻底删除另一篇笔记触发 GC（GC 只在彻底删除/裁剪后执行）
         val other = repo.saveNote(null, "other", "x", null, false, null)
+        ageImageFiles()
         repo.purgeNote(repo.getNote(other)!!)
         assertTrue(imageStore.physicalFile("a.webp").exists())
     }
@@ -252,6 +299,7 @@ class NoteRepositoryTest {
     fun garbageCollectionReclaimsImagesAfterTrim() = runTest {
         imageStore.writeFile("b.webp", byteArrayOf(1))
         val id = repo.saveNote(null, "t", "![](img/b.webp)", null, false, null)
+        ageImageFiles()
         for (i in 1..50) repo.saveNote(id, "t", "v$i", null, false, null)
         assertEquals(false, imageStore.physicalFile("b.webp").exists())
     }
@@ -266,6 +314,7 @@ class NoteRepositoryTest {
         // 笔记 A 先带图保存（历史快照引用 a.webp），随后保存移除图片标记 → 应触发 GC
         val id = repo.saveNote(null, "t", "![](img/a.webp)", null, false, null)
         imageStore.writeFile("a.webp", byteArrayOf(1))
+        ageImageFiles()
         repo.saveNote(id, "t", "no image", null, false, null)
 
         // 无引用的孤儿被回收；仍被历史快照引用的 a.webp 保留（恢复旧版所需）
@@ -300,6 +349,7 @@ class NoteRepositoryTest {
         repo.deleteNote(repo.getNote(b)!!)
         val inTrash = repo.observeDeletedNotes().first { it.size == 2 }
 
+        ageImageFiles()
         repo.purgeNotes(repo.getNotesByIds(inTrash.map { it.id }))
 
         assertNull(db.noteDao().getById(a))

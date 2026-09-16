@@ -85,6 +85,8 @@ fun AppNavHost(container: AppContainer) {
                 backupManager = container.backupManager,
                 imageRenderer = container.noteImageRenderer,
                 exportManager = container.imageExportManager,
+                // 条目 73：草稿目标 id 与编辑页同生命周期地存进导航 entry，进程死亡后仍可恢复
+                draftIdHandle = backStack.savedStateHandle,
                 aiResultType = resultType,
                 aiResultText = resultText,
                 onAiResultConsumed = {
@@ -177,6 +179,7 @@ fun AppNavHost(container: AppContainer) {
                 themeStore = container.themeSettingsStore,
                 sortStore = container.noteSortStore,
                 trashStore = container.trashRetentionStore,
+                repository = container.noteRepository,
                 aiSettingsStore = container.aiSettingsStore,
                 clientFactory = container.aiApiClientFactory,
                 onBack = { navController.popBackStack() }

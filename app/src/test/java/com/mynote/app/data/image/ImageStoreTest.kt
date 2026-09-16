@@ -34,7 +34,8 @@ class ImageStoreTest {
         drop.writeText("x")
         dropThumb.writeText("x")
 
-        store.collectGarbage(setOf("keep.jpg"))
+        // 越过 GC 宽限期（新鲜文件按条目 71 受保护）
+        store.collectGarbage(setOf("keep.jpg"), now = keep.lastModified() + ImageStore.GC_GRACE_MS + 1)
 
         assertTrue(keep.exists())
         assertFalse(drop.exists())
@@ -51,7 +52,7 @@ class ImageStoreTest {
         keep.writeText("x")
         keepThumb.writeText("x")
 
-        store.collectGarbage(setOf("keep.jpg"))
+        store.collectGarbage(setOf("keep.jpg"), now = keep.lastModified() + ImageStore.GC_GRACE_MS + 1)
 
         assertTrue(keep.exists())
         assertFalse(keepThumb.exists())
@@ -114,5 +115,73 @@ class ImageStoreTest {
         val file = File(dir, "stream.bin")
         assertTrue(file.exists())
         assertTrue(file.readBytes().contentEquals(payload))
+    }
+
+    // ---------- 条目 71：GC 宽限期 ----------
+
+    @Test
+    fun collectGarbageKeepsFilesWithinGracePeriod() {
+        // 刚插图的文件：引用还没落库（草稿尚未保存），此时 GC 不能删
+        val dir = store.dir()
+        dir.mkdirs()
+        val fresh = File(dir, "fresh.webp")
+        fresh.writeText("x")
+
+        store.collectGarbage(emptySet(), now = fresh.lastModified() + 1)
+
+        assertTrue(fresh.exists())
+    }
+
+    @Test
+    fun collectGarbageDeletesUnreferencedAfterGracePeriod() {
+        val dir = store.dir()
+        dir.mkdirs()
+        val old = File(dir, "old.webp")
+        old.writeText("x")
+
+        store.collectGarbage(emptySet(), now = old.lastModified() + ImageStore.GC_GRACE_MS + 1)
+
+        assertFalse(old.exists())
+    }
+
+    @Test
+    fun collectGarbageClearsStalePendingFiles() {
+        // 导入中途崩溃留下的暂存残留：超过宽限期后由 GC 回收
+        val staged = store.pendingFile("stale.webp")
+        staged.writeText("x")
+
+        store.collectGarbage(emptySet(), now = staged.lastModified() + 1)
+        assertTrue(staged.exists())
+
+        store.collectGarbage(emptySet(), now = staged.lastModified() + ImageStore.GC_GRACE_MS + 1)
+        assertFalse(staged.exists())
+    }
+
+    // ---------- 条目 74：原子写入 ----------
+
+    @Test
+    fun writeFileDoesNotTruncateExistingFileWhenStreamFails() {
+        val dir = store.dir()
+        dir.mkdirs()
+        val target = File(dir, "existing.webp")
+        target.writeText("good")
+
+        val failing = object : ByteArrayInputStream("bad".toByteArray()) {
+            override fun read(b: ByteArray, off: Int, len: Int): Int = throw java.io.IOException("读取失败")
+        }
+        val threw = runCatching { store.writeFile("existing.webp", failing) }.isFailure
+
+        assertTrue(threw)
+        assertTrue(target.exists())
+        assertTrue(target.readText() == "good")
+        assertFalse(File(dir, "existing.webp.tmp").exists())
+    }
+
+    @Test
+    fun writePendingWritesIntoPendingDirNotImageDir() {
+        store.writePending("pending.webp", ByteArrayInputStream("p".toByteArray()))
+
+        assertTrue(store.pendingFile("pending.webp").exists())
+        assertFalse(store.physicalFile("pending.webp").exists())
     }
 }

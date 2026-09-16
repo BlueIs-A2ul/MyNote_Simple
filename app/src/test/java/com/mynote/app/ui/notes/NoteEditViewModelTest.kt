@@ -1,6 +1,7 @@
 package com.mynote.app.ui.notes
 
 import android.content.Context
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -208,6 +209,31 @@ class NoteEditViewModelTest {
         assertNull(done.await())
         assertEquals(1, db.noteDao().getAll().size)
         assertEquals("改后正文", db.noteDao().getAll().single().content)
+    }
+
+    /**
+     * 条目 73：草稿目标 id 落在 SavedStateHandle 里，进程被杀后重建的 VM 仍更新同一条笔记，
+     * 而不是再插一条重复的。
+     */
+    @Test
+    fun draftIdSurvivesViewModelRecreation() = runTest(dispatcher) {
+        val handle = SavedStateHandle()
+        vm.viewModelScope.cancel()
+        val first = NoteEditViewModel(repo, ImageStore(ApplicationProvider.getApplicationContext()), null, handle)
+        first.saveDraft("标题", "正文", null, false, null, null)
+        val id = first.draftId.first { it != null }!!
+        assertEquals(1, db.noteDao().getAll().size)
+
+        // 模拟进程死亡：VM 重建、noteId 仍为 null，但 SavedStateHandle 被系统恢复
+        val second = NoteEditViewModel(repo, ImageStore(ApplicationProvider.getApplicationContext()), null, handle)
+        assertEquals(id, second.draftId.value)
+
+        val done = CompletableDeferred<String?>()
+        second.save("标题", "改后正文", null, false, null, null) { done.complete(it) }
+        assertNull(done.await())
+
+        assertEquals(1, db.noteDao().getAll().size)
+        assertEquals("改后正文", db.noteDao().getById(id)?.content)
     }
 
     @Test

@@ -64,7 +64,18 @@ class NoteRepository(
 
     suspend fun getNote(id: Long): NoteEntity? = noteDao.getById(id)
 
-    suspend fun getNotesByIds(ids: List<Long>): List<NoteEntity> = noteDao.getByIds(ids)
+    /**
+     * 按 id 集合取笔记（条目 76）：空列表直接返回，非空按 [chunkIds] 切块，
+     * 避免 Room 把 `IN (:ids)` 展开成上千个绑定参数后撞上 SQLite 变量上限（API ≤30 为 999）。
+     */
+    suspend fun getNotesByIds(ids: List<Long>): List<NoteEntity> =
+        chunkIds(ids).flatMap { noteDao.getByIds(it) }
+
+    /** 按给定保留期统计会被立即清理的回收站条数（条目 72：缩短保留期前的确认提示）。 */
+    suspend fun countExpiredDeletedNotes(
+        now: Long = System.currentTimeMillis(),
+        ttlMs: Long = TRASH_TTL_MS
+    ): Int = noteDao.countDeletedBefore(now - ttlMs)
 
     suspend fun countRevisions(noteId: Long): Int = revisionDao.countByNote(noteId)
 
@@ -250,5 +261,17 @@ class NoteRepository(
     companion object {
         /** 回收站保留时长：30 天。 */
         const val TRASH_TTL_MS = 30L * 24 * 60 * 60 * 1000
+
+        /** `IN (:ids)` 单次绑定上限（条目 76）：低于 SQLite 旧版本的 999 变量上限，留出余量。 */
+        internal const val IN_QUERY_CHUNK = 900
     }
 }
+
+/**
+ * 批量查询分片（条目 76）：`IN (:ids)` 的绑定参数个数必须留在 SQLite 变量上限内，
+ * 否则老设备（API ≤30，上限 999）会抛「too many SQL variables」。
+ */
+internal fun chunkIds(
+    ids: List<Long>,
+    chunkSize: Int = NoteRepository.IN_QUERY_CHUNK
+): List<List<Long>> = if (ids.isEmpty()) emptyList() else ids.chunked(chunkSize)

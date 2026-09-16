@@ -69,6 +69,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -107,7 +108,8 @@ import java.io.File
 class NoteEditViewModel(
     private val repository: NoteRepository,
     private val imageStore: ImageStore,
-    private val noteId: Long?
+    private val noteId: Long?,
+    private val savedState: SavedStateHandle = SavedStateHandle()
 ) : ViewModel() {
 
     private val _categories = MutableStateFlow<List<CategoryEntity>>(emptyList())
@@ -116,8 +118,9 @@ class NoteEditViewModel(
     private val _note = MutableStateFlow<NoteEntity?>(null)
     val note: StateFlow<NoteEntity?> = _note
 
-    // 新笔记被静默保存（草稿兜底）后的 id：后续保存/静默保存都以它为目标，避免重复插入
-    private val _draftId = MutableStateFlow<Long?>(null)
+    // 新笔记被静默保存（草稿兜底）后的 id：后续保存/静默保存都以它为目标，避免重复插入。
+    // 条目 73：同时落在 SavedStateHandle 里，进程被杀后重建的 VM 也能取回同一个目标 id。
+    private val _draftId = MutableStateFlow(savedState.get<Long>(KEY_DRAFT_ID))
     val draftId: StateFlow<Long?> = _draftId
 
     // 保存/草稿/删除在途作业：连点第二次直接忽略，防止重复插入与双重退出回调
@@ -129,8 +132,12 @@ class NoteEditViewModel(
         viewModelScope.launch {
             repository.observeCategories().collectLatest { _categories.value = it }
         }
+        val restoredDraftId = _draftId.value
         if (noteId != null && noteId != 0L) {
             observeNote(noteId)
+        } else if (restoredDraftId != null) {
+            // 进程重建后继续盯着这条草稿行，字段比较/脏值判断都以它为准
+            observeNote(restoredDraftId)
         }
     }
 
@@ -217,6 +224,7 @@ class NoteEditViewModel(
                     else -> {
                         val id = repository.saveNote(null, title, content, categoryId, pinned, color, noteDate)
                         _draftId.value = id
+                        savedState[KEY_DRAFT_ID] = id
                         observeNote(id)
                     }
                 }
@@ -244,8 +252,16 @@ class NoteEditViewModel(
         const val HISTORY_WARNING =
             "该笔记历史已 ${NoteRevisionDao.WARN_AT} 条，满 ${NoteRevisionDao.MAX_PER_NOTE} 条后最旧记录会自动清理"
 
-        fun factory(repo: NoteRepository, imageStore: ImageStore, noteId: Long?): ViewModelProvider.Factory =
-            viewModelFactory { initializer { NoteEditViewModel(repo, imageStore, noteId) } }
+        /** 草稿目标 id 在 [SavedStateHandle] 中的键（条目 73：进程被杀后重建仍指向同一条笔记）。 */
+        private const val KEY_DRAFT_ID = "note_edit_draft_id"
+
+        fun factory(
+            repo: NoteRepository,
+            imageStore: ImageStore,
+            noteId: Long?,
+            savedState: SavedStateHandle = SavedStateHandle()
+        ): ViewModelProvider.Factory =
+            viewModelFactory { initializer { NoteEditViewModel(repo, imageStore, noteId, savedState) } }
     }
 }
 
@@ -280,6 +296,7 @@ fun NoteEditScreen(
     backupManager: BackupManager,
     imageRenderer: NoteImageRenderer,
     exportManager: ImageExportManager,
+    draftIdHandle: SavedStateHandle,
     aiResultType: String?,
     aiResultText: String?,
     onAiResultConsumed: () -> Unit,
@@ -289,7 +306,7 @@ fun NoteEditScreen(
 ) {
     val vm: NoteEditViewModel = viewModel(
         key = "note_edit_$noteId",
-        factory = NoteEditViewModel.factory(repository, imageStore, noteId)
+        factory = NoteEditViewModel.factory(repository, imageStore, noteId, draftIdHandle)
     )
     val note by vm.note.collectAsState()
     val categories by vm.categories.collectAsState()

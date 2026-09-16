@@ -66,6 +66,7 @@ import com.mynote.app.data.ai.AiEndpoint
 import com.mynote.app.data.ai.AiProbe
 import com.mynote.app.data.ai.AiProvider
 import com.mynote.app.data.db.NoteSortMode
+import com.mynote.app.data.repository.NoteRepository
 import com.mynote.app.data.settings.AiSettingsStore
 import com.mynote.app.data.settings.DarkMode
 import com.mynote.app.data.settings.NoteSortStore
@@ -83,12 +84,15 @@ fun SettingsScreen(
     themeStore: ThemeSettingsStore,
     sortStore: NoteSortStore,
     trashStore: TrashRetentionStore,
+    repository: NoteRepository,
     aiSettingsStore: AiSettingsStore,
     clientFactory: (AiEndpoint) -> AiProbe = { AiApiClient(it) },
     onBack: () -> Unit
 ) {
     val vm: SettingsViewModel = viewModel(
-        factory = SettingsViewModel.factory(themeStore, sortStore, trashStore, aiSettingsStore, clientFactory)
+        factory = SettingsViewModel.factory(
+            themeStore, sortStore, trashStore, repository, aiSettingsStore, clientFactory
+        )
     )
     val settings by vm.settings.collectAsState()
     val defaultSort by vm.defaultSort.collectAsState()
@@ -103,6 +107,8 @@ fun SettingsScreen(
     var keyVisible by rememberSaveable { mutableStateOf(false) }
     var baseUrlInput by rememberSaveable { mutableStateOf(customBaseUrl) }
     var customModelInput by rememberSaveable { mutableStateOf(aiModel) }
+    // 条目 72：缩短保留期前的影响评估（days × 将被立即永久删除的条数）
+    var retentionPrompt by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -262,7 +268,18 @@ fun SettingsScreen(
             TextTabRow(
                 tabs = TrashRetentionStore.OPTIONS.toList(),
                 selected = retentionDays,
-                onSelect = { vm.setRetentionDays(it) },
+                onSelect = { days ->
+                    if (days >= retentionDays) {
+                        // 延长保留期不会删任何东西：直接生效
+                        vm.setRetentionDays(days)
+                    } else {
+                        // 缩短保留期会立即永久删除超期笔记：先算影响条数再确认（条目 72）
+                        scope.launch {
+                            val expiring = vm.expiringCount(days)
+                            if (expiring > 0) retentionPrompt = days to expiring else vm.setRetentionDays(days)
+                        }
+                    }
+                },
                 label = { "$it 天" }
             )
             Text(
@@ -271,6 +288,33 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 6.dp)
             )
+            // 条目 72：缩短保留期会立即永久删除超期笔记，必须先确认并说明影响条数
+            retentionPrompt?.let { (days, expiring) ->
+                AlertDialog(
+                    onDismissRequest = { retentionPrompt = null },
+                    title = { Text("缩短回收站保留期？") },
+                    text = {
+                        Text(
+                            "改为 $days 天后，回收站中已有 $expiring 条笔记会立即被永久删除" +
+                                "（含历史版本与内嵌图片），不可恢复。"
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                retentionPrompt = null
+                                scope.launch {
+                                    val purged = vm.applyRetentionDays(days)
+                                    snackbarHostState.showSnackbar("已清理 $purged 条")
+                                }
+                            }
+                        ) { Text("缩短并清理") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { retentionPrompt = null }) { Text("取消") }
+                    }
+                )
+            }
             Spacer(Modifier.height(24.dp))
             HairlineDivider()
 

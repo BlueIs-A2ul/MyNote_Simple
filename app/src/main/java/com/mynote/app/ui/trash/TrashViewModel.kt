@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.mynote.app.data.db.NoteListItem
 import com.mynote.app.data.repository.NoteRepository
 import com.mynote.app.data.settings.TrashRetentionStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -39,21 +40,34 @@ class TrashViewModel(
         }
     }
 
-    fun restore(item: NoteListItem, onDone: () -> Unit) {
+    /** 恢复（条目 76：失败回调 onFailed，不再让 DB 异常直接崩溃）。 */
+    fun restore(item: NoteListItem, onDone: () -> Unit, onFailed: () -> Unit) {
         viewModelScope.launch {
-            repository.getNote(item.id)?.let { repository.restoreNote(it) }
-            onDone()
+            try {
+                repository.getNote(item.id)?.let { repository.restoreNote(it) }
+                onDone()
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                onFailed()
+            }
         }
     }
 
-    fun purge(item: NoteListItem, onDone: () -> Unit) {
+    /** 彻底删除单条（条目 76）。 */
+    fun purge(item: NoteListItem, onDone: () -> Unit, onFailed: () -> Unit) {
         viewModelScope.launch {
-            repository.getNote(item.id)?.let { repository.purgeNote(it) }
-            onDone()
+            try {
+                repository.getNote(item.id)?.let { repository.purgeNote(it) }
+                onDone()
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                onFailed()
+            }
         }
     }
 
-    fun purgeAll(onDone: (Int) -> Unit) {
+    /** 清空回收站（条目 76）：空列表直接返回 0，异常走 onFailed。 */
+    fun purgeAll(onDone: (Int) -> Unit, onFailed: () -> Unit) {
         if (_purging.value) return
         viewModelScope.launch {
             _purging.value = true
@@ -61,6 +75,9 @@ class TrashViewModel(
                 val list = repository.getNotesByIds(notes.value.map { it.id })
                 repository.purgeNotes(list)
                 onDone(list.size)
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                onFailed()
             } finally {
                 _purging.value = false
             }

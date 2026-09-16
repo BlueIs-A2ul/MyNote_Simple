@@ -50,6 +50,10 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE deletedAt IS NOT NULL AND deletedAt < :cutoff")
     suspend fun getDeletedBefore(cutoff: Long): List<NoteEntity>
 
+    /** 回收站中删除时间早于截止时刻的条数（条目 72：缩短保留期前的影响评估，只读计数不取正文）。 */
+    @Query("SELECT COUNT(*) FROM notes WHERE deletedAt IS NOT NULL AND deletedAt < :cutoff")
+    suspend fun countDeletedBefore(cutoff: Long): Int
+
     @Query("SELECT * FROM notes WHERE id = :id")
     fun observeById(id: Long): Flow<NoteEntity?>
 

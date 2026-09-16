@@ -61,7 +61,7 @@ class TrashViewModelTest {
         val inTrash = vm.notes.first { it.isNotEmpty() }
 
         val done = CompletableDeferred<Unit>()
-        vm.restore(inTrash.first()) { done.complete(Unit) }
+        vm.restore(inTrash.first(), onDone = { done.complete(Unit) }, onFailed = { done.complete(Unit) })
         done.await()
 
         assertNull(db.noteDao().getById(id)?.deletedAt)
@@ -75,7 +75,7 @@ class TrashViewModelTest {
         val inTrash = vm.notes.first { it.isNotEmpty() }
 
         val done = CompletableDeferred<Unit>()
-        vm.purge(inTrash.first()) { done.complete(Unit) }
+        vm.purge(inTrash.first(), onDone = { done.complete(Unit) }, onFailed = { done.complete(Unit) })
         done.await()
 
         assertNull(db.noteDao().getById(id))
@@ -90,9 +90,35 @@ class TrashViewModelTest {
         vm.notes.first { it.size == 2 }
 
         val done = CompletableDeferred<Int>()
-        vm.purgeAll { done.complete(it) }
+        vm.purgeAll(onDone = { done.complete(it) }, onFailed = { done.complete(-1) })
         assertEquals(2, done.await())
         assertEquals(0, db.noteDao().getAll().size)
+    }
+
+    /** 条目 76：回收站为空时「清空」不得抛异常（旧实现的 IN () 会直接崩）。 */
+    @Test
+    fun purgeAllOnEmptyTrashReportsZero() = runTest(dispatcher) {
+        val done = CompletableDeferred<Int>()
+        vm.purgeAll(onDone = { done.complete(it) }, onFailed = { done.complete(-1) })
+        assertEquals(0, done.await())
+    }
+
+    /** 条目 76：DB 失败走 onFailed 而不是让异常逃出 viewModelScope 崩溃。 */
+    @Test
+    fun purgeAllFailureInvokesOnFailed() = runTest(dispatcher) {
+        val id = repo.saveNote(null, "t", "c", null, false, null)
+        repo.deleteNote(repo.getNote(id)!!)
+        vm.notes.first { it.isNotEmpty() }
+        // 制造确定性的 DB 失败：删掉 notes 表（Robolectric 下 db.close() 之后查询仍能成功，不可靠）
+        db.openHelper.writableDatabase.execSQL("DROP TABLE notes")
+        assertTrue(runCatching { repo.getNotesByIds(listOf(id)) }.isFailure)
+
+        val outcome = CompletableDeferred<String>()
+        vm.purgeAll(onDone = { outcome.complete("done") }, onFailed = { outcome.complete("failed") })
+
+        assertEquals("failed", outcome.await())
+        // 在途标志必须在失败后复位，否则「清空」按钮永久禁用
+        assertFalse(vm.purging.value)
     }
 
     @Test
@@ -132,7 +158,7 @@ class TrashViewModelTest {
         assertFalse(vm.purging.value)
 
         val done = CompletableDeferred<Int>()
-        vm.purgeAll { done.complete(it) }
+        vm.purgeAll(onDone = { done.complete(it) }, onFailed = { done.complete(-1) })
         assertEquals(2, done.await())
         // 清空完成后在途标志复位（界面按钮恢复可用）
         assertFalse(vm.purging.value)

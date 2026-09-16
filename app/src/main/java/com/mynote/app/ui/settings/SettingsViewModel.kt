@@ -11,6 +11,7 @@ import com.mynote.app.data.ai.AiProvider
 import com.mynote.app.data.ai.BalanceState
 import com.mynote.app.data.ai.ProbeResult
 import com.mynote.app.data.db.NoteSortMode
+import com.mynote.app.data.repository.NoteRepository
 import com.mynote.app.data.settings.AiSettingsStore
 import com.mynote.app.data.settings.DarkMode
 import com.mynote.app.data.settings.NoteSortStore
@@ -24,6 +25,7 @@ class SettingsViewModel(
     private val store: ThemeSettingsStore,
     private val sortStore: NoteSortStore,
     private val trashStore: TrashRetentionStore,
+    private val repository: NoteRepository,
     private val aiStore: AiSettingsStore,
     private val clientFactory: (AiEndpoint) -> AiProbe = { AiApiClient(it) }
 ) : ViewModel() {
@@ -69,6 +71,22 @@ class SettingsViewModel(
     fun setDefaultSort(mode: NoteSortMode) = sortStore.setMode(mode)
 
     fun setRetentionDays(days: Int) = trashStore.setRetentionDays(days)
+
+    /**
+     * 条目 72：估算把保留期改为 [days] 后会被**立即永久删除**的回收站条数。
+     * 设置页据此在缩短保留期前弹确认框，而不是让用户下次启动时才发现笔记没了。
+     */
+    suspend fun expiringCount(days: Int): Int =
+        repository.countExpiredDeletedNotes(ttlMs = TrashRetentionStore.ttlMs(days))
+
+    /**
+     * 条目 72：应用新的保留期，并按新保留期立即清理已超期笔记（物理删除 + 图片 GC），返回清理条数。
+     * 延长保留期时不会有超期项，返回 0。
+     */
+    suspend fun applyRetentionDays(days: Int): Int {
+        trashStore.setRetentionDays(days)
+        return repository.purgeExpiredDeletedNotes(ttlMs = TrashRetentionStore.ttlMs(days))
+    }
 
     /** 切换服务商：持久化并刷新该服务商的模型/思考/Key 状态。 */
     fun setProvider(provider: AiProvider) {
@@ -157,11 +175,12 @@ class SettingsViewModel(
             store: ThemeSettingsStore,
             sortStore: NoteSortStore,
             trashStore: TrashRetentionStore,
+            repository: NoteRepository,
             aiStore: AiSettingsStore,
             clientFactory: (AiEndpoint) -> AiProbe = { AiApiClient(it) }
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
-                SettingsViewModel(store, sortStore, trashStore, aiStore, clientFactory)
+                SettingsViewModel(store, sortStore, trashStore, repository, aiStore, clientFactory)
             }
         }
     }

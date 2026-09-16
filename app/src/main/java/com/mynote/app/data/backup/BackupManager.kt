@@ -14,6 +14,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.zip.ZipEntry
@@ -46,6 +47,9 @@ class BackupManager(
 
         /** zip 内图片条目名校验（剥离 img/ 前缀后）：仅允许字母数字与 . _ -，防路径穿越。 */
         private val IMAGE_NAME_REGEX = Regex("^[A-Za-z0-9._-]+$")
+
+        /** 暂存目录内保存「被备份同名覆盖的旧图」的子目录（条目 74，回滚时还原）。 */
+        private const val STAGING_BACKUP_DIR = "backup"
     }
 
     @Serializable
@@ -127,12 +131,22 @@ class BackupManager(
     }
 
     /**
-     * 导入 zip 备份（条目 43/44）：条目名校验 + 图片流式落盘 + 分类/笔记单事务写入。
+     * 导入 zip 备份（条目 43/44/74/75）：条目名校验 + 图片先落暂存目录 + 分类/笔记单事务写入。
      * 格式问题抛 [BackupFormatException]；读取 IO 异常原样上抛。返回四类计数。
+     *
+     * 条目 74：图片先写 `notes_images_pending/`，解码成功后再提升到 `notes_images/`，
+     * 写库失败则回滚提升（含还原被同名覆盖的旧图）；无论成功失败都不留暂存残留。
      */
     suspend fun importZip(uri: Uri): BackupImportResult = withContext(Dispatchers.IO) {
         val db = requireNotNull(database) { "导入需要数据库实例" }
+        try {
+            importZipLocked(db, uri)
+        } finally {
+            clearStaging()
+        }
+    }
 
+    private suspend fun importZipLocked(db: AppDatabase, uri: Uri): BackupImportResult {
         var jsonText: String? = null
         try {
             openInput(uri)?.use { input ->
@@ -147,7 +161,8 @@ class BackupManager(
                                 val name = entry.name.removePrefix("img/")
                                 // 先校验再落盘：非法条目不得触碰文件系统
                                 if (!IMAGE_NAME_REGEX.matches(name)) throw BackupFormatException(FORMAT_ERROR)
-                                imageStore.writeFile(name, zip)
+                                // 条目 74：先落暂存目录，写库成功后才提升，避免失败/取消留下孤儿或截断同名旧图
+                                imageStore.writePending(name, zip)
                             }
                         }
                         zip.closeEntry()
@@ -161,6 +176,10 @@ class BackupManager(
         }
         val data = decode(jsonText ?: throw BackupFormatException(FORMAT_ERROR))
 
+        // 条目 74：先提升图片再写库——提升失败即中止（不会出现「库里有引用、文件缺失」）；
+        // 写库失败则回滚提升，连被同名覆盖的旧图一起还原。
+        val promoted = promotePendingImages()
+
         val noteDao = db.noteDao()
         val categoryDao = db.categoryDao()
         var inserted = 0
@@ -168,51 +187,106 @@ class BackupManager(
         var skipped = 0
         var trashed = 0
 
-        db.withTransaction {
-            // 分类 id 重映射：备份 id → 库内真实 id
-            val idRemap = mutableMapOf<Long, Long>()
-            data.categories.forEach { cat ->
-                val byId = categoryDao.getById(cat.id)
-                if (byId != null) {
-                    // 同 id 视为同一分类：备份的名称与颜色覆盖本地
-                    categoryDao.update(cat.toEntity())
-                    idRemap[cat.id] = cat.id
-                } else {
+        try {
+            db.withTransaction {
+                // 分类 id 重映射：备份 id → 库内真实 id
+                val idRemap = mutableMapOf<Long, Long>()
+                data.categories.forEach { cat ->
+                    val byId = categoryDao.getById(cat.id)
                     val byName = categoryDao.getByName(cat.name)
-                    if (byName != null) {
-                        // 名称唯一索引冲突：复用本地分类 id，颜色以备份为准
-                        categoryDao.update(CategoryEntity(byName.id, cat.name, cat.color))
-                        idRemap[cat.id] = byName.id
-                    } else {
-                        categoryDao.insert(cat.toEntity())
-                        idRemap[cat.id] = cat.id
+                    when {
+                        // 条目 75：名字已被某个分类占用（可能是别的 id，也可能是同 id 改名撞名）
+                        // → 复用该分类并只更新颜色，避免 categories.name 唯一索引把整个导入打成失败
+                        byName != null -> {
+                            categoryDao.update(CategoryEntity(byName.id, byName.name, cat.color))
+                            idRemap[cat.id] = byName.id
+                        }
+                        // 同 id 且名字可用：按备份改名/改色
+                        byId != null -> {
+                            categoryDao.update(CategoryEntity(byId.id, cat.name, cat.color))
+                            idRemap[cat.id] = byId.id
+                        }
+                        else -> {
+                            categoryDao.insert(CategoryEntity(cat.id, cat.name, cat.color))
+                            idRemap[cat.id] = cat.id
+                        }
+                    }
+                }
+                val knownDbCategoryIds = categoryDao.getAll().map { it.id }.toSet()
+                data.notes.forEach { note ->
+                    // 备份分类 id 经重映射；映射不到且库中也不存在的野 id 置 null
+                    val categoryId = note.categoryId?.let { cid ->
+                        idRemap[cid] ?: cid.takeIf { it in knownDbCategoryIds }
+                    }
+                    val entity = note.toEntity().copy(categoryId = categoryId)
+                    val existing = noteDao.getById(note.id)
+                    val inTrash = note.deletedAt != null
+                    when {
+                        existing == null -> {
+                            noteDao.insert(entity)
+                            if (inTrash) trashed++ else inserted++
+                        }
+                        incomingWins(existing.updatedAt, note.updatedAt) -> {
+                            noteDao.update(entity)
+                            if (inTrash) trashed++ else updated++
+                        }
+                        // 否则保留本地较新版本，跳过
+                        else -> skipped++
                     }
                 }
             }
-            val knownDbCategoryIds = categoryDao.getAll().map { it.id }.toSet()
-            data.notes.forEach { note ->
-                // 备份分类 id 经重映射；映射不到且库中也不存在的野 id 置 null
-                val categoryId = note.categoryId?.let { cid ->
-                    idRemap[cid] ?: cid.takeIf { it in knownDbCategoryIds }
-                }
-                val entity = note.toEntity().copy(categoryId = categoryId)
-                val existing = noteDao.getById(note.id)
-                val inTrash = note.deletedAt != null
-                when {
-                    existing == null -> {
-                        noteDao.insert(entity)
-                        if (inTrash) trashed++ else inserted++
-                    }
-                    incomingWins(existing.updatedAt, note.updatedAt) -> {
-                        noteDao.update(entity)
-                        if (inTrash) trashed++ else updated++
-                    }
-                    // 否则保留本地较新版本，跳过
-                    else -> skipped++
-                }
-            }
+        } catch (t: Throwable) {
+            rollbackPromotion(promoted)
+            throw t
         }
-        BackupImportResult(inserted, updated, skipped, trashed)
+        return BackupImportResult(inserted, updated, skipped, trashed)
+    }
+
+    /** 提升记录：备份图片覆盖了同名旧图时，旧图先挪进暂存备份区，便于回滚还原。 */
+    private class Promoted(val name: String, val backup: File?)
+
+    /**
+     * 把暂存目录里的图片提升到 `notes_images/`；同名旧图先挪到暂存备份区（成功后被清理）。
+     * 任一文件失败则回滚已提升的文件并抛 IO 异常，调用方据此中止整个导入。
+     */
+    private fun promotePendingImages(): List<Promoted> {
+        val staged = imageStore.pendingDir().listFiles()?.filter { it.isFile }.orEmpty()
+        val backupDir = File(imageStore.pendingDir(), STAGING_BACKUP_DIR).apply { mkdirs() }
+        val done = mutableListOf<Promoted>()
+        try {
+            staged.forEach { file ->
+                val dest = imageStore.physicalFile(file.name)
+                var backup: File? = null
+                if (dest.exists()) {
+                    val moved = File(backupDir, file.name)
+                    if (dest.renameTo(moved)) backup = moved else dest.delete()
+                }
+                if (!file.renameTo(dest)) {
+                    // 少数文件系统 rename 不覆盖：退化为拷贝 + 删除
+                    file.copyTo(dest, overwrite = true)
+                    file.delete()
+                }
+                done += Promoted(file.name, backup)
+            }
+        } catch (e: Exception) {
+            rollbackPromotion(done)
+            throw java.io.IOException("备份图片写入失败", e)
+        }
+        return done
+    }
+
+    /** 回滚提升：删除本次写入的图片，并还原被覆盖的旧图。 */
+    private fun rollbackPromotion(promoted: List<Promoted>) {
+        promoted.asReversed().forEach { item ->
+            val dest = imageStore.physicalFile(item.name)
+            dest.delete()
+            item.backup?.takeIf { it.exists() }?.renameTo(dest)
+        }
+    }
+
+    /** 清空暂存目录（含暂存备份区）：导入无论成功失败都不留残留。 */
+    private fun clearStaging() {
+        imageStore.pendingDir().listFiles()?.forEach { it.deleteRecursively() }
     }
 
     /** 单条笔记导出为 txt（标记原样保留）：标题非空时写「标题 + 空行 + 正文」，否则仅正文。 */

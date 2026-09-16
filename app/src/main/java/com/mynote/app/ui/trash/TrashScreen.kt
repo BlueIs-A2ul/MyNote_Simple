@@ -36,6 +36,7 @@ import com.mynote.app.data.db.NoteListItem
 import com.mynote.app.data.repository.NoteRepository
 import com.mynote.app.data.settings.TrashRetentionStore
 import com.mynote.app.ui.components.HairlineDivider
+import com.mynote.app.ui.components.OPERATION_FAILED
 import com.mynote.app.ui.components.PaperAlertDialog
 import com.mynote.app.ui.components.PaperTopBar
 import com.mynote.app.ui.notes.NoteContentParser
@@ -115,9 +116,11 @@ fun TrashScreen(
                             enabled = !purging,
                             onPreview = { previewTarget = item },
                             onRestore = {
-                                vm.restore(item) {
+                                vm.restore(item, onDone = {
                                     scope.launch { snackbarHostState.showSnackbar("已恢复") }
-                                }
+                                }, onFailed = {
+                                    scope.launch { snackbarHostState.showSnackbar(OPERATION_FAILED) }
+                                })
                             },
                             onPurge = { purgeTarget = item }
                         )
@@ -152,9 +155,11 @@ fun TrashScreen(
                 TextButton(
                     onClick = {
                         purgeTarget = null
-                        vm.purge(item) {
+                        vm.purge(item, onDone = {
                             scope.launch { snackbarHostState.showSnackbar("已彻底删除") }
-                        }
+                        }, onFailed = {
+                            scope.launch { snackbarHostState.showSnackbar(OPERATION_FAILED) }
+                        })
                     }
                 ) { Text("删除") }
             },
@@ -225,9 +230,11 @@ fun TrashScreen(
                 TextButton(
                     onClick = {
                         showPurgeAllDialog = false
-                        vm.purgeAll { count ->
+                        vm.purgeAll(onDone = { count ->
                             scope.launch { snackbarHostState.showSnackbar("已彻底删除 $count 条") }
-                        }
+                        }, onFailed = {
+                            scope.launch { snackbarHostState.showSnackbar(OPERATION_FAILED) }
+                        })
                     }
                 ) { Text("清空") }
             },

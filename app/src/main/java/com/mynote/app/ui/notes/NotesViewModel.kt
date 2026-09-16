@@ -12,6 +12,7 @@ import com.mynote.app.data.db.NoteSortMode
 import com.mynote.app.data.repository.NoteRepository
 import com.mynote.app.data.settings.NoteSortStore
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -100,22 +101,36 @@ class NotesViewModel(
         selectedIds.value = emptySet()
     }
 
-    fun batchDelete(onDone: (Int) -> Unit) = runBatch(onDone) { repository.deleteNotes(it) }
+    fun batchDelete(onDone: (Int) -> Unit, onFailed: () -> Unit) =
+        runBatch(onDone, onFailed) { repository.deleteNotes(it) }
 
-    fun batchSetCategory(categoryId: Long?, onDone: (Int) -> Unit) =
-        runBatch(onDone) { repository.moveNotesToCategory(it, categoryId) }
+    fun batchSetCategory(categoryId: Long?, onDone: (Int) -> Unit, onFailed: () -> Unit) =
+        runBatch(onDone, onFailed) { repository.moveNotesToCategory(it, categoryId) }
 
-    fun batchSetPinned(pinned: Boolean, onDone: (Int) -> Unit) =
-        runBatch(onDone) { repository.setNotesPinned(it, pinned) }
+    fun batchSetPinned(pinned: Boolean, onDone: (Int) -> Unit, onFailed: () -> Unit) =
+        runBatch(onDone, onFailed) { repository.setNotesPinned(it, pinned) }
 
-    private fun runBatch(onDone: (Int) -> Unit, op: suspend (List<NoteEntity>) -> Unit) {
+    /**
+     * 批量操作（条目 76）：失败时回调 [onFailed] 并**保留选中态**，让用户可以直接重试；
+     * 原先无 try/catch，DB 异常会沿 viewModelScope 抛出直接崩溃。
+     */
+    private fun runBatch(
+        onDone: (Int) -> Unit,
+        onFailed: () -> Unit,
+        op: suspend (List<NoteEntity>) -> Unit
+    ) {
         val ids = selectedIds.value
         if (ids.isEmpty()) return
         viewModelScope.launch {
-            val notes = repository.getNotesByIds(ids.toList())
-            op(notes)
-            exitSelection()
-            onDone(notes.size)
+            try {
+                val notes = repository.getNotesByIds(ids.toList())
+                op(notes)
+                exitSelection()
+                onDone(notes.size)
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                onFailed()
+            }
         }
     }
 

@@ -1,6 +1,7 @@
 package com.mynote.app.ui.settings
 
 import android.content.Context
+import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.mynote.app.data.ai.AiEndpoint
 import com.mynote.app.data.ai.AiProbe
@@ -9,7 +10,10 @@ import com.mynote.app.data.ai.BalanceLine
 import com.mynote.app.data.ai.BalanceState
 import com.mynote.app.data.ai.DeepSeekModels
 import com.mynote.app.data.ai.ProbeResult
+import com.mynote.app.data.db.AppDatabase
 import com.mynote.app.data.db.NoteSortMode
+import com.mynote.app.data.image.ImageStore
+import com.mynote.app.data.repository.NoteRepository
 import com.mynote.app.data.settings.AiSettingsStore
 import com.mynote.app.data.settings.ApiKeyCipher
 import com.mynote.app.data.settings.DarkMode
@@ -17,6 +21,7 @@ import com.mynote.app.data.settings.NoteSortStore
 import com.mynote.app.data.settings.ThemeSettingsStore
 import com.mynote.app.data.settings.TrashRetentionStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -44,6 +49,8 @@ class SettingsViewModelTest {
 
     private val dispatcher = StandardTestDispatcher()
     private lateinit var context: Context
+    private lateinit var db: AppDatabase
+    private lateinit var repository: NoteRepository
     private lateinit var store: ThemeSettingsStore
     private lateinit var sortStore: NoteSortStore
     private lateinit var trashStore: TrashRetentionStore
@@ -84,11 +91,17 @@ class SettingsViewModelTest {
         sortStore = NoteSortStore(context)
         trashStore = TrashRetentionStore(context)
         aiStore = AiSettingsStore(context, FakeCipher())
-        vm = SettingsViewModel(store, sortStore, trashStore, aiStore, clientFactory)
+        db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+            .allowMainThreadQueries().build()
+        repository = NoteRepository(
+            db.noteDao(), db.categoryDao(), db.noteRevisionDao(), ImageStore(context), db
+        )
+        vm = SettingsViewModel(store, sortStore, trashStore, repository, aiStore, clientFactory)
     }
 
     @After
     fun teardown() {
+        db.close()
         Dispatchers.resetMain()
     }
 
@@ -123,6 +136,49 @@ class SettingsViewModelTest {
         vm.setRetentionDays(7)
         assertEquals(7, trashStore.retentionDays.value)
         assertEquals(7, vm.retentionDays.value)
+    }
+
+    /** 条目 72：缩短保留期前的影响评估只统计「新保留期之外」的回收站条目。 */
+    @Test
+    fun expiringCountReflectsNewRetention() = runTest(dispatcher) {
+        seedTrashedNotes(deletedDaysAgo = listOf(20L, 3L))
+
+        assertEquals(1, vm.expiringCount(7))
+        assertEquals(0, vm.expiringCount(90))
+    }
+
+    /** 条目 72：缩短保留期会立即清理超期条目并把新值写入设置。 */
+    @Test
+    fun applyRetentionDaysPurgesExpiredAndPersists() = runTest(dispatcher) {
+        seedTrashedNotes(deletedDaysAgo = listOf(20L, 3L))
+
+        assertEquals(1, vm.applyRetentionDays(7))
+
+        assertEquals(7, trashStore.retentionDays.value)
+        assertEquals(7, vm.retentionDays.value)
+        assertEquals(1, repository.observeDeletedNotes().first().size)
+    }
+
+    /** 延长保留期不删除任何东西。 */
+    @Test
+    fun applyLongerRetentionKeepsEverything() = runTest(dispatcher) {
+        seedTrashedNotes(deletedDaysAgo = listOf(20L, 3L))
+
+        assertEquals(0, vm.applyRetentionDays(90))
+
+        assertEquals(90, trashStore.retentionDays.value)
+        assertEquals(2, repository.observeDeletedNotes().first().size)
+    }
+
+    /** 造若干条回收站笔记，删除时间分别为 N 天前。 */
+    private suspend fun seedTrashedNotes(deletedDaysAgo: List<Long>) {
+        val day = 24L * 3600 * 1000
+        val now = System.currentTimeMillis()
+        deletedDaysAgo.forEach { days ->
+            val id = repository.saveNote(null, "n$days", "c", null, false, null)
+            repository.deleteNote(repository.getNote(id)!!)
+            db.noteDao().update(repository.getNote(id)!!.copy(deletedAt = now - days * day))
+        }
     }
 
     @Test

@@ -64,6 +64,7 @@ import com.mynote.app.ui.components.CategoryDot
 import com.mynote.app.ui.components.EmptyState
 import com.mynote.app.ui.components.HairlineDivider
 import com.mynote.app.ui.components.NoteRow
+import com.mynote.app.ui.components.OPERATION_FAILED
 import com.mynote.app.ui.components.PaperAlertDialog
 import com.mynote.app.ui.components.PaperOverflowMenu
 import com.mynote.app.ui.components.PaperTopBar
@@ -227,9 +228,9 @@ fun NotesScreen(
                                 enabled = selectedIds.isNotEmpty(),
                                 onClick = {
                                     menuOpen = false
-                                    viewModel.batchSetPinned(true) { n ->
+                                    viewModel.batchSetPinned(true, onDone = { n ->
                                         scope.launch { snackbarHostState.showSnackbar("已置顶 $n 条") }
-                                    }
+                                    }, onFailed = { scope.launch { snackbarHostState.showSnackbar(OPERATION_FAILED) } })
                                 }
                             )
                             DropdownMenuItem(
@@ -237,9 +238,9 @@ fun NotesScreen(
                                 enabled = selectedIds.isNotEmpty(),
                                 onClick = {
                                     menuOpen = false
-                                    viewModel.batchSetPinned(false) { n ->
+                                    viewModel.batchSetPinned(false, onDone = { n ->
                                         scope.launch { snackbarHostState.showSnackbar("已取消置顶 $n 条") }
-                                    }
+                                    }, onFailed = { scope.launch { snackbarHostState.showSnackbar(OPERATION_FAILED) } })
                                 }
                             )
                             DropdownMenuItem(
@@ -483,9 +484,9 @@ fun NotesScreen(
                     label = "未分类",
                     onClick = {
                         showBatchCategorySheet = false
-                        viewModel.batchSetCategory(null) { n ->
+                        viewModel.batchSetCategory(null, onDone = { n ->
                             scope.launch { snackbarHostState.showSnackbar("已移动 $n 条") }
-                        }
+                        }, onFailed = { scope.launch { snackbarHostState.showSnackbar(OPERATION_FAILED) } })
                     }
                 )
                 categories.forEach { cat ->
@@ -494,9 +495,9 @@ fun NotesScreen(
                         color = PaperPalette.nearest(cat.color),
                         onClick = {
                             showBatchCategorySheet = false
-                            viewModel.batchSetCategory(cat.id) { n ->
+                            viewModel.batchSetCategory(cat.id, onDone = { n ->
                                 scope.launch { snackbarHostState.showSnackbar("已移动 $n 条") }
-                            }
+                            }, onFailed = { scope.launch { snackbarHostState.showSnackbar(OPERATION_FAILED) } })
                         }
                     )
                 }
@@ -514,9 +515,9 @@ fun NotesScreen(
                     enabled = selectedIds.isNotEmpty(),
                     onClick = {
                         showBatchDeleteDialog = false
-                        viewModel.batchDelete { n ->
+                        viewModel.batchDelete(onDone = { n ->
                             scope.launch { snackbarHostState.showSnackbar("已删除 $n 条") }
-                        }
+                        }, onFailed = { scope.launch { snackbarHostState.showSnackbar(OPERATION_FAILED) } })
                     }
                 ) { Text("删除") }
             },

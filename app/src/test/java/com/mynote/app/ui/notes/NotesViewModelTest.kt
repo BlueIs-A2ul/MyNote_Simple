@@ -134,7 +134,7 @@ class NotesViewModelTest {
         vm.toggleSelect(b)
 
         val done = CompletableDeferred<Int>()
-        vm.batchDelete { done.complete(it) }
+        vm.batchDelete(onDone = { done.complete(it) }, onFailed = { done.complete(-1) })
         assertEquals(2, done.await())
 
         assertNotNull(db.noteDao().getById(a)?.deletedAt)
@@ -152,7 +152,7 @@ class NotesViewModelTest {
         vm.toggleSelect(b)
 
         val done = CompletableDeferred<Int>()
-        vm.batchSetCategory(catId) { done.complete(it) }
+        vm.batchSetCategory(catId, onDone = { done.complete(it) }, onFailed = { done.complete(-1) })
         assertEquals(2, done.await())
         assertEquals(catId, db.noteDao().getById(a)?.categoryId)
         assertEquals(catId, db.noteDao().getById(b)?.categoryId)
@@ -165,7 +165,7 @@ class NotesViewModelTest {
         vm.enterSelection(a)
 
         val done = CompletableDeferred<Int>()
-        vm.batchSetCategory(null) { done.complete(it) }
+        vm.batchSetCategory(null, onDone = { done.complete(it) }, onFailed = { done.complete(-1) })
         assertEquals(1, done.await())
         assertNull(db.noteDao().getById(a)?.categoryId)
     }
@@ -178,7 +178,7 @@ class NotesViewModelTest {
         vm.toggleSelect(b)
 
         val done = CompletableDeferred<Int>()
-        vm.batchSetPinned(true) { done.complete(it) }
+        vm.batchSetPinned(true, onDone = { done.complete(it) }, onFailed = { done.complete(-1) })
         assertEquals(2, done.await())
         assertTrue(db.noteDao().getById(a)?.pinned == true)
         assertTrue(db.noteDao().getById(b)?.pinned == true)
@@ -187,10 +187,28 @@ class NotesViewModelTest {
     @Test
     fun batchOpWithEmptySelectionDoesNotCallback() = runTest(dispatcher) {
         var called = false
-        vm.batchDelete { called = true }
-        vm.batchSetPinned(true) { called = true }
-        vm.batchSetCategory(null) { called = true }
+        vm.batchDelete(onDone = { called = true }, onFailed = { called = true })
+        vm.batchSetPinned(true, onDone = { called = true }, onFailed = { called = true })
+        vm.batchSetCategory(null, onDone = { called = true }, onFailed = { called = true })
         assertFalse(called)
+    }
+
+    /** 条目 76：批量操作失败时回调 onFailed 并保留选中态（便于重试），不再让异常逃出协程崩溃。 */
+    @Test
+    fun batchFailureReportsErrorAndKeepsSelection() = runTest(dispatcher) {
+        val id = repo.saveNote(null, "t", "c", null, false, null)
+        vm.notes.first { !it.isNullOrEmpty() }
+        vm.enterSelection(id)
+        // 制造确定性的 DB 失败：删掉 notes 表（Robolectric 下 db.close() 之后查询仍能成功，不可靠）
+        db.openHelper.writableDatabase.execSQL("DROP TABLE notes")
+        assertTrue("表被删后查询应失败", runCatching { repo.getNotesByIds(listOf(id)) }.isFailure)
+
+        val outcome = CompletableDeferred<String>()
+        vm.batchDelete(onDone = { outcome.complete("done") }, onFailed = { outcome.complete("failed") })
+
+        assertEquals("失败分支被回调", "failed", outcome.await())
+        assertTrue("失败后应保留多选态，selectionMode=${vm.selectionMode.value}", vm.selectionMode.value)
+        assertTrue("失败后应保留选中项，selected=${vm.selectedIds.value}", vm.selectedIds.value.contains(id))
     }
 
     // ---------- 分类筛选（全部 / 未分类 / 某个分类） ----------

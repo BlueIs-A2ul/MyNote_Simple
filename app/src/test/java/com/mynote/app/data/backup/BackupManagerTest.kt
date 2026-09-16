@@ -294,25 +294,60 @@ class BackupManagerTest {
     }
 
     @Test
-    fun importRollsBackPartialWritesWhenLaterEntryFails() = runTest {
-        // 备份先插入新分类 id=5，再把 id=1 改名为「B」与本地 id=2 冲突 → 事务整体回滚
+    fun importResolvesCategoryNameConflictByReuse() = runTest {
+        // 本地 {1:A, 2:B}；备份把 id=1 改名为「B」→ 名字已被 id=2 占用，应复用 id=2 而不是撞唯一索引
         db.categoryDao().insert(CategoryEntity(0, "A", 1))
-        db.categoryDao().insert(CategoryEntity(0, "B", 2))
+        val bId = db.categoryDao().insert(CategoryEntity(0, "B", 2))
         val zip = buildZip(
             "notes.json" to backupJson(
-                notes = listOf(BackupManager.BackupNote(500, "n", "c", 1, 1, null, false, null)),
-                categories = listOf(
-                    BackupManager.BackupCategory(5, "新分类", 3),
-                    BackupManager.BackupCategory(1, "B", 4)
-                )
+                notes = listOf(BackupManager.BackupNote(500, "n", "c", 1, 1, 1L, false, null)),
+                categories = listOf(BackupManager.BackupCategory(1, "B", 4))
             )
+        )
+
+        val result = managerWith(input = zip).importZip(backupUri)
+
+        assertEquals(1, result.inserted)
+        assertEquals(2, db.categoryDao().getAll().size)
+        assertEquals(4, db.categoryDao().getById(bId)?.color)
+        assertEquals("A", db.categoryDao().getAll().first { it.id != bId }.name)
+        // 笔记重映射到「真正持有该名字」的分类
+        assertEquals(bId, db.noteDao().getById(500)?.categoryId)
+    }
+
+    @Test
+    fun importPromotesStagedImagesAndClearsStaging() = runTest {
+        val zip = buildZip(
+            "notes.json" to backupJson(
+                listOf(BackupManager.BackupNote(600, "n", "![](img/new.png)", 1, 1, null, false, null))
+            ),
+            "img/new.png" to "NEW".toByteArray()
+        )
+
+        managerWith(input = zip).importZip(backupUri)
+
+        assertTrue(store.physicalFile("new.png").exists())
+        assertTrue(store.physicalFile("new.png").readText() == "NEW")
+        assertEquals(0, store.pendingDir().listFiles()?.size ?: 0)
+    }
+
+    @Test
+    fun importFailureKeepsExistingImagesIntactAndClearsStaging() = runTest {
+        // 本地已有一张同名好图；备份里同名图片内容不同，且后面跟着一个非法条目名
+        store.writeFile("keep.png", "GOOD".toByteArray())
+        val zip = buildZip(
+            "notes.json" to backupJson(emptyList()),
+            "img/keep.png" to "BAD".toByteArray(),
+            "img/../evil.png" to "X".toByteArray()
         )
 
         val error = runCatching { managerWith(input = zip).importZip(backupUri) }.exceptionOrNull()
 
-        assertNotNull(error)
-        assertNull(db.categoryDao().getById(5))
-        assertNull(db.noteDao().getById(500))
-        assertEquals(2, db.categoryDao().getAll().size)
+        assertTrue(error is BackupFormatException)
+        // 失败不得截断/覆盖已有的好图，也不得新增文件或留下暂存残留
+        assertTrue(store.physicalFile("keep.png").exists())
+        assertTrue(store.physicalFile("keep.png").readText() == "GOOD")
+        assertEquals(1, store.dir().listFiles()?.size ?: 0)
+        assertEquals(0, store.pendingDir().listFiles()?.size ?: 0)
     }
 }
