@@ -297,9 +297,14 @@ private fun ChatLayer(
     LaunchedEffect(state.messages.size) {
         if (atBottom && itemCount > 0) listState.animateScrollToItem(itemCount - 1)
     }
-    // 流式增量直接定位，避免动画排队抖动
+    // 流式增量直接定位，避免动画排队抖动；直接检查布局信息避免 atBottom 更新延迟
     LaunchedEffect(state.streamingText, state.reasoningText, state.sending) {
-        if (atBottom && itemCount > 0) listState.scrollToItem(itemCount - 1)
+        if (itemCount > 0) {
+            val info = listState.layoutInfo
+            val lastVisibleIndex = info.visibleItemsInfo.lastOrNull()?.index ?: -1
+            val shouldScroll = lastVisibleIndex >= info.totalItemsCount - 1
+            if (shouldScroll) listState.scrollToItem(itemCount - 1)
+        }
     }
 
     Surface(
