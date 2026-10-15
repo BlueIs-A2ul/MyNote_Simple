@@ -1721,4 +1721,11 @@ git commit -m "feat: AI Token 成本与用量体验优化（system prompt/缓存
 ## 修订记录
 
 - 2026-10-15：初版。按设计文档（含评审修订）拆 8 个任务；T4/T7 串行（共享 `AiChatViewModel.kt`）；release 构建与发布按 AGENTS.md 留主树。
+- 2026-10-15（实现）：8 个任务全部落地（worktree 分支 `ai-token-1015`，T1 `afbcdec` → T7 `97f0a01`），ff-only 合入 master；全量单测 **646 全绿**；版本 1.11.0。实现期修正与已知记录：
+  1. T2 计划内 `tightContextShrinksHistoryBudget` 期望值笔误（应为首字符 `"继"`），已按实际语义修正；
+  2. system 前置连带打挂两处既有 `AiChatViewModelTest` 断言（`laterSend…` size 3→4 且 `[1]`→`[2]`、`retryResends…` `retried.size` 3→4），随 T2 一并修；
+  3. 审查补强断言：`retry()` 调用点透传、400 非锚点不剔、剔除连接必关、叠加链路请求体不变、4 连接上限；
+  4. 已知边界：裁剪一次后复遇 422 超限会先经剔除阶梯兜底再给专用文案（字面状态机允许，总连接 ≤5，已用测试钉住）；
+  5. `isContextLengthError` 锚点未覆盖 llama.cpp 类「context size / the request exceeds…」文案（漏报退化为现状，候选改进需走设计锚点清单修订）；
+  6. 全量曾出现一次既有 `ImageStoreTest` GC 时序 flake，复跑通过，未处理。
 </content>

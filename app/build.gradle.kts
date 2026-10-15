@@ -16,8 +16,8 @@ if (keystorePropertiesFile.exists()) {
 }
 
 // 版本规则：versionName 语义化 major.minor.patch；versionCode = major*10000 + minor*100 + patch
-val appVersionName = "1.10.1"
-val appVersionCode = 1_10_01
+val appVersionName = "1.11.0"
+val appVersionCode = 1_11_00
 
 android {
     namespace = "com.mynote.app"
