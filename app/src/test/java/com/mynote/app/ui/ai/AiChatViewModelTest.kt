@@ -143,8 +143,8 @@ class AiChatViewModelTest {
 
         vm.send("第二问")
         vm.state.first { it.sending && fake.sent.size == 2 }
-        assertEquals(3, fake.sent[1].size)
-        assertEquals(AiChatMessage.ROLE_ASSISTANT, fake.sent[1][1].role)
+        assertEquals(4, fake.sent[1].size)
+        assertEquals(AiChatMessage.ROLE_ASSISTANT, fake.sent[1][2].role)
         assertEquals("第二问", fake.sent[1].last().content)
         assertTrue(fake.sent[0].last().content.contains("【笔记正文】"))
     }
@@ -595,7 +595,7 @@ class AiChatViewModelTest {
         vm.state.first { it.sending }
         assertEquals(3, fake.sent.size)
         val retried = fake.sent[2]
-        assertEquals(3, retried.size)
+        assertEquals(4, retried.size)
         assertEquals("第二问", retried.last().content)
         assertFalse(retried.last().content.contains("【笔记正文】"))
         assertEquals(3, aiRepo.getMessages(sessionId).size)

@@ -7,6 +7,12 @@ object AiPromptBuilder {
     /** 附带笔记正文的消息表头；`AiApiMessageBuilder` 用它做幂等判定。 */
     const val NOTE_CONTEXT_HEADER = "【笔记正文】"
 
+    /** 固定 system 提示：约束回答长度与复述（设计 §2.1，文案冻结；调整走设计修订记录）。 */
+    const val SYSTEM_PROMPT =
+        "你是 MyNote 笔记应用内的 AI 助手。回答规则：直接回答用户问题，不复述笔记原文；" +
+            "语言简洁，能一句话说清不写三段；仅在用户要求时展开细节；" +
+            "涉及笔记内容时忠实于原文，不编造原文中不存在的信息。"
+
     /** 正文超限被截断时追加的提示语。 */
     private const val TRUNCATED_NOTICE = "（正文过长，已截断）"
 
