@@ -3,6 +3,7 @@ package com.mynote.app.data.ai
 import com.mynote.app.data.db.AiMessageEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -284,5 +285,80 @@ class AiApiMessageBuilderTest {
         // 57_143 × 7 / 10 = 40_000（整数除法向下取整），正文下限仍取 MAX_NOTE_CHARS
         val mid = AiApiMessageBuilder.build("", content, emptyList(), "总结", contextTokens = 57_143)
         assertEquals(AiApiMessageBuilder.MAX_NOTE_CHARS, mid[1].content.count { it == 'x' })
+    }
+
+    @Test
+    fun trimToCoreKeepsSystemFirstUserAndLatest() {
+        val messages = listOf(
+            AiChatMessage(AiChatMessage.ROLE_SYSTEM, "sys"),
+            AiChatMessage(AiChatMessage.ROLE_USER, "首"),
+            AiChatMessage(AiChatMessage.ROLE_ASSISTANT, "1"),
+            AiChatMessage(AiChatMessage.ROLE_USER, "2"),
+            AiChatMessage(AiChatMessage.ROLE_ASSISTANT, "3"),
+            AiChatMessage(AiChatMessage.ROLE_USER, "尾")
+        )
+
+        val trimmed = AiApiMessageBuilder.trimToCore(messages)
+
+        assertEquals(listOf("sys", "首", "尾"), trimmed.map { it.content })
+        assertEquals(
+            listOf(
+                AiChatMessage.ROLE_SYSTEM,
+                AiChatMessage.ROLE_USER,
+                AiChatMessage.ROLE_USER
+            ),
+            trimmed.map { it.role }
+        )
+    }
+
+    @Test
+    fun trimToCoreReturnsSameWhenNoMiddle() {
+        val messages = listOf(
+            AiChatMessage(AiChatMessage.ROLE_SYSTEM, "sys"),
+            AiChatMessage(AiChatMessage.ROLE_USER, "首"),
+            AiChatMessage(AiChatMessage.ROLE_USER, "尾")
+        )
+
+        assertSame(messages, AiApiMessageBuilder.trimToCore(messages))
+    }
+
+    @Test
+    fun trimToCoreWithoutSystemKeepsFirstUserAndLatest() {
+        val messages = listOf(
+            AiChatMessage(AiChatMessage.ROLE_USER, "首"),
+            AiChatMessage(AiChatMessage.ROLE_ASSISTANT, "1"),
+            AiChatMessage(AiChatMessage.ROLE_ASSISTANT, "2"),
+            AiChatMessage(AiChatMessage.ROLE_USER, "尾")
+        )
+
+        assertEquals(listOf("首", "尾"), AiApiMessageBuilder.trimToCore(messages).map { it.content })
+    }
+
+    @Test
+    fun trimToCoreDeduplicatesWhenFirstUserIsLatest() {
+        val messages = listOf(
+            AiChatMessage(AiChatMessage.ROLE_SYSTEM, "sys"),
+            AiChatMessage(AiChatMessage.ROLE_ASSISTANT, "1"),
+            AiChatMessage(AiChatMessage.ROLE_ASSISTANT, "2"),
+            AiChatMessage(AiChatMessage.ROLE_USER, "尾")
+        )
+
+        val trimmed = AiApiMessageBuilder.trimToCore(messages)
+
+        assertEquals(listOf("sys", "尾"), trimmed.map { it.content })
+    }
+
+    @Test
+    fun trimToCoreKeepsDistinctMessagesWithSameContent() {
+        val messages = listOf(
+            AiChatMessage(AiChatMessage.ROLE_SYSTEM, "sys"),
+            AiChatMessage(AiChatMessage.ROLE_USER, "同"),
+            AiChatMessage(AiChatMessage.ROLE_ASSISTANT, "答"),
+            AiChatMessage(AiChatMessage.ROLE_USER, "同")
+        )
+
+        val trimmed = AiApiMessageBuilder.trimToCore(messages)
+
+        assertEquals("两条不同实例但同内容的 user 都应保留", listOf("sys", "同", "同"), trimmed.map { it.content })
     }
 }

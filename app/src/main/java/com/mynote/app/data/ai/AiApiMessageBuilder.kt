@@ -65,6 +65,25 @@ object AiApiMessageBuilder {
     }
 
     /**
+     * 超限自愈用的最小化裁剪：保留 `[system（若有）, 首条 user（含正文）, 最新一条]`，
+     * 其余中间消息全丢；条数 ≤3（无可裁）时原样返回。
+     * system 只识别首个元素（依赖 [build] 的 prepend 约定）。
+     * 仅用于请求层即时自救，不落库、不影响下一轮按全量历史重建。
+     */
+    fun trimToCore(messages: List<AiChatMessage>): List<AiChatMessage> {
+        if (messages.size <= 3) return messages
+        val system = messages.first().takeIf { it.role == AiChatMessage.ROLE_SYSTEM }
+        val firstUser = messages.firstOrNull { it.role == AiChatMessage.ROLE_USER }
+        val last = messages.last()
+        val kept = ArrayList<AiChatMessage>(3)
+        system?.let { kept += it }
+        // 引用比较：避免内容相同的首条 user（含正文）与最新一条被误去重
+        if (firstUser != null && firstUser !== last) kept += firstUser
+        kept += last
+        return kept
+    }
+
+    /**
      * 历史裁剪：首条（含笔记正文）与最新一条永远保留；其余消息从最旧的一条开始
      * 逐条丢弃（幸存消息保持原顺序），直到按 content.length 累加不超过 [maxHistoryChars]。
      * 即使首条 + 最新一条本身已超预算也不再裁剪。空内容消息在调用前已过滤。
