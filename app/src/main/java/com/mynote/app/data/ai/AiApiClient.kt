@@ -98,8 +98,10 @@ fun interface HttpStreamTransport {
  * OpenAI 兼容 Chat Completions 客户端（DeepSeek / 硅基流动 / 自定义地址）。
  * 协议差异（思考参数样式、余额样式、模型列表过滤）全部由 [AiEndpoint] 驱动。
  * 手写 SSE：零新增依赖；解析逻辑见 [AiSseParser]（纯函数）。
- * 429/503 仅在连接已建立、尚未读流时重试一次（间隔 [retryDelayMs]，测试传 0）。
- * 422（参数被拒，如服务商不再支持思考字段）时去掉该字段立即重试一次；两种重试互不叠加。
+ * 连接级自愈（每类至多一次、总连接 ≤5，可叠加）：
+ * 400/422 上下文超限 → 裁剪中间历史重试一次，仍超限给专用文案；
+ * 422（或 400 未识别字段）→ 按 stream_options → thinking 顺序剔除字段重试；
+ * 429/503 → 退避 [retryDelayMs] 后重试。
  */
 class AiApiClient(
     private val endpoint: AiEndpoint,
@@ -121,14 +123,17 @@ class AiApiClient(
     ): Flow<ApiStreamEvent> = flow {
         var includeStreamOptions = true
         var includeThinking = endpoint.thinkingStyle != ThinkingStyle.NONE
+        var contextTrimmed = false
         var backedOff = false
+        var currentMessages = messages
 
-        // 连接级自愈循环：每轮至多消耗一种机会（剔除字段 / 退避），总连接上限 = 1 首次 + 2 剔除 + 1 退避 = 4
+        // 连接级自愈循环：每轮至多消耗一种机会（剔除字段 / 裁剪 / 退避），
+        // 总连接上限 = 1 首次 + 2 剔除 + 1 裁剪 + 1 退避 = 5
         var picked: HttpStreamConnection? = null
         while (true) {
             val opened = openConnection(
                 apiKey,
-                requestBody(model, messages, deepThinking, includeThinking, includeStreamOptions)
+                requestBody(model, currentMessages, deepThinking, includeThinking, includeStreamOptions)
             )
             if (opened == null) {
                 emit(ApiStreamEvent.Error(NETWORK_ERROR))
@@ -138,7 +143,21 @@ class AiApiClient(
             val status = opened.statusCode
             val errorBody = opened.errorBody
 
-            // 1. 参数被拒（422 无锚点；400 需未识别字段锚点）：按阶梯剔除可选字段
+            // 1. 超限识别最优先（400/422 均可能是上下文超限）：裁剪中间历史后重试一次；
+            //    无可裁时不再走其它自愈，直接收束到专用文案映射
+            if ((status == 400 || status == 422) && isContextLengthError(errorBody) && !contextTrimmed) {
+                val trimmed = AiApiMessageBuilder.trimToCore(currentMessages)
+                if (trimmed.size != currentMessages.size) {
+                    runCatching { opened.close() }
+                    currentMessages = trimmed
+                    contextTrimmed = true
+                    continue
+                }
+                picked = opened
+                break
+            }
+
+            // 2. 参数被拒（422 无锚点；400 需未识别字段锚点）：按阶梯剔除可选字段
             if (status == 422 || (status == 400 && looksLikeUnsupportedField(errorBody))) {
                 if (includeStreamOptions || includeThinking) {
                     runCatching { opened.close() }
@@ -147,7 +166,7 @@ class AiApiClient(
                 }
             }
 
-            // 2. 限流/服务器繁忙：尚未开始读流，安全丢弃旧连接后重试一次
+            // 3. 限流/服务器繁忙：尚未开始读流，安全丢弃旧连接后重试一次
             if ((status == 429 || status == 503) && !backedOff) {
                 runCatching { opened.close() }
                 delay(retryDelayMs)
@@ -166,7 +185,7 @@ class AiApiClient(
 
         try {
             if (connection.statusCode !in 200..299) {
-                emit(mapHttpError(connection.statusCode, connection.errorBody))
+                emit(mapStreamHttpError(connection.statusCode, connection.errorBody))
                 return@flow
             }
             val stream = connection.stream
@@ -414,6 +433,25 @@ class AiApiClient(
         else -> ApiStreamEvent.Error("请求失败（HTTP $status）" + detail(body))
     }
 
+    /** 400/422 且命中上下文超限锚点：替换为可操作的专用文案（不拼接 detail）。 */
+    private fun mapStreamHttpError(status: Int, body: String?): ApiStreamEvent.Error =
+        if ((status == 400 || status == 422) && isContextLengthError(body)) {
+            ApiStreamEvent.Error(CONTEXT_OVERFLOW_MESSAGE)
+        } else {
+            mapHttpError(status, body)
+        }
+
+    /** 错误体是否指向上下文超限（小写锚点匹配）。 */
+    private fun isContextLengthError(body: String?): Boolean {
+        if (body.isNullOrBlank()) return false
+        val lower = body.lowercase()
+        if (lower.contains("context_length_exceeded")) return true
+        if (lower.contains("maximum context length")) return true
+        if (lower.contains("context length") && lower.contains("exceed")) return true
+        if (lower.contains("reduce the length")) return true
+        return lower.contains("上下文") && (lower.contains("超出") || lower.contains("超过"))
+    }
+
     /** 400 错误体是否指向未识别的可选字段（422 天然视作参数被拒，无需锚点）。 */
     private fun looksLikeUnsupportedField(body: String?): Boolean {
         if (body.isNullOrBlank()) return false
@@ -448,6 +486,7 @@ class AiApiClient(
         const val PARSE_ERROR = "返回数据无法解析"
         const val BALANCE_UNSUPPORTED = "当前服务商不支持余额查询"
         const val DETAIL_MAX_CHARS = 200
+        const val CONTEXT_OVERFLOW_MESSAGE = "对话内容超出该模型的上下文上限，请缩短笔记正文或新开对话"
     }
 }
 

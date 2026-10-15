@@ -37,6 +37,9 @@ class AiApiClientTest {
         AiChatMessage(AiChatMessage.ROLE_USER, "再问一句")
     )
 
+    private val contextOverflowBody =
+        """{"error":{"code":"context_length_exceeded","message":"This model's maximum context length is 8192 tokens"}}"""
+
     @Test
     fun streamsChunksThenFinished() = runTest {
         val transport = FakeTransport(
@@ -548,6 +551,175 @@ class AiApiClientTest {
         assertTrue("第二级剔除下一轮才生效", transport.bodies[2].contains("enable_thinking"))
         assertFalse("第 4 个请求两字段均已剔除", transport.bodies[3].contains("\"stream_options\""))
         assertFalse("第 4 个请求两字段均已剔除", transport.bodies[3].contains("enable_thinking"))
+        assertEquals(ApiStreamEvent.Finished("", null, null), events.single())
+    }
+
+    @Test
+    fun contextOverflowTrimsHistoryAndRetries() = runTest {
+        val longMessages = listOf(
+            AiChatMessage(AiChatMessage.ROLE_USER, "第一问"),
+            AiChatMessage(AiChatMessage.ROLE_ASSISTANT, "第一答"),
+            AiChatMessage(AiChatMessage.ROLE_USER, "第二问"),
+            AiChatMessage(AiChatMessage.ROLE_ASSISTANT, "第二答"),
+            AiChatMessage(AiChatMessage.ROLE_USER, "第三问")
+        )
+        val transport = FakeTransport(
+            FakeConnection(statusCode = 400, errorBody = contextOverflowBody),
+            FakeConnection(
+                body = sse(
+                    """data: {"choices":[{"delta":{"content":"好"}}]}""",
+                    """data: {"choices":[{"delta":{"content":""},"finish_reason":"stop"}]}"""
+                )
+            )
+        )
+
+        val events = client(transport, endpoint = custom, retryDelayMs = 0)
+            .stream("key", "m", false, longMessages).toList()
+
+        assertEquals(2, transport.calls)
+        val first = Json.parseToJsonElement(transport.bodies[0]).jsonObject["messages"]!!.jsonArray
+        val second = Json.parseToJsonElement(transport.bodies[1]).jsonObject["messages"]!!.jsonArray
+        assertEquals(5, first.size)
+        assertEquals("仅保留首条 user 与最新一条", 2, second.size)
+        assertEquals("第一问", second[0].jsonObject["content"]!!.jsonPrimitive.content)
+        assertEquals("第三问", second[1].jsonObject["content"]!!.jsonPrimitive.content)
+        assertTrue("裁剪不丢 stream_options", transport.bodies[1].contains("\"stream_options\""))
+        assertEquals(
+            listOf(ApiStreamEvent.Chunk("好"), ApiStreamEvent.Finished("好", "stop", null)),
+            events
+        )
+    }
+
+    @Test
+    fun contextOverflowAfterTrimMapsDedicatedMessage() = runTest {
+        val longMessages = listOf(
+            AiChatMessage(AiChatMessage.ROLE_USER, "第一问"),
+            AiChatMessage(AiChatMessage.ROLE_ASSISTANT, "第一答"),
+            AiChatMessage(AiChatMessage.ROLE_USER, "第二问"),
+            AiChatMessage(AiChatMessage.ROLE_ASSISTANT, "第二答"),
+            AiChatMessage(AiChatMessage.ROLE_USER, "第三问")
+        )
+        val transport = FakeTransport(
+            FakeConnection(statusCode = 400, errorBody = contextOverflowBody),
+            FakeConnection(statusCode = 400, errorBody = contextOverflowBody)
+        )
+
+        val events = client(transport, endpoint = custom, retryDelayMs = 0)
+            .stream("key", "m", false, longMessages).toList()
+
+        assertEquals(2, transport.calls)
+        assertEquals(
+            "对话内容超出该模型的上下文上限，请缩短笔记正文或新开对话",
+            (events.single() as ApiStreamEvent.Error).message
+        )
+    }
+
+    @Test
+    fun contextOverflowWithoutTrimmableHistoryMapsDedicatedMessage() = runTest {
+        val short = listOf(
+            AiChatMessage(AiChatMessage.ROLE_USER, "一"),
+            AiChatMessage(AiChatMessage.ROLE_USER, "二")
+        )
+
+        for (status in listOf(400, 422)) {
+            val transport = FakeTransport(FakeConnection(statusCode = status, errorBody = contextOverflowBody))
+
+            val events = client(transport, endpoint = custom, retryDelayMs = 0)
+                .stream("key", "m", false, short).toList()
+
+            assertEquals("HTTP $status 无可裁时不再重试、也不走剔除阶梯", 1, transport.calls)
+            assertEquals(
+                "对话内容超出该模型的上下文上限，请缩短笔记正文或新开对话",
+                (events.single() as ApiStreamEvent.Error).message
+            )
+        }
+    }
+
+    @Test
+    fun contextOverflowOn422AlsoTrims() = runTest {
+        val longMessages = listOf(
+            AiChatMessage(AiChatMessage.ROLE_USER, "第一问"),
+            AiChatMessage(AiChatMessage.ROLE_ASSISTANT, "第一答"),
+            AiChatMessage(AiChatMessage.ROLE_USER, "第二问"),
+            AiChatMessage(AiChatMessage.ROLE_ASSISTANT, "第二答"),
+            AiChatMessage(AiChatMessage.ROLE_USER, "第三问")
+        )
+        val transport = FakeTransport(
+            FakeConnection(
+                statusCode = 422,
+                errorBody = """{"error":{"message":"maximum context length exceeded"}}"""
+            ),
+            FakeConnection(body = sse("data: [DONE]"))
+        )
+
+        val events = client(transport, endpoint = custom, retryDelayMs = 0)
+            .stream("key", "m", false, longMessages).toList()
+
+        assertEquals("422 超限不应走剔除阶梯", 2, transport.calls)
+        val second = Json.parseToJsonElement(transport.bodies[1]).jsonObject["messages"]!!.jsonArray
+        assertEquals(2, second.size)
+        assertTrue("超限裁剪不丢 stream_options", transport.bodies[1].contains("\"stream_options\""))
+        assertEquals(ApiStreamEvent.Finished("", null, null), events.single())
+    }
+
+    @Test
+    fun contextOverflowAfterTrimStillFallsBackToLadderBeforeDedicatedMessage() = runTest {
+        val longMessages = listOf(
+            AiChatMessage(AiChatMessage.ROLE_USER, "第一问"),
+            AiChatMessage(AiChatMessage.ROLE_ASSISTANT, "第一答"),
+            AiChatMessage(AiChatMessage.ROLE_USER, "第二问"),
+            AiChatMessage(AiChatMessage.ROLE_ASSISTANT, "第二答"),
+            AiChatMessage(AiChatMessage.ROLE_USER, "第三问")
+        )
+        val transport = FakeTransport(
+            FakeConnection(statusCode = 422, errorBody = contextOverflowBody),
+            FakeConnection(statusCode = 422, errorBody = contextOverflowBody),
+            FakeConnection(statusCode = 422, errorBody = contextOverflowBody)
+        )
+
+        val events = client(transport, endpoint = custom, retryDelayMs = 0)
+            .stream("key", "m", false, longMessages).toList()
+
+        // 字面状态机：裁剪一次后复遇 422 超限会先走剔除阶梯兜底，最终仍以专用文案收束
+        assertEquals(3, transport.calls)
+        assertFalse("第三次请求体已剔除 stream_options", transport.bodies[2].contains("\"stream_options\""))
+        assertEquals(
+            "对话内容超出该模型的上下文上限，请缩短笔记正文或新开对话",
+            (events.single() as ApiStreamEvent.Error).message
+        )
+    }
+
+    @Test
+    fun nonContext400DoesNotTriggerContextHandling() = runTest {
+        val transport = FakeTransport(
+            FakeConnection(statusCode = 400, errorBody = """{"error":{"message":"quota exceeded"}}""")
+        )
+
+        val events = client(transport, endpoint = custom, retryDelayMs = 0)
+            .stream("key", "m", false, messages).toList()
+
+        assertEquals("'exceed' 无上下文语义时不裁剪、不重试", 1, transport.calls)
+        assertEquals("请求被拒绝（参数错误）：quota exceeded", (events.single() as ApiStreamEvent.Error).message)
+    }
+
+    @Test
+    fun chineseContextOverflowBodyIsRecognized() = runTest {
+        val longMessages = listOf(
+            AiChatMessage(AiChatMessage.ROLE_USER, "第一问"),
+            AiChatMessage(AiChatMessage.ROLE_ASSISTANT, "第一答"),
+            AiChatMessage(AiChatMessage.ROLE_USER, "第二问"),
+            AiChatMessage(AiChatMessage.ROLE_ASSISTANT, "第二答"),
+            AiChatMessage(AiChatMessage.ROLE_USER, "第三问")
+        )
+        val transport = FakeTransport(
+            FakeConnection(statusCode = 400, errorBody = """{"error":{"message":"上下文长度超出模型限制"}}"""),
+            FakeConnection(body = sse("data: [DONE]"))
+        )
+
+        val events = client(transport, endpoint = custom, retryDelayMs = 0)
+            .stream("key", "m", false, longMessages).toList()
+
+        assertEquals(2, transport.calls)
         assertEquals(ApiStreamEvent.Finished("", null, null), events.single())
     }
 
