@@ -698,6 +698,41 @@ class AiChatViewModelTest {
         assertNull(vm.state.value.lastUsage)
     }
 
+    @Test
+    fun sessionContextTokensShapesRequestBudget() = runTest(dispatcher) {
+        val longNote = "x".repeat(12_000)
+        val noteId = noteRepo.saveNote(null, "标题", longNote, null, false, null)
+        fake.contextTokens = 32_000
+        val vm = createVm(noteId, content = longNote)
+
+        vm.send("总结")
+        vm.state.first { it.sending }
+
+        // 32k 窗口 → 正文预算 11_200
+        val sent = fake.sent.single()
+        assertEquals(11_200, sent.last().content.count { it == 'x' })
+    }
+
+    @Test
+    fun retryAlsoUsesSessionContextBudget() = runTest(dispatcher) {
+        val longNote = "x".repeat(12_000)
+        val noteId = noteRepo.saveNote(null, "标题", longNote, null, false, null)
+        fake.contextTokens = 32_000
+        val vm = createVm(noteId, content = longNote)
+
+        vm.send("总结")
+        vm.state.first { it.sending }
+        fake.emit(AiEvent.Failed("网络错误，请检查网络后重试"))
+        vm.state.first { !it.sending && it.banner != null }
+        // 等消息列表从 Room 流落地：retry() 同步读 state.messages，漏等会让它在全类运行中被拒
+        vm.state.first { it.messages.size == 1 }
+
+        assertTrue(vm.retry())
+        vm.state.first { it.sending && fake.sent.size == 2 }
+
+        assertEquals(11_200, fake.sent[1].last().content.count { it == 'x' })
+    }
+
     private class FakeCipher : ApiKeyCipher {
         override fun encrypt(plain: String): String? = "enc:$plain"
         override fun decrypt(stored: String): String? =
@@ -718,6 +753,7 @@ class AiChatViewModelTest {
     private class FakeAiSession : AiSession {
         override val serviceId: String = AiProvider.DEEPSEEK.serviceId
         override val displayName: String = AiProvider.DEEPSEEK.displayName
+        override var contextTokens: Int = 0
 
         private val _events = MutableSharedFlow<AiEvent>(extraBufferCapacity = 16)
         override val events: SharedFlow<AiEvent> = _events

@@ -208,4 +208,17 @@ class AiApiSessionTest {
         assertEquals("openai-compatible", custom.serviceId)
         assertEquals("自定义", custom.displayName)
     }
+
+    @Test
+    fun contextTokensComesFromEndpoint() = runTest {
+        val deepSeek = AiApiSession(
+            FakeStreamer(), AiProvider.DEEPSEEK.endpoint(), { "key" }, { "m" }, { false }, backgroundScope
+        )
+        val custom = AiApiSession(
+            FakeStreamer(), AiProvider.CUSTOM.endpoint("https://example.com/v1"), { "key" }, { "m" }, { false }, backgroundScope
+        )
+
+        assertEquals(1_000_000, deepSeek.contextTokens)
+        assertEquals(32_000, custom.contextTokens)
+    }
 }

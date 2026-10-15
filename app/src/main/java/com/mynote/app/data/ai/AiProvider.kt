@@ -27,7 +27,9 @@ enum class AiProvider(
     val freeModelInput: Boolean,
     val apiKeyPlaceholder: String,
     val keyHint: String,
-    val modelHint: String
+    val modelHint: String,
+    /** 端点上下文窗口（token，2026-10 核对）；0 = 未知，组装层按默认预算。 */
+    val contextTokens: Int
 ) {
     DEEPSEEK(
         serviceId = "deepseek-api",
@@ -40,7 +42,8 @@ enum class AiProvider(
         freeModelInput = false,
         apiKeyPlaceholder = "sk-…",
         keyHint = "在 DeepSeek 开放平台（platform.deepseek.com）创建。",
-        modelHint = "deepseek-flash 更快更省；deepseek-v4-pro 更强。测试连接成功后会更新为官方最新模型列表。"
+        modelHint = "deepseek-flash 更快更省；deepseek-v4-pro 更强。测试连接成功后会更新为官方最新模型列表。",
+        contextTokens = 1_000_000 // DeepSeek 官方 1M（2026-10 文档）
     ),
     SILICON_FLOW(
         serviceId = "siliconflow-api",
@@ -53,7 +56,8 @@ enum class AiProvider(
         freeModelInput = false,
         apiKeyPlaceholder = "sk-…",
         keyHint = "在硅基流动控制台（cloud.siliconflow.cn）创建。",
-        modelHint = "deepseek-ai/DeepSeek-V4-Flash 更快更省；Pro/ 前缀模型更强。测试连接成功后会更新为官方对话模型列表。"
+        modelHint = "deepseek-ai/DeepSeek-V4-Flash 更快更省；Pro/ 前缀模型更强。测试连接成功后会更新为官方对话模型列表。",
+        contextTokens = 1_048_576 // 硅基流动 V4-Flash 1024K；列表内其余模型 ≥160K
     ),
     CUSTOM(
         serviceId = "openai-compatible",
@@ -66,7 +70,8 @@ enum class AiProvider(
         freeModelInput = true,
         apiKeyPlaceholder = "服务商提供的 API Key",
         keyHint = "地址与 Key 由你的服务商提供；Key 只保存在本机，请求直连该地址。",
-        modelHint = "兼容 OpenAI 协议（/chat/completions + SSE）；地址需包含版本路径，如 https://example.com/v1。"
+        modelHint = "兼容 OpenAI 协议（/chat/completions + SSE）；地址需包含版本路径，如 https://example.com/v1。",
+        contextTokens = 32_000 // 保守值：本地/自建端点常见 8k–32k，超限由 §2.2 自愈兜底
     );
 
     val supportsThinking: Boolean get() = thinkingStyle != ThinkingStyle.NONE
@@ -82,7 +87,8 @@ enum class AiProvider(
             baseUrl = url,
             thinkingStyle = thinkingStyle,
             balanceStyle = balanceStyle,
-            modelsQuery = modelsQuery
+            modelsQuery = modelsQuery,
+            contextTokens = contextTokens
         )
     }
 
@@ -100,5 +106,7 @@ data class AiEndpoint(
     val baseUrl: String,
     val thinkingStyle: ThinkingStyle,
     val balanceStyle: BalanceStyle,
-    val modelsQuery: String?
+    val modelsQuery: String?,
+    /** 端点上下文窗口（token）；0 = 未知，组装层回退默认预算。 */
+    val contextTokens: Int = 0
 )

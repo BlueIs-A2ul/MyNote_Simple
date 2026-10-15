@@ -199,7 +199,7 @@ class AiChatViewModel(
         val history = snapshot.messages.subList(0, lastUserIndex)
         val input = snapshot.messages[lastUserIndex].content
         // 与首次发送同一路径：首条用户消息仍会带上笔记正文快照
-        val messages = AiApiMessageBuilder.build(noteTitle, noteContent, history, input)
+        val messages = AiApiMessageBuilder.build(noteTitle, noteContent, history, input, session.contextTokens)
         _state.update {
             it.copy(sending = true, streamingText = "", reasoningText = "", banner = null)
         }
@@ -270,7 +270,7 @@ class AiChatViewModel(
     private suspend fun launchSendNow(sessionId: Long, input: String) {
         // API 无服务端会话：每次请求都携带本地历史；笔记正文只进首条用户消息
         val history = aiRepository.getMessages(sessionId)
-        val messages = AiApiMessageBuilder.build(noteTitle, noteContent, history, input)
+        val messages = AiApiMessageBuilder.build(noteTitle, noteContent, history, input, session.contextTokens)
         val now = System.currentTimeMillis()
         aiRepository.appendMessage(sessionId, AiMessageEntity.ROLE_USER, input, AiMessageEntity.STATUS_DONE, now)
         clearDraft(sessionId)

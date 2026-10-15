@@ -25,6 +25,7 @@ class AiApiSession(
 
     override val serviceId: String = endpoint.serviceId
     override val displayName: String = endpoint.displayName
+    override val contextTokens: Int = endpoint.contextTokens
 
     private val _events = MutableSharedFlow<AiEvent>(
         extraBufferCapacity = 64,

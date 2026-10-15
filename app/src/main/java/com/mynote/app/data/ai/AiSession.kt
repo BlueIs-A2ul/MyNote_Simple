@@ -26,6 +26,10 @@ sealed interface AiEvent {
 interface AiSession {
     val serviceId: String
     val displayName: String
+
+    /** 端点上下文窗口（token）；0 = 未知，组装层回退默认预算。 */
+    val contextTokens: Int get() = 0
+
     val events: SharedFlow<AiEvent>
 
     fun send(messages: List<AiChatMessage>)
