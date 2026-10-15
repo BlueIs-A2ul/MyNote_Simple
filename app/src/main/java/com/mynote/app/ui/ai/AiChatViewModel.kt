@@ -51,6 +51,8 @@ class AiChatViewModel(
         val apiKeyMissing: Boolean = false,
         val snackbar: String? = null,
         val lastUsage: AiUsage? = null,
+        /** 本会话累计用量（内存态；切会话 / 新对话清空，进程结束清零）。 */
+        val sessionUsage: AiUsage? = null,
         val draft: String = "",
         /** 当前服务商展示名（隐私弹窗/文案用），来自会话身份。 */
         val providerName: String = "",
@@ -110,6 +112,7 @@ class AiChatViewModel(
                 reasoningText = "",
                 banner = null,
                 lastUsage = null,
+                sessionUsage = null,
                 draft = draftStore.get(aiDraftKey(noteId, sessionId))
             )
         }
@@ -130,6 +133,7 @@ class AiChatViewModel(
                 reasoningText = "",
                 banner = null,
                 lastUsage = null,
+                sessionUsage = null,
                 draft = draftStore.get(aiDraftKey(noteId, null))
             )
         }
@@ -347,7 +351,19 @@ class AiChatViewModel(
             }
             is AiEvent.Done -> {
                 if (!_state.value.sending) return
-                _state.update { it.copy(lastUsage = event.usage) }
+                _state.update { state ->
+                    // usage 缺失的轮次不改变累计口径（只统计服务商真实回报的用量）
+                    val accumulated = event.usage?.let { used ->
+                        val previous = state.sessionUsage ?: AiUsage(0, 0, 0)
+                        AiUsage(
+                            promptTokens = previous.promptTokens + used.promptTokens,
+                            completionTokens = previous.completionTokens + used.completionTokens,
+                            totalTokens = previous.totalTokens + used.totalTokens,
+                            cacheHitTokens = previous.cacheHitTokens + used.cacheHitTokens
+                        )
+                    } ?: state.sessionUsage
+                    state.copy(lastUsage = event.usage, sessionUsage = accumulated)
+                }
                 finalizeAssistant(AiMessageEntity.STATUS_DONE, event.text)
             }
             is AiEvent.Failed -> {

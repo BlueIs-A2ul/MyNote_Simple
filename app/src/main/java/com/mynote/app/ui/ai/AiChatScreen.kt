@@ -371,7 +371,9 @@ private fun ChatLayer(
                     }
                 }
             }
-            state.lastUsage?.let { UsageLine(it) }
+            if (state.lastUsage != null || state.sessionUsage != null) {
+                UsageLine(state.lastUsage, state.sessionUsage)
+            }
             Row(
                 modifier = Modifier.fillMaxWidth().padding(12.dp),
                 verticalAlignment = Alignment.Bottom,
@@ -473,15 +475,25 @@ private fun MessageBubble(
     }
 }
 
-/** 输入区上方的用量提示：最近一次成功回答的 token 统计。 */
+/** 输入区上方的用量提示：上次一轮 + 本会话累计（调用点保证至少一行非空）。 */
 @Composable
-private fun UsageLine(usage: AiUsage) {
-    Text(
-        "上次用量：输入 ${usage.promptTokens} / 输出 ${usage.completionTokens} / 合计 ${usage.totalTokens} tokens",
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
+private fun UsageLine(lastUsage: AiUsage?, sessionUsage: AiUsage?) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        lastUsage?.let {
+            Text(
+                formatUsageLine(it),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        sessionUsage?.let {
+            Text(
+                formatSessionUsageLine(it),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }
 
 /** 助手正文：Markdown 渲染（块级结构 + 行内样式，见 `MarkdownContent`）。 */

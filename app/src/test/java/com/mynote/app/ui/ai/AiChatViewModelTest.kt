@@ -187,6 +187,7 @@ class AiChatViewModelTest {
 
         assertEquals("", vm.state.value.reasoningText)
         assertEquals(usage, vm.state.value.lastUsage)
+        assertEquals(usage, vm.state.value.sessionUsage)
     }
 
     @Test
@@ -683,7 +684,7 @@ class AiChatViewModelTest {
     }
 
     @Test
-    fun newChatClearsLastUsage() = runTest(dispatcher) {
+    fun newChatClearsLastAndSessionUsages() = runTest(dispatcher) {
         val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
         val vm = createVm(noteId)
         vm.send("问")
@@ -695,6 +696,67 @@ class AiChatViewModelTest {
         assertEquals(usage, vm.state.value.lastUsage)
 
         vm.newChat()
+        assertNull(vm.state.value.lastUsage)
+        assertNull(vm.state.value.sessionUsage)
+    }
+
+    @Test
+    fun sessionUsageAccumulatesAcrossTurns() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val vm = createVm(noteId)
+
+        vm.send("问一")
+        vm.state.first { it.sending }
+        fake.emit(AiEvent.Done("答一", AiUsage(10, 20, 30, 5)))
+        vm.state.first { !it.sending }
+
+        vm.send("问二")
+        vm.state.first { it.sending && fake.sent.size == 2 }
+        fake.emit(AiEvent.Done("答二", AiUsage(4, 6, 10, 2)))
+        vm.state.first { !it.sending }
+
+        assertEquals(AiUsage(14, 26, 40, 7), vm.state.value.sessionUsage)
+        assertEquals(AiUsage(4, 6, 10, 2), vm.state.value.lastUsage)
+    }
+
+    @Test
+    fun doneWithoutUsageKeepsSessionUsage() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val vm = createVm(noteId)
+        vm.send("问一")
+        vm.state.first { it.sending }
+        fake.emit(AiEvent.Done("答一", AiUsage(10, 20, 30, 5)))
+        vm.state.first { !it.sending }
+
+        vm.send("问二")
+        vm.state.first { it.sending && fake.sent.size == 2 }
+        fake.emit(AiEvent.Done("答二"))
+        vm.state.first { !it.sending && it.lastUsage == null }
+
+        assertEquals("usage 缺失的轮次不改变累计", AiUsage(10, 20, 30, 5), vm.state.value.sessionUsage)
+        assertNull(vm.state.value.lastUsage)
+    }
+
+    @Test
+    fun selectSessionClearsSessionUsage() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val vm = createVm(noteId)
+        vm.send("第一会话问")
+        vm.state.first { it.sending }
+        fake.emit(AiEvent.Done("答", AiUsage(10, 20, 30, 5)))
+        vm.state.first { !it.sending }
+        val firstSessionId = aiRepo.observeSessions(noteId).first().single().id
+        assertEquals(AiUsage(10, 20, 30, 5), vm.state.value.sessionUsage)
+
+        vm.newChat()
+        vm.send("第二会话问")
+        vm.state.first { it.sending && fake.sent.size == 2 }
+        fake.emit(AiEvent.Done("答二", AiUsage(1, 2, 3)))
+        vm.state.first { !it.sending }
+        assertEquals(AiUsage(1, 2, 3), vm.state.value.sessionUsage)
+
+        vm.selectSession(firstSessionId)
+        assertNull(vm.state.value.sessionUsage)
         assertNull(vm.state.value.lastUsage)
     }
 
