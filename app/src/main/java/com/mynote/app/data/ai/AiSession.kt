@@ -3,7 +3,13 @@ package com.mynote.app.data.ai
 import kotlinx.coroutines.flow.SharedFlow
 
 /** 一次回答的 token 用量（接口顶层 usage）；字段缺失时由解析层按 0 容错。 */
-data class AiUsage(val promptTokens: Int, val completionTokens: Int, val totalTokens: Int)
+data class AiUsage(
+    val promptTokens: Int,
+    val completionTokens: Int,
+    val totalTokens: Int,
+    /** prompt 缓存命中量（DeepSeek `prompt_cache_hit_tokens` 或 OpenAI `prompt_tokens_details.cached_tokens`）；缺失按 0。 */
+    val cacheHitTokens: Int = 0
+)
 
 /** AI 回答流事件：增量片段 / 思考增量 / 完成（带全文与用量）/ 失败（面向用户的文案）。 */
 sealed interface AiEvent {

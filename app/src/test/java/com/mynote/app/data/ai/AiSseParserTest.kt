@@ -118,4 +118,58 @@ class AiSseParserTest {
         )
         assertEquals("好", frame?.text)
     }
+
+    @Test
+    fun parsesDeepSeekStyleCacheHitTokens() {
+        val frame = AiSseParser.parse(
+            """data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12,"prompt_cache_hit_tokens":8}}"""
+        )
+
+        assertEquals(AiUsage(10, 2, 12, 8), frame?.usage)
+    }
+
+    @Test
+    fun parsesOpenAiStyleCachedTokens() {
+        val frame = AiSseParser.parse(
+            """data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12,"prompt_tokens_details":{"cached_tokens":8}}}"""
+        )
+
+        assertEquals(AiUsage(10, 2, 12, 8), frame?.usage)
+    }
+
+    @Test
+    fun cacheHitPrefersDeepSeekFieldOverDetails() {
+        val frame = AiSseParser.parse(
+            """data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12,"prompt_cache_hit_tokens":7,"prompt_tokens_details":{"cached_tokens":8}}}"""
+        )
+
+        assertEquals(AiUsage(10, 2, 12, 7), frame?.usage)
+    }
+
+    @Test
+    fun cacheHitDefaultsToZeroWhenAbsent() {
+        val frame = AiSseParser.parse(
+            """data: {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}"""
+        )
+
+        assertEquals(AiUsage(3, 1, 4, 0), frame?.usage)
+    }
+
+    @Test
+    fun cacheHitFallsBackWhenDeepSeekFieldIsNull() {
+        val frame = AiSseParser.parse(
+            """data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12,"prompt_cache_hit_tokens":null,"prompt_tokens_details":{"cached_tokens":8}}}"""
+        )
+
+        assertEquals(AiUsage(10, 2, 12, 8), frame?.usage)
+    }
+
+    @Test
+    fun cacheHitToleratesNonObjectDetails() {
+        val frame = AiSseParser.parse(
+            """data: {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4,"prompt_tokens_details":"oops"}}"""
+        )
+
+        assertEquals(AiUsage(3, 1, 4, 0), frame?.usage)
+    }
 }

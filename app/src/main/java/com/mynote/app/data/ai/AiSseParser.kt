@@ -69,7 +69,14 @@ object AiSseParser {
         val completion = token("completion_tokens")
         val total = token("total_tokens")
         if (prompt == null && completion == null && total == null) return null
-        return AiUsage(prompt ?: 0, completion ?: 0, total ?: 0)
+        // 缓存命中：DeepSeek 风格字段优先，OpenAI 风格嵌套字段其次；均缺失按 0
+        val cacheHit = token("prompt_cache_hit_tokens")
+            ?: runCatching {
+                usage["prompt_tokens_details"]?.takeIf { it !is JsonNull }?.jsonObject
+                    ?.get("cached_tokens")?.takeIf { it !is JsonNull }?.jsonPrimitive?.intOrNull
+            }.getOrNull()
+            ?: 0
+        return AiUsage(prompt ?: 0, completion ?: 0, total ?: 0, cacheHit)
     }
 
     private const val DATA_PREFIX = "data:"
