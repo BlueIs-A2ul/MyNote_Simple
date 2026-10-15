@@ -119,35 +119,47 @@ class AiApiClient(
         deepThinking: Boolean,
         messages: List<AiChatMessage>
     ): Flow<ApiStreamEvent> = flow {
+        var includeStreamOptions = true
         var includeThinking = endpoint.thinkingStyle != ThinkingStyle.NONE
+        var backedOff = false
 
-        var connection = openConnection(apiKey, requestBody(model, messages, deepThinking, includeThinking))
-        if (connection == null) {
-            emit(ApiStreamEvent.Error(NETWORK_ERROR))
-            return@flow
-        }
-
-        // 422 回退优先：参数被拒（如服务商不再支持思考字段）→ 去掉该字段立即重试一次
-        if (connection.statusCode == 422 && includeThinking) {
-            runCatching { connection.close() }
-            includeThinking = false
-            val retried = openConnection(apiKey, requestBody(model, messages, deepThinking, includeThinking))
-            if (retried == null) {
+        // 连接级自愈循环：每轮至多消耗一种机会（剔除字段 / 退避），总连接上限 = 1 首次 + 2 剔除 + 1 退避 = 4
+        var picked: HttpStreamConnection? = null
+        while (true) {
+            val opened = openConnection(
+                apiKey,
+                requestBody(model, messages, deepThinking, includeThinking, includeStreamOptions)
+            )
+            if (opened == null) {
                 emit(ApiStreamEvent.Error(NETWORK_ERROR))
                 return@flow
             }
-            connection = retried
-        } else if (connection.statusCode == 429 || connection.statusCode == 503) {
-            // 限流/服务器繁忙：尚未开始读流，安全丢弃旧连接后重试一次
-            runCatching { connection.close() }
-            delay(retryDelayMs)
-            val retried = openConnection(apiKey, requestBody(model, messages, deepThinking, includeThinking))
-            if (retried == null) {
-                emit(ApiStreamEvent.Error(NETWORK_ERROR))
-                return@flow
+
+            val status = opened.statusCode
+            val errorBody = opened.errorBody
+
+            // 1. 参数被拒（422 无锚点；400 需未识别字段锚点）：按阶梯剔除可选字段
+            if (status == 422 || (status == 400 && looksLikeUnsupportedField(errorBody))) {
+                if (includeStreamOptions || includeThinking) {
+                    runCatching { opened.close() }
+                    if (includeStreamOptions) includeStreamOptions = false else includeThinking = false
+                    continue
+                }
             }
-            connection = retried
+
+            // 2. 限流/服务器繁忙：尚未开始读流，安全丢弃旧连接后重试一次
+            if ((status == 429 || status == 503) && !backedOff) {
+                runCatching { opened.close() }
+                delay(retryDelayMs)
+                backedOff = true
+                continue
+            }
+
+            picked = opened
+            break
         }
+        // 循环只在 picked 赋值后 break；!! 仅做类型收窄
+        val connection = picked!!
 
         // 登记连接：stop() 时经 cancel() 从外部断开阻塞读（read 不响应协程取消）
         activeConnections += connection
@@ -216,7 +228,8 @@ class AiApiClient(
     internal fun activeStreamCount(): Int = activeConnections.size
 
     /**
-     * 构造 `POST /chat/completions` 请求体；[includeThinking] 为 false 时结果不含思考字段。
+     * 构造 `POST /chat/completions` 请求体；[includeThinking] 为 false 时结果不含思考字段，
+     * [includeStreamOptions] 为 false 时结果不含 `stream_options`（`include_usage` 让服务商在流末尾带回用量）。
      * 思考字段样式（`thinking` 对象 / `enable_thinking` 布尔 / 不发送）由端点配置决定。
      * 因重试时字段可能不同，每次请求都必须重新调用，不能复用旧字节。
      */
@@ -224,7 +237,8 @@ class AiApiClient(
         model: String,
         messages: List<AiChatMessage>,
         deepThinking: Boolean,
-        includeThinking: Boolean
+        includeThinking: Boolean,
+        includeStreamOptions: Boolean
     ): ByteArray {
         val body = buildJsonObject {
             put("model", model)
@@ -237,6 +251,9 @@ class AiApiClient(
                 }
             }
             put("stream", true)
+            if (includeStreamOptions) {
+                putJsonObject("stream_options") { put("include_usage", true) }
+            }
             if (includeThinking) {
                 when (endpoint.thinkingStyle) {
                     ThinkingStyle.DEEPSEEK_OBJECT ->
@@ -395,6 +412,19 @@ class AiApiClient(
         429 -> ApiStreamEvent.Error("请求过于频繁，请稍后重试")
         500, 503 -> ApiStreamEvent.Error("服务商服务器繁忙，请稍后重试")
         else -> ApiStreamEvent.Error("请求失败（HTTP $status）" + detail(body))
+    }
+
+    /** 400 错误体是否指向未识别的可选字段（422 天然视作参数被拒，无需锚点）。 */
+    private fun looksLikeUnsupportedField(body: String?): Boolean {
+        if (body.isNullOrBlank()) return false
+        val lower = body.lowercase()
+        return lower.contains("stream_options") ||
+            lower.contains("include_usage") ||
+            lower.contains("unknown field") ||
+            lower.contains("unrecognized") ||
+            lower.contains("extra fields") ||
+            lower.contains("未知参数") ||
+            lower.contains("不支持的参数")
     }
 
     /** 提取错误详情：依次尝试 `error.message`、`message`、纯字符串错误体，超长截断。 */

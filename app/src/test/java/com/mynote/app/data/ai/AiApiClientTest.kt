@@ -78,6 +78,10 @@ class AiApiClientTest {
         val root = Json.parseToJsonElement(transport.body!!).jsonObject
         assertEquals("deepseek-v4-pro", root["model"]!!.jsonPrimitive.content)
         assertEquals(true, root["stream"]!!.jsonPrimitive.content.toBoolean())
+        assertEquals(
+            true,
+            root["stream_options"]!!.jsonObject["include_usage"]!!.jsonPrimitive.content.toBoolean()
+        )
         assertEquals("enabled", root["thinking"]!!.jsonObject["type"]!!.jsonPrimitive.content)
         val sent = root["messages"]!!.jsonArray.map { it.jsonObject }
         assertEquals(listOf("user", "assistant", "user"), sent.map { it["role"]!!.jsonPrimitive.content })
@@ -179,6 +183,7 @@ class AiApiClientTest {
         val events = client(transport, endpoint = siliconFlow).stream("key", "m", false, messages).toList()
 
         assertEquals("请求被拒绝（参数错误）：invalid param", (events.single() as ApiStreamEvent.Error).message)
+        assertEquals("无锚点的 400 不应重试", 1, transport.calls)
     }
 
     @Test
@@ -190,6 +195,7 @@ class AiApiClientTest {
         val events = client(transport).stream("key", "m", false, messages).toList()
 
         assertEquals("请求被拒绝（参数错误）：Bad Request", (events.single() as ApiStreamEvent.Error).message)
+        assertEquals("无锚点的 400 不应重试", 1, transport.calls)
     }
 
     @Test
@@ -376,11 +382,13 @@ class AiApiClientTest {
     }
 
     @Test
-    fun retryOn422WithoutThinkingThenSucceeds() = runTest {
+    fun retryOn422DropsStreamOptionsThenSucceeds() = runTest {
+        var firstClosed = false
         val transport = FakeTransport(
             FakeConnection(
                 statusCode = 422,
-                errorBody = """{"error":{"message":"thinking is not supported"}}"""
+                errorBody = """{"error":{"message":"thinking is not supported"}}""",
+                onClose = { firstClosed = true }
             ),
             FakeConnection(
                 body = sse(
@@ -393,9 +401,11 @@ class AiApiClientTest {
         val events = client(transport, retryDelayMs = 0)
             .stream("key", "deepseek-flash", true, messages).toList()
 
-        assertEquals("422 应去掉 thinking 重试一次", 2, transport.calls)
-        assertTrue("首次请求体应携带 thinking", transport.bodies[0].contains("\"thinking\""))
-        assertTrue("422 回退后请求体不应携带 thinking", !transport.bodies[1].contains("\"thinking\""))
+        assertEquals("422 应剔除 stream_options 重试一次", 2, transport.calls)
+        assertTrue("被剔除的首次连接应关闭", firstClosed)
+        assertTrue("首次请求体应携带 stream_options", transport.bodies[0].contains("\"stream_options\""))
+        assertFalse("第一级剔除 stream_options", transport.bodies[1].contains("\"stream_options\""))
+        assertTrue("thinking 是功能性字段，第一级不剔除", transport.bodies[1].contains("\"thinking\""))
         assertEquals(
             listOf(
                 ApiStreamEvent.Chunk("好"),
@@ -407,36 +417,63 @@ class AiApiClientTest {
 
     @Test
     fun retryOn422DropsEnableThinkingForSiliconFlow() = runTest {
+        var firstClosed = false
+        var secondClosed = false
         val transport = FakeTransport(
-            FakeConnection(statusCode = 422, errorBody = """{"message":"enable_thinking is not supported"}"""),
+            FakeConnection(
+                statusCode = 422,
+                errorBody = """{"message":"enable_thinking is not supported"}""",
+                onClose = { firstClosed = true }
+            ),
+            FakeConnection(
+                statusCode = 422,
+                errorBody = """{"message":"enable_thinking is not supported"}""",
+                onClose = { secondClosed = true }
+            ),
             FakeConnection(body = sse("data: [DONE]"))
         )
 
         client(transport, endpoint = siliconFlow, retryDelayMs = 0)
             .stream("key", "m", true, messages).toList()
 
-        assertEquals(2, transport.calls)
+        assertEquals("两字段依次剔除：共 3 次连接", 3, transport.calls)
+        assertTrue("两级剔除的连接都应关闭", firstClosed && secondClosed)
         assertTrue(transport.bodies[0].contains("enable_thinking"))
-        assertFalse(transport.bodies[1].contains("enable_thinking"))
+        assertFalse("第一级先剔 stream_options", transport.bodies[1].contains("\"stream_options\""))
+        assertTrue("第一级后保留 enable_thinking", transport.bodies[1].contains("enable_thinking"))
+        assertFalse("第二级剔除 enable_thinking", transport.bodies[2].contains("enable_thinking"))
     }
 
     @Test
-    fun `422RetriedOnlyOnceThenMapsError`() = runTest {
+    fun `422DropsBothFieldsThenMapsError`() = runTest {
+        var firstClosed = false
+        var secondClosed = false
         val transport = FakeTransport(
-            FakeConnection(statusCode = 422, errorBody = """{"error":{"message":"thinking is not supported"}}"""),
+            FakeConnection(
+                statusCode = 422,
+                errorBody = """{"error":{"message":"thinking is not supported"}}""",
+                onClose = { firstClosed = true }
+            ),
+            FakeConnection(
+                statusCode = 422,
+                errorBody = """{"error":{"message":"invalid model"}}""",
+                onClose = { secondClosed = true }
+            ),
             FakeConnection(statusCode = 422, errorBody = """{"error":{"message":"invalid model"}}""")
         )
 
         val events = client(transport, retryDelayMs = 0)
             .stream("key", "nope", false, messages).toList()
 
-        assertEquals("422 只应重试一次", 2, transport.calls)
-        assertTrue("重试请求体不应携带 thinking", !transport.bodies[1].contains("\"thinking\""))
+        assertEquals("两字段依次剔完：共 3 次连接", 3, transport.calls)
+        assertTrue("两级剔除的连接都应关闭", firstClosed && secondClosed)
+        assertFalse(transport.bodies[1].contains("\"stream_options\""))
+        assertFalse("第二次重试体不再携带 thinking", transport.bodies[2].contains("\"thinking\""))
         assertEquals("请求被拒绝（参数错误）：invalid model", (events.single() as ApiStreamEvent.Error).message)
     }
 
     @Test
-    fun customEndpoint422DoesNotRetryWithoutThinking() = runTest {
+    fun customEndpoint422DropsStreamOptionsThenSucceeds() = runTest {
         val transport = FakeTransport(
             FakeConnection(statusCode = 422, errorBody = """{"message":"bad param"}"""),
             FakeConnection(body = sse("data: [DONE]"))
@@ -445,8 +482,73 @@ class AiApiClientTest {
         val events = client(transport, endpoint = custom, retryDelayMs = 0)
             .stream("key", "m", true, messages).toList()
 
-        assertEquals("无思考字段的端点 422 不应重试", 1, transport.calls)
-        assertEquals("请求被拒绝（参数错误）：bad param", (events.single() as ApiStreamEvent.Error).message)
+        assertEquals("自定义端点现在会剔除 stream_options 重试一次", 2, transport.calls)
+        assertFalse(transport.bodies[1].contains("\"stream_options\""))
+        assertEquals(ApiStreamEvent.Finished("", null, null), events.single())
+    }
+
+    @Test
+    fun customEndpointBodyCarriesStreamOptions() = runTest {
+        val transport = FakeTransport(FakeConnection(body = sse("data: [DONE]")))
+
+        client(transport, endpoint = custom).stream("key", "my-model", false, messages).toList()
+
+        assertTrue(transport.body!!.contains("\"stream_options\":{\"include_usage\":true}"))
+    }
+
+    @Test
+    fun retryOn400UnknownStreamOptionsThenSucceeds() = runTest {
+        val transport = FakeTransport(
+            FakeConnection(
+                statusCode = 400,
+                errorBody = """{"error":{"message":"Unrecognized request argument supplied: stream_options"}}"""
+            ),
+            FakeConnection(body = sse("data: [DONE]"))
+        )
+
+        val events = client(transport, endpoint = custom, retryDelayMs = 0)
+            .stream("key", "m", false, messages).toList()
+
+        assertEquals("400 未识别字段也应剔除重试一次", 2, transport.calls)
+        assertTrue(transport.bodies[0].contains("\"stream_options\""))
+        assertFalse(transport.bodies[1].contains("\"stream_options\""))
+        assertEquals(ApiStreamEvent.Finished("", null, null), events.single())
+    }
+
+    @Test
+    fun fieldDropThenRateLimitStacksWithinConnectionBudget() = runTest {
+        val transport = FakeTransport(
+            FakeConnection(statusCode = 422, errorBody = """{"message":"bad param"}"""),
+            FakeConnection(statusCode = 429, errorBody = """{"error":{"message":"rate limited"}}"""),
+            FakeConnection(body = sse("data: [DONE]"))
+        )
+
+        val events = client(transport, endpoint = custom, retryDelayMs = 0)
+            .stream("key", "m", false, messages).toList()
+
+        assertEquals("剔除与退避允许有界叠加：共 3 次连接", 3, transport.calls)
+        assertEquals("退避重试不改变请求体", transport.bodies[1], transport.bodies[2])
+        assertEquals(ApiStreamEvent.Finished("", null, null), events.single())
+    }
+
+    @Test
+    fun layeredRecoveryHitsConnectionCap() = runTest {
+        val transport = FakeTransport(
+            FakeConnection(statusCode = 429, errorBody = """{"error":{"message":"rate limited"}}"""),
+            FakeConnection(statusCode = 422, errorBody = """{"message":"enable_thinking is not supported"}"""),
+            FakeConnection(statusCode = 422, errorBody = """{"message":"enable_thinking is not supported"}"""),
+            FakeConnection(body = sse("data: [DONE]"))
+        )
+
+        val events = client(transport, endpoint = siliconFlow, retryDelayMs = 0)
+            .stream("key", "m", true, messages).toList()
+
+        assertEquals("退避 + 两级剔除：共 4 次连接", 4, transport.calls)
+        assertFalse(transport.bodies[2].contains("\"stream_options\""))
+        assertTrue("第二级剔除下一轮才生效", transport.bodies[2].contains("enable_thinking"))
+        assertFalse("第 4 个请求两字段均已剔除", transport.bodies[3].contains("\"stream_options\""))
+        assertFalse("第 4 个请求两字段均已剔除", transport.bodies[3].contains("enable_thinking"))
+        assertEquals(ApiStreamEvent.Finished("", null, null), events.single())
     }
 
     @Test
