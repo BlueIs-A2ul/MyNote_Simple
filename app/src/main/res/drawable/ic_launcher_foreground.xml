@@ -1,0 +1,40 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 「记」手绘字形：笔画宽 8.2/108，整体右移 1.2 做光学居中 -->
+    <group android:translateX="1.2">
+        <!-- 讠 · 点 -->
+        <path
+            android:pathData="M31,33.8L34.6,38.4"
+            android:fillColor="#00000000"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="7.0"
+            android:strokeLineCap="round" />
+        <!-- 讠 · 竖 -->
+        <path
+            android:pathData="M34,44.5V59.5"
+            android:fillColor="#00000000"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="8.2"
+            android:strokeLineCap="butt" />
+        <!-- 己 · 横折 + 中横 -->
+        <path
+            android:pathData="M49,36H74V50H49"
+            android:fillColor="#00000000"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="8.2"
+            android:strokeLineCap="butt"
+            android:strokeLineJoin="round" />
+        <!-- 己 · 竖弯钩 -->
+        <path
+            android:pathData="M49,50V72H74V62.5"
+            android:fillColor="#00000000"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="8.2"
+            android:strokeLineCap="butt"
+            android:strokeLineJoin="round" />
+    </group>
+</vector>
