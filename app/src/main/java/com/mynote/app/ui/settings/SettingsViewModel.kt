@@ -58,6 +58,10 @@ class SettingsViewModel(
     private val _deepThinking = MutableStateFlow(aiStore.deepThinking())
     val deepThinking: StateFlow<Boolean> = _deepThinking
 
+    /** AI 助手：自定义 system 提示词（空白 = 使用内置默认；全局，不随服务商切换）。 */
+    private val _customSystemPrompt = MutableStateFlow(aiStore.customSystemPrompt())
+    val customSystemPrompt: StateFlow<String> = _customSystemPrompt
+
     /** AI 助手：当前服务商是否已保存 API Key。 */
     private val _apiKeyConfigured = MutableStateFlow(aiStore.hasApiKey())
     val apiKeyConfigured: StateFlow<Boolean> = _apiKeyConfigured
@@ -118,6 +122,20 @@ class SettingsViewModel(
     fun setDeepThinking(enabled: Boolean) {
         aiStore.setDeepThinking(enabled)
         _deepThinking.value = enabled
+    }
+
+    /** 保存自定义 system 提示词；空白等价恢复内置默认。 */
+    fun setSystemPrompt(text: String) {
+        aiStore.setCustomSystemPrompt(text)
+        _customSystemPrompt.value = aiStore.customSystemPrompt()
+    }
+
+    /** 恢复内置默认提示词。 */
+    fun resetSystemPrompt() = setSystemPrompt("")
+
+    /** 从存储重读（编辑页返回设置页时刷新摘要）。 */
+    fun refreshSystemPrompt() {
+        _customSystemPrompt.value = aiStore.customSystemPrompt()
     }
 
     /** 保存 API Key；false 表示加密失败（系统密钥库不可用）。 */

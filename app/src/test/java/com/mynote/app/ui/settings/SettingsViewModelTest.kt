@@ -481,4 +481,33 @@ class SettingsViewModelTest {
         val state = BalanceState.Ok(isAvailable = true, lines = emptyList())
         assertEquals("未返回余额信息", balanceMessage(state))
     }
+
+    @Test
+    fun setSystemPromptPersistsAndUpdatesState() {
+        assertEquals("", vm.customSystemPrompt.value)
+
+        vm.setSystemPrompt("  你只输出要点  ")
+
+        assertEquals("你只输出要点", aiStore.customSystemPrompt())
+        assertEquals("你只输出要点", vm.customSystemPrompt.value)
+    }
+
+    @Test
+    fun resetSystemPromptClearsCustomValue() {
+        vm.setSystemPrompt("自定义提示")
+
+        vm.resetSystemPrompt()
+
+        assertEquals("", aiStore.customSystemPrompt())
+        assertEquals("", vm.customSystemPrompt.value)
+    }
+
+    @Test
+    fun refreshSystemPromptReadsStoreValue() {
+        aiStore.setCustomSystemPrompt("外部写入")
+
+        vm.refreshSystemPrompt()
+
+        assertEquals("外部写入", vm.customSystemPrompt.value)
+    }
 }

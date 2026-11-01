@@ -17,13 +17,18 @@ object AiApiMessageBuilder {
     /** 历史消息 content 字符数总预算的默认值（不含本次输入）；端点窗口更小时按设计 §2.3 收紧。 */
     const val MAX_HISTORY_CHARS = 60_000
 
-    /** @param contextTokens 端点上下文窗口（token）；0 = 未知，回退默认预算（设计 §2.3）。 */
+    /**
+     * @param contextTokens 端点上下文窗口（token）；0 = 未知，回退默认预算（设计 §2.3）。
+     * @param systemPrompt 生效的 system 提示词；默认取内置文案，由调用方按用户设置传入
+     *   [AiPromptBuilder.resolveSystemPrompt] 的结果（设置页可整体覆盖）。
+     */
     fun build(
         noteTitle: String,
         noteContent: String,
         history: List<AiMessageEntity>,
         input: String,
-        contextTokens: Int = 0
+        contextTokens: Int = 0,
+        systemPrompt: String = AiPromptBuilder.SYSTEM_PROMPT
     ): List<AiChatMessage> {
         // 动态预算：留 30% 给输出；窗口够大时与现状 60_000/20_000 完全一致（minOf 下限保证正文不放大）
         val totalBudget = if (contextTokens > 0) {
@@ -61,7 +66,7 @@ object AiApiMessageBuilder {
             AiPromptBuilder.build(noteTitle, noteContent, input, includeNoteContext, maxNoteChars)
         )
         // system 最后 prepend：稳定前缀置于最前，且不干扰上面的重包与裁剪判定
-        return listOf(AiChatMessage(AiChatMessage.ROLE_SYSTEM, AiPromptBuilder.SYSTEM_PROMPT)) + messages
+        return listOf(AiChatMessage(AiChatMessage.ROLE_SYSTEM, systemPrompt)) + messages
     }
 
     /**

@@ -87,6 +87,7 @@ fun SettingsScreen(
     repository: NoteRepository,
     aiSettingsStore: AiSettingsStore,
     clientFactory: (AiEndpoint) -> AiProbe = { AiApiClient(it) },
+    onOpenPromptEditor: () -> Unit,
     onBack: () -> Unit
 ) {
     val vm: SettingsViewModel = viewModel(
@@ -103,6 +104,7 @@ fun SettingsScreen(
     val availableModels by vm.availableModels.collectAsState()
     val deepThinking by vm.deepThinking.collectAsState()
     val apiKeyConfigured by vm.apiKeyConfigured.collectAsState()
+    val customSystemPrompt by vm.customSystemPrompt.collectAsState()
     var apiKeyInput by rememberSaveable { mutableStateOf("") }
     var keyVisible by rememberSaveable { mutableStateOf(false) }
     var baseUrlInput by rememberSaveable { mutableStateOf(customBaseUrl) }
@@ -111,6 +113,9 @@ fun SettingsScreen(
     var retentionPrompt by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // 从提示词编辑页返回时重读摘要（提示词为全局设置，不随服务商变化）
+    LaunchedEffect(Unit) { vm.refreshSystemPrompt() }
 
     // 切换服务商时把自定义地址/模型输入框同步为该服务商的持久化值
     LaunchedEffect(aiProvider) {
@@ -450,6 +455,31 @@ fun SettingsScreen(
                     Switch(checked = deepThinking, onCheckedChange = null)
                 }
             }
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpenPromptEditor() }
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "系统提示词",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Text(
+                        customSystemPrompt.ifBlank { "内置默认" },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                TextButton(onClick = { onOpenPromptEditor() }) { Text("编辑") }
+            }
+            Spacer(Modifier.height(12.dp))
             Text(
                 "API Key",
                 style = MaterialTheme.typography.bodyMedium,

@@ -2,6 +2,7 @@ package com.mynote.app.data.settings
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.mynote.app.data.ai.AiPromptBuilder
 import com.mynote.app.data.ai.AiProvider
 import com.mynote.app.data.ai.DeepSeekModels
 import org.junit.Assert.assertEquals
@@ -256,5 +257,38 @@ class AiSettingsStoreTest {
 
         store.setCustomBaseUrl("   ")
         assertEquals("", store.customBaseUrl())
+    }
+
+    @Test
+    fun customSystemPromptRoundTripsAndTrims() {
+        assertEquals("", store.customSystemPrompt())
+
+        store.setCustomSystemPrompt("  你只输出要点  ")
+        assertEquals("你只输出要点", store.customSystemPrompt())
+    }
+
+    @Test
+    fun blankSystemPromptClearsCustomValue() {
+        store.setCustomSystemPrompt("自定义提示")
+
+        store.setCustomSystemPrompt("   \n ")
+
+        assertEquals("", store.customSystemPrompt())
+    }
+
+    @Test
+    fun systemPromptIsTruncatedToLimit() {
+        store.setCustomSystemPrompt("字".repeat(AiPromptBuilder.MAX_SYSTEM_PROMPT_CHARS + 10))
+
+        assertEquals(AiPromptBuilder.MAX_SYSTEM_PROMPT_CHARS, store.customSystemPrompt().length)
+    }
+
+    @Test
+    fun systemPromptIsGlobalAcrossProviders() {
+        store.setCustomSystemPrompt("全局提示")
+
+        store.setProvider(AiProvider.SILICON_FLOW)
+
+        assertEquals("全局提示", store.customSystemPrompt())
     }
 }

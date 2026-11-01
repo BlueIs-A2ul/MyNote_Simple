@@ -120,4 +120,26 @@ class AiPromptBuilderTest {
         )
         assertEquals("只发输入", text)
     }
+
+    @Test
+    fun blankCustomPromptFallsBackToBuiltIn() {
+        assertEquals(AiPromptBuilder.SYSTEM_PROMPT, AiPromptBuilder.resolveSystemPrompt(null))
+        assertEquals(AiPromptBuilder.SYSTEM_PROMPT, AiPromptBuilder.resolveSystemPrompt(""))
+        assertEquals(AiPromptBuilder.SYSTEM_PROMPT, AiPromptBuilder.resolveSystemPrompt("  \n "))
+    }
+
+    @Test
+    fun customPromptIsTrimmedAndPassedThrough() {
+        assertEquals("你只输出要点", AiPromptBuilder.resolveSystemPrompt("  你只输出要点 \n"))
+    }
+
+    @Test
+    fun customPromptOverLimitIsTruncated() {
+        val long = "字".repeat(AiPromptBuilder.MAX_SYSTEM_PROMPT_CHARS + 50)
+
+        val resolved = AiPromptBuilder.resolveSystemPrompt(long)
+
+        assertEquals(AiPromptBuilder.MAX_SYSTEM_PROMPT_CHARS, resolved.length)
+        assertEquals(long.take(AiPromptBuilder.MAX_SYSTEM_PROMPT_CHARS), resolved)
+    }
 }

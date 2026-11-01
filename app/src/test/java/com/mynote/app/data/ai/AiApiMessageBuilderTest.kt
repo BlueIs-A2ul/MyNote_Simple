@@ -361,4 +361,22 @@ class AiApiMessageBuilderTest {
 
         assertEquals("两条不同实例但同内容的 user 都应保留", listOf("sys", "同", "同"), trimmed.map { it.content })
     }
+
+    @Test
+    fun customSystemPromptReplacesBuiltIn() {
+        val messages = AiApiMessageBuilder.build(
+            "标题", "正文", emptyList(), "总结", systemPrompt = "只输出一句话"
+        )
+
+        assertEquals(AiChatMessage.ROLE_SYSTEM, messages[0].role)
+        assertEquals("只输出一句话", messages[0].content)
+        assertEquals("只输出一句话", messages.first().content)
+    }
+
+    @Test
+    fun omittedSystemPromptKeepsBuiltInDefault() {
+        val messages = AiApiMessageBuilder.build("", "", emptyList(), "你好")
+
+        assertEquals(AiPromptBuilder.SYSTEM_PROMPT, messages[0].content)
+    }
 }

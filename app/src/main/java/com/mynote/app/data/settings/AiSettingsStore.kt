@@ -1,6 +1,7 @@
 package com.mynote.app.data.settings
 
 import android.content.Context
+import com.mynote.app.data.ai.AiPromptBuilder
 import com.mynote.app.data.ai.AiProvider
 
 /**
@@ -32,6 +33,20 @@ class AiSettingsStore(
         val cleaned = url.trim().trimEnd('/')
         prefs.edit().apply {
             if (cleaned.isEmpty()) remove(KEY_CUSTOM_BASE_URL) else putString(KEY_CUSTOM_BASE_URL, cleaned)
+        }.apply()
+    }
+
+    /**
+     * 自定义 system 提示词原文；空白表示未自定义（回退内置默认）。
+     * 全局一份、不按服务商隔离：换服务商不该让用户重写提示词。
+     */
+    fun customSystemPrompt(): String = prefs.getString(KEY_SYSTEM_PROMPT, null).orEmpty()
+
+    /** 保存自定义 system 提示词：trim 后按上限截断；空白等价清除（回退内置默认）。 */
+    fun setCustomSystemPrompt(text: String?) {
+        val cleaned = text?.trim().orEmpty().take(AiPromptBuilder.MAX_SYSTEM_PROMPT_CHARS)
+        prefs.edit().apply {
+            if (cleaned.isEmpty()) remove(KEY_SYSTEM_PROMPT) else putString(KEY_SYSTEM_PROMPT, cleaned)
         }.apply()
     }
 
@@ -132,5 +147,6 @@ class AiSettingsStore(
         const val KEY_DEEP_THINKING = "api_deep_thinking"
         const val KEY_PROVIDER = "ai_provider"
         const val KEY_CUSTOM_BASE_URL = "api_custom_base_url"
+        const val KEY_SYSTEM_PROMPT = "system_prompt"
     }
 }

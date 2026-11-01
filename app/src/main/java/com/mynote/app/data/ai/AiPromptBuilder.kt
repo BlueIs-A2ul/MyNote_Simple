@@ -7,11 +7,21 @@ object AiPromptBuilder {
     /** 附带笔记正文的消息表头；`AiApiMessageBuilder` 用它做幂等判定。 */
     const val NOTE_CONTEXT_HEADER = "【笔记正文】"
 
-    /** 固定 system 提示：约束回答长度与复述（设计 §2.1，文案冻结；调整走设计修订记录）。 */
+    /** 内置默认 system 提示：约束回答长度与复述（文案由代码集中维护，用户可在设置里整体覆盖）。 */
     const val SYSTEM_PROMPT =
         "你是 MyNote 笔记应用内的 AI 助手。回答规则：直接回答用户问题，不复述笔记原文；" +
             "语言简洁，能一句话说清不写三段；仅在用户要求时展开细节；" +
             "涉及笔记内容时忠实于原文，不编造原文中不存在的信息。"
+
+    /** 自定义 system 提示词长度上限（字符）：超出截断，避免挤占上下文预算。 */
+    const val MAX_SYSTEM_PROMPT_CHARS = 2_000
+
+    /** 生效的 system 提示词：自定义为空白时回退 [SYSTEM_PROMPT]，否则 trim 并按上限截断。 */
+    fun resolveSystemPrompt(custom: String?): String {
+        val trimmed = custom?.trim().orEmpty()
+        if (trimmed.isEmpty()) return SYSTEM_PROMPT
+        return trimmed.take(MAX_SYSTEM_PROMPT_CHARS)
+    }
 
     /** 正文超限被截断时追加的提示语。 */
     private const val TRUNCATED_NOTICE = "（正文过长，已截断）"

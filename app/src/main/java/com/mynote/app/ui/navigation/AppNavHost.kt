@@ -17,6 +17,7 @@ import com.mynote.app.ui.history.NoteHistoryScreen
 import com.mynote.app.ui.notes.NoteEditScreen
 import com.mynote.app.ui.notes.NotesScreen
 import com.mynote.app.ui.notes.NotesViewModel
+import com.mynote.app.ui.settings.PromptEditScreen
 import com.mynote.app.ui.settings.SettingsScreen
 import com.mynote.app.ui.trash.TrashScreen
 
@@ -182,6 +183,13 @@ fun AppNavHost(container: AppContainer) {
                 repository = container.noteRepository,
                 aiSettingsStore = container.aiSettingsStore,
                 clientFactory = container.aiApiClientFactory,
+                onOpenPromptEditor = { navController.navigate("settings/prompt") },
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable("settings/prompt") {
+            PromptEditScreen(
+                aiSettingsStore = container.aiSettingsStore,
                 onBack = { navController.popBackStack() }
             )
         }
