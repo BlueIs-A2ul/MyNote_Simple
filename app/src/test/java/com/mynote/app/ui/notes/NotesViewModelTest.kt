@@ -312,4 +312,36 @@ class NotesViewModelTest {
         vm.notes.first { it != null && it.size == 2 && it[0].title == "Apple" }
         assertEquals(listOf("Apple", "banana"), vm.notes.value.orEmpty().map { it.title })
     }
+
+    // ---------- 条目 91：多选随搜索 / 数据收敛 ----------
+
+    /** 查询词变化后可见集合随之变化，多选必须清零，避免「看不见却被删」。 */
+    @Test
+    fun onQueryChangeClearsSelection() {
+        vm.enterSelection(1L)
+        assertTrue(vm.selectionMode.value)
+
+        vm.onQueryChange("a")
+
+        assertFalse(vm.selectionMode.value)
+        assertTrue(vm.selectedIds.value.isEmpty())
+    }
+
+    /** 选中项被别处删除（软删/彻底删）后应从选中集剔除，避免计数虚高后删错。 */
+    @Test
+    fun selectionIsPrunedWhenNoteLeavesList() = runTest(dispatcher) {
+        val a = repo.saveNote(null, "a", "c", null, false, null)
+        val b = repo.saveNote(null, "b", "c", null, false, null)
+        vm.notes.first { it != null && it.size == 2 }
+        vm.enterSelection(a)
+        vm.toggleSelect(b)
+        assertEquals(setOf(a, b), vm.selectedIds.value)
+
+        db.noteDao().update(db.noteDao().getById(b)!!.copy(deletedAt = 9L))
+        vm.notes.first { it != null && it.size == 1 }
+        runCurrent()
+
+        assertEquals(setOf(a), vm.selectedIds.value)
+        assertTrue(vm.selectionMode.value)
+    }
 }

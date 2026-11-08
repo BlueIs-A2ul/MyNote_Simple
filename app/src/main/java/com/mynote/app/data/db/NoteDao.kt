@@ -57,13 +57,13 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE id = :id")
     fun observeById(id: Long): Flow<NoteEntity?>
 
-    @Query("SELECT id, title, categoryId, pinned, createdAt, updatedAt, deletedAt, substr(content, 1, 400) AS summary FROM notes WHERE deletedAt IS NULL AND (title LIKE '%' || :query || '%' OR content LIKE '%' || :query || '%') ORDER BY pinned DESC, updatedAt DESC")
+    @Query("SELECT id, title, categoryId, pinned, createdAt, updatedAt, deletedAt, substr(content, 1, 400) AS summary FROM notes WHERE deletedAt IS NULL AND (title LIKE '%' || :query || '%' ESCAPE '\\' OR content LIKE '%' || :query || '%' ESCAPE '\\') ORDER BY pinned DESC, updatedAt DESC")
     fun search(query: String): Flow<List<NoteListItem>>
 
-    @Query("SELECT id, title, categoryId, pinned, createdAt, updatedAt, deletedAt, substr(content, 1, 400) AS summary FROM notes WHERE deletedAt IS NULL AND (title LIKE '%' || :query || '%' OR content LIKE '%' || :query || '%') ORDER BY pinned DESC, createdAt DESC")
+    @Query("SELECT id, title, categoryId, pinned, createdAt, updatedAt, deletedAt, substr(content, 1, 400) AS summary FROM notes WHERE deletedAt IS NULL AND (title LIKE '%' || :query || '%' ESCAPE '\\' OR content LIKE '%' || :query || '%' ESCAPE '\\') ORDER BY pinned DESC, createdAt DESC")
     fun searchByCreated(query: String): Flow<List<NoteListItem>>
 
-    @Query("SELECT id, title, categoryId, pinned, createdAt, updatedAt, deletedAt, substr(content, 1, 400) AS summary FROM notes WHERE deletedAt IS NULL AND (title LIKE '%' || :query || '%' OR content LIKE '%' || :query || '%') ORDER BY pinned DESC, title COLLATE NOCASE ASC")
+    @Query("SELECT id, title, categoryId, pinned, createdAt, updatedAt, deletedAt, substr(content, 1, 400) AS summary FROM notes WHERE deletedAt IS NULL AND (title LIKE '%' || :query || '%' ESCAPE '\\' OR content LIKE '%' || :query || '%' ESCAPE '\\') ORDER BY pinned DESC, title COLLATE NOCASE ASC")
     fun searchByTitle(query: String): Flow<List<NoteListItem>>
 
     /** 按排序方式搜索。 */

@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -51,6 +52,8 @@ class NotesViewModel(
                     else -> repository.observeNotes(sort)
                 }
             }
+            // 条目 91：可见集合变化时收敛多选，避免「选中项已不在列表里」却仍被批量操作
+            .onEach { visible -> pruneSelection(visible) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** 新建笔记的预选分类：仅「某个分类」筛选下有值，其余为 null（未分类）。 */
@@ -58,6 +61,10 @@ class NotesViewModel(
         get() = (selectedFilter.value as? CategoryFilter.Single)?.categoryId
 
     fun onQueryChange(value: String) {
+        if (value == query.value) return
+        // 条目 91：查询词变化后可见集合随之变化，多选必须清零，
+        // 否则「搜 a 选中 A → 改搜 b → 删除」会删掉用户根本看不见的 A
+        if (selectedIds.value.isNotEmpty()) exitSelection()
         query.value = value
     }
 
@@ -99,6 +106,17 @@ class NotesViewModel(
     fun exitSelection() {
         selectionMode.value = false
         selectedIds.value = emptySet()
+    }
+
+    /** 条目 91：从选中集里剔除已不可见的笔记（被别处删除、移出当前筛选或搜索结果变化）。 */
+    private fun pruneSelection(visible: List<NoteListItem>) {
+        val selected = selectedIds.value
+        if (selected.isEmpty()) return
+        val visibleIds = visible.mapTo(HashSet()) { it.id }
+        val kept = selected.filterTo(HashSet()) { it in visibleIds }
+        if (kept.size == selected.size) return
+        selectedIds.value = kept
+        if (kept.isEmpty()) selectionMode.value = false
     }
 
     fun batchDelete(onDone: (Int) -> Unit, onFailed: () -> Unit) =

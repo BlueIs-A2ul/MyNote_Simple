@@ -180,6 +180,26 @@ class AiApiSessionTest {
         assertEquals(1, streamer.cancelCount)
     }
 
+    /** 重发前必须显式断连：旧流的阻塞读不响应协程取消，否则会一直跑到服务端生成完。 */
+    @Test
+    fun resendCancelsPreviousStream() = runTest {
+        val streamer = FakeStreamer()
+        val session = AiApiSession(
+            streamer, AiProvider.DEEPSEEK.endpoint(), { "key" }, { DeepSeekModels.FLASH }, { false }, backgroundScope
+        )
+        backgroundScope.launch { session.events.collect { } }
+        runCurrent()
+
+        streamer.result = flow { awaitCancellation() }
+        session.send(messages())
+        runCurrent()
+
+        session.send(messages())
+        runCurrent()
+
+        assertEquals(1, streamer.cancelCount)
+    }
+
     @Test
     fun emptyMessagesDoNotCallStreamer() = runTest {
         val streamer = FakeStreamer()

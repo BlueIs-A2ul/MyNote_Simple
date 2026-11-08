@@ -308,6 +308,9 @@ class AiChatViewModel(
             delay(watchdogTimeoutMs)
             if (!_state.value.sending) return@launch
             val partial = _state.value.streamingText
+            // 条目 82：超时必须真正断流。只收尾界面的话，旧连接会继续跑到服务端生成完，
+            // token 照常计费后整段丢弃；用户点「重试」也不会打断它。
+            session.stop()
             finalizeAssistant(
                 if (partial.isBlank()) AiMessageEntity.STATUS_FAILED
                 else AiMessageEntity.STATUS_INTERRUPTED
@@ -371,7 +374,14 @@ class AiChatViewModel(
                     } ?: state.sessionUsage
                     state.copy(lastUsage = event.usage, sessionUsage = accumulated)
                 }
-                finalizeAssistant(AiMessageEntity.STATUS_DONE, event.text)
+                // 条目 83：200 但没有任何内容（服务端忽略 stream、网关返回整段普通 JSON 等）
+                // 不能按 done 落一条空回答——既没内容、也不会出现重试按钮
+                val text = event.text.ifEmpty { _state.value.streamingText }
+                if (text.isBlank()) {
+                    finishWithoutMessage(EMPTY_ANSWER_REASON)
+                    return
+                }
+                finalizeAssistant(AiMessageEntity.STATUS_DONE, text)
             }
             is AiEvent.Failed -> {
                 if (!_state.value.sending) {
@@ -382,17 +392,7 @@ class AiChatViewModel(
                 }
                 if (_state.value.streamingText.isBlank()) {
                     // 本次没有任何半截内容：不落库空 failed 消息，仅横幅（保留 user 消息）
-                    watchdogJob?.cancel()
-                    sendRequested = false
-                    _state.update {
-                        it.copy(
-                            sending = false,
-                            streamingText = "",
-                            reasoningText = "",
-                            banner = event.reason,
-                            apiKeyMissing = event.settingsHint || it.apiKeyMissing
-                        )
-                    }
+                    finishWithoutMessage(event.reason, event.settingsHint)
                 } else {
                     finalizeAssistant(AiMessageEntity.STATUS_INTERRUPTED)
                     _state.update {
@@ -403,6 +403,21 @@ class AiChatViewModel(
                     }
                 }
             }
+        }
+    }
+
+    /** 本轮没有任何可落库内容时收尾：停表、复位发送态、只留横幅（失败气泡不再成串出现）。 */
+    private fun finishWithoutMessage(reason: String, settingsHint: Boolean = false) {
+        watchdogJob?.cancel()
+        sendRequested = false
+        _state.update {
+            it.copy(
+                sending = false,
+                streamingText = "",
+                reasoningText = "",
+                banner = reason,
+                apiKeyMissing = settingsHint || it.apiKeyMissing
+            )
         }
     }
 
@@ -429,6 +444,9 @@ class AiChatViewModel(
 
     companion object {
         private const val WATCHDOG_TIMEOUT_MS = 120_000L
+
+        /** 条目 83：HTTP 200 但流里没有任何内容的统一文案（同时作为「可重试」提示）。 */
+        private const val EMPTY_ANSWER_REASON = "回答为空，请重试"
 
         fun factory(
             noteId: Long,

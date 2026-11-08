@@ -105,7 +105,10 @@ fun SettingsScreen(
     val deepThinking by vm.deepThinking.collectAsState()
     val apiKeyConfigured by vm.apiKeyConfigured.collectAsState()
     val customSystemPrompt by vm.customSystemPrompt.collectAsState()
-    var apiKeyInput by rememberSaveable { mutableStateOf("") }
+    // 条目 77：明文 Key 不进 saved instance state。rememberSaveable 会把用户刚粘贴、尚未保存的 Key
+    // 序列化进 Activity 的 Bundle（系统进程持有且可能落盘），与本页「Key 仅本机加密保存」的承诺相悖；
+    // 旋转后清空输入框可接受，已保存的 Key 不受影响。
+    var apiKeyInput by remember { mutableStateOf("") }
     var keyVisible by rememberSaveable { mutableStateOf(false) }
     var baseUrlInput by rememberSaveable { mutableStateOf(customBaseUrl) }
     var customModelInput by rememberSaveable { mutableStateOf(aiModel) }

@@ -442,4 +442,33 @@ class NoteRepositoryTest {
         assertEquals("v1", repo.getNote(id)?.content)
         assertEquals(day, repo.getNote(id)?.noteDate)
     }
+
+    // ---------- 条目 89：搜索关键词按字面量匹配（LIKE 通配符必须转义） ----------
+
+    /** `%` 按字面量匹配：不能退化成通配符把全库都搜出来。 */
+    @Test
+    fun searchTreatsPercentAsLiteral() = runTest {
+        repo.saveNote(null, "进度 100% 完成", "c1", null, false, null)
+        repo.saveNote(null, "进度 100 完成", "c2", null, false, null)
+        val hits = repo.search("100%").first()
+        assertEquals(listOf("进度 100% 完成"), hits.map { it.title })
+    }
+
+    /** `_` 按字面量匹配：不能命中任意单字符。 */
+    @Test
+    fun searchTreatsUnderscoreAsLiteral() = runTest {
+        repo.saveNote(null, "a_b", "c1", null, false, null)
+        repo.saveNote(null, "axb", "c2", null, false, null)
+        val hits = repo.search("a_b").first()
+        assertEquals(listOf("a_b"), hits.map { it.title })
+    }
+
+    /** 反斜杠本身也要转义，否则用户搜含 `\` 的路径会匹配到不该命中的内容。 */
+    @Test
+    fun searchTreatsBackslashAsLiteral() = runTest {
+        repo.saveNote(null, "路径 C:\\temp", "c1", null, false, null)
+        repo.saveNote(null, "路径 C:/temp", "c2", null, false, null)
+        val hits = repo.search("C:\\temp").first()
+        assertEquals(listOf("路径 C:\\temp"), hits.map { it.title })
+    }
 }

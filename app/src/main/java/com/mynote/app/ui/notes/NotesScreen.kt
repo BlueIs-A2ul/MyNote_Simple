@@ -437,8 +437,9 @@ fun NotesScreen(
                                 } else {
                                     null
                                 },
-                                // 搜索态给标题/摘要加关键词高亮
-                                highlightQuery = query.takeIf { it.isNotBlank() },
+                                // 搜索态给标题/摘要加关键词高亮（与仓库层同口径：去掉首尾空白，
+                                // 否则中文输入法常见的尾随空格会出现「能搜到却不高亮」）
+                                highlightQuery = query.trim().takeIf { it.isNotBlank() },
                                 // 多选高亮
                                 selected = item.id in selectedIds,
                                 modifier = Modifier.animateItem()

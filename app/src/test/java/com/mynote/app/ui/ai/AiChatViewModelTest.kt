@@ -33,6 +33,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -793,6 +794,59 @@ class AiChatViewModelTest {
         vm.state.first { it.sending && fake.sent.size == 2 }
 
         assertEquals(11_200, fake.sent[1].last().content.count { it == 'x' })
+    }
+
+    // ---------- 条目 82 / 83：看门狗必须真停流、空回答按失败处理 ----------
+
+    /** 看门狗超时后必须真正停掉底层流，否则服务端继续生成、token 继续计费。 */
+    @Test
+    fun watchdogTimeoutStopsStream() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val vm = createVm(noteId, watchdogTimeoutMs = 1_000L)
+        vm.send("问")
+        vm.state.first { it.sending }
+
+        advanceTimeBy(1_001)
+        assertFalse(vm.state.value.sending)
+        assertEquals(1, fake.stopCount)
+    }
+
+    /** HTTP 200 但没有任何内容：按失败处理，不落库空回答，并给出重试入口（横幅）。 */
+    @Test
+    fun emptyDoneIsTreatedAsFailureWithoutStoringMessage() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val vm = createVm(noteId)
+        vm.send("问")
+        vm.state.first { it.sending }
+        val sessionId = aiRepo.observeSessions(noteId).first { it.isNotEmpty() }.single().id
+
+        fake.emit(AiEvent.Done(""))
+        vm.state.first { !it.sending }
+        runCurrent()
+
+        assertNotNull(vm.state.value.banner)
+        val messages = aiRepo.getMessages(sessionId)
+        assertEquals(1, messages.size)
+        assertEquals(AiMessageEntity.ROLE_USER, messages[0].role)
+    }
+
+    /** 回归护栏：Done 全文为空但已流式收到分片时，仍按正常完成落库，不能丢内容。 */
+    @Test
+    fun emptyDoneKeepsStreamedText() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val vm = createVm(noteId)
+        vm.send("问")
+        vm.state.first { it.sending }
+        val sessionId = aiRepo.observeSessions(noteId).first { it.isNotEmpty() }.single().id
+
+        fake.emit(AiEvent.Chunk("答"))
+        vm.state.first { it.streamingText == "答" }
+        fake.emit(AiEvent.Done(""))
+        vm.state.first { !it.sending }
+
+        val messages = aiRepo.observeMessages(sessionId).first { it.size == 2 }
+        assertEquals("答", messages[1].content)
+        assertEquals(AiMessageEntity.STATUS_DONE, messages[1].status)
     }
 
     private class FakeCipher : ApiKeyCipher {

@@ -42,6 +42,9 @@ class AiApiSession(
             return
         }
         if (messages.isEmpty()) return
+        // 条目 82：重发时旧流可能仍阻塞在 readLine 上（不响应协程取消），必须显式断连，
+        // 否则它会在服务端继续生成到结束，token 照常计费后被丢弃。
+        if (job?.isActive == true) streamer.cancel()
         job?.cancel()
         job = scope.launch {
             streamer.stream(apiKey, model(), deepThinking(), messages)

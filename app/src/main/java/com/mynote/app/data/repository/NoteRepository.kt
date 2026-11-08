@@ -32,10 +32,11 @@ class NoteRepository(
     fun observeNote(id: Long): Flow<NoteEntity?> = noteDao.observeById(id)
 
     fun search(query: String): Flow<List<NoteListItem>> =
-        if (query.isBlank()) noteDao.observeAll() else noteDao.search(query.trim())
+        if (query.isBlank()) noteDao.observeAll() else noteDao.search(escapeLikePattern(query.trim()))
 
     fun search(query: String, sort: NoteSortMode): Flow<List<NoteListItem>> =
-        if (query.isBlank()) noteDao.observeAllBySort(sort) else noteDao.search(query.trim(), sort)
+        if (query.isBlank()) noteDao.observeAllBySort(sort)
+        else noteDao.search(escapeLikePattern(query.trim()), sort)
 
     fun observeByCategory(categoryId: Long): Flow<List<NoteListItem>> = noteDao.observeByCategory(categoryId)
 
@@ -266,6 +267,16 @@ class NoteRepository(
         internal const val IN_QUERY_CHUNK = 900
     }
 }
+
+/**
+ * 条目 89：把 LIKE 模式里的元字符转义成字面量。
+ *
+ * SQLite 的 LIKE 默认把 % 当「任意串」、_ 当「任意单字符」，因此搜「100%」会命中几乎全部笔记、
+ * 搜「a_b」会命中「axb」。配合 NoteDao 查询里的 ESCAPE 子句，转义后即按字面量匹配。
+ * 反斜杠自身必须最先替换，否则会把后面新加的转义符再转义一次。
+ */
+internal fun escapeLikePattern(raw: String): String =
+    raw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 /**
  * 批量查询分片（条目 76）：`IN (:ids)` 的绑定参数个数必须留在 SQLite 变量上限内，
