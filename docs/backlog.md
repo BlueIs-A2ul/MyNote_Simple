@@ -75,21 +75,21 @@
 | 74 | 导入写图原子化（临时文件 + rename） | P0 | M | 已完成（2026-09-15） | 批次E |
 | 75 | 导入分类冲突改为复用同名分类 | P0 | S | 已完成（2026-09-15） | 批次E |
 | 76 | 批量/回收站操作异常处理 + IN 列表切块 | P0 | S/M | 已完成（2026-09-15） | 批次E |
-| 77 | API Key 输入框不进 saved instance state | P1 | S | 已建议（2026-09-15，待实现） | 批次F |
+| 77 | API Key 输入框不进 saved instance state | P1 | S | 已完成（2026-11-08） | 批次F |
 | 78 | 导出/导入脱离 composition 作用域 | P1 | M | 已建议（2026-09-15，待实现） | 批次F |
 | 79 | 图片 GC 与备份的内存口径（投影 / 流式） | P1 | M | 已建议（2026-09-15，待实现） | 批次F |
 | 80 | 导入与 GC 边界加固合集 | P1 | S/M | 已建议（2026-09-15，待实现） | 批次F |
 | 81 | AI 服务商身份与聊天页保持一致 | P1 | M | 已建议（2026-09-15，待实现） | 批次G |
-| 82 | 看门狗超时与重发必须真正停流 | P1 | S | 已建议（2026-09-15，待实现） | 批次G |
-| 83 | 空回答按失败处理 + finish_reason + 重试入口 | P1 | S | 已建议（2026-09-15，待实现） | 批次G |
+| 82 | 看门狗超时与重发必须真正停流 | P1 | S | 已完成（2026-11-08） | 批次G |
+| 83 | 空回答按失败处理 + finish_reason + 重试入口 | P1 | S | 部分完成（2026-11-08：空回答按失败 + 横幅；finish_reason 透传未做） | 批次G |
 | 84 | 历史裁剪保持 user/assistant 配对 | P1 | S | 已建议（2026-09-15，待实现） | 批次G |
 | 85 | 流式 Markdown 渲染节流（避免 O(n²)） | P1 | M | 已建议（2026-09-15，待实现） | 批次G |
 | 86 | 自定义地址明文 http 策略与错误文案 | P1 | S | 已建议（2026-09-15，待实现） | 批次G |
 | 87 | Markdown 链接 scheme 白名单 | P1 | S | 已建议（2026-09-15，待实现） | 批次G |
 | 88 | AI 体验小坑合集 | P2 | S/M | 已建议（2026-09-15，待实现） | 批次G |
-| 89 | 搜索 LIKE 转义 + 高亮词 trim + 深命中线索 | P1 | S | 已建议（2026-09-15，待实现） | 批次H |
+| 89 | 搜索 LIKE 转义 + 高亮词 trim + 深命中线索 | P1 | S | 部分完成（2026-11-08：LIKE 转义 + 高亮 trim；深命中线索未做） | 批次H |
 | 90 | 保留期文案与回收站口径统一 | P1 | S | 已建议（2026-09-15，待实现） | 批次H |
-| 91 | 多选随搜索/数据收敛（不删看不见的笔记） | P1 | S | 已建议（2026-09-15，待实现） | 批次H |
+| 91 | 多选随搜索/数据收敛（不删看不见的笔记） | P1 | S | 已完成（2026-11-08） | 批次H |
 | 92 | 首帧加载态统一 + debounce 首帧不延迟 | P2 | S | 已建议（2026-09-15，待实现） | 批次H |
 | 93 | 历史页与导航层级修正 | P2 | S/M | 已建议（2026-09-15，待实现） | 批次H |
 | 94 | 编辑页加载态与保存失败反馈 | P1 | S/M | 已建议（2026-09-15，待实现） | 批次I |
@@ -455,7 +455,8 @@
 
 ### 批次 F · 隐私与可靠性（P1）
 
-### 77. API Key 输入框不进 saved instance state
+### 77. API Key 输入框不进 saved instance state ✅
+- **落地（2026-11-08）**：`apiKeyInput` 改 `remember`（附注释说明原因），明文 Key 不再进 Bundle；`keyVisible` 等非敏感状态保持 saveable。
 - 现状：`SettingsScreen.kt:102` 用 `rememberSaveable` 保存用户刚粘贴的明文 Key，而同页文案声明「Key 仅保存在本机（Keystore 加密）」（`:434-435`）。
 - 影响：尚未点保存就旋转/进程重建 → 明文 Key 进入 Activity 的 saved instance state Bundle（系统进程持有、可被序列化落盘），与承诺不符。
 - 建议：改成 `remember`（旋转后清空输入框，已保存的 Key 不受影响）。价值：中 × S
@@ -481,12 +482,14 @@
 - 影响：DeepSeek 已配 Key 时打开聊天 → 设置里切到未配 Key 的硅基流动 → 返回发送被「未配置 API Key」拦下；用户照提示填了硅基流动的 Key 后再发，请求**仍然发给 DeepSeek**（账单与预期不符）。同 provider 换模型则立刻生效但顶栏副标题仍是旧模型名，与 `UiState.modelName` 注释宣称的正好相反。
 - 建议：给 VM 传一个「当前服务商/设置版本」的 `StateFlow`，变化时重建 session 并刷新 `providerName/modelName`；或离开聊天页时强制重建该 BackStackEntry。价值：中高 × M
 
-### 82. 看门狗超时与重发必须真正停流
+### 82. 看门狗超时与重发必须真正停流 ✅
+- **落地（2026-11-08）**：看门狗超时分支先 `session.stop()` 再收尾；`AiApiSession.send()` 在旧 job 仍活跃时先 `streamer.cancel()` 再取消协程（避免误关已完成的连接）。用例 `watchdogTimeoutStopsStream`、`resendCancelsPreviousStream`。
 - 现状：看门狗超时分支只 `finalizeAssistant` + 横幅，**不调用 `session.stop()`**（`AiChatViewModel.kt:293-306`，对照 `stop()` `:217-221` 是先 stop）；`AiApiSession.send()` 只 `job?.cancel()` 而不 `streamer.cancel()`（`AiApiSession.kt:44-46`），而阻塞中的 `readLine()` 不响应协程取消（`AiApiClient.kt:172` 自述）。
 - 影响：超时后旧 HTTP 连接继续跑到服务端生成完（token 照常计费后被丢弃）；用户点「重试」也不会打断旧流。
 - 建议：超时分支补 `session.stop()`；`send()` 在 `job?.cancel()` 后补 `streamer.cancel()`；测试补 `assertEquals(1, fake.stopCount)` 断言。价值：中 × S
 
-### 83. 空回答按失败处理 + finish_reason 规则 + 重试入口
+### 83. 空回答按失败处理 + finish_reason 规则 + 重试入口 ◐
+- **落地（2026-11-08，部分）**：`Done` 全文与已收分片都为空 → 抽出的 `finishWithoutMessage()` 收尾（不落库、保留 user 消息、横幅「回答为空，请重试」）；分片非空时仍按 completed 落库。`finish_reason` 透传**未做**。用例 `emptyDoneIsTreatedAsFailureWithoutStoringMessage`、`emptyDoneKeepsStreamedText`。
 - 现状：HTTP 200 但读不到任何 `data:` 行时直接 `emit(Finished(""))`（`AiApiClient.kt:170-198`），`AiApiSession.kt:55` 转发 `Done("")` 并**丢弃 finishReason**，`AiChatViewModel.finalizeAssistant` 无判空（`:385-398`）→ 落库 `content=""`、`status=done`。
 - 影响：服务商/网关忽略 `stream:true` 返回整段普通 JSON 时，有效回答被静默丢弃，界面显示「（没有内容）」；因 `status==done`，重试按钮不出现，用户只能重打字。设计文档要求的 `content_filter / insufficient_system_resource / aborted` 无内容按失败落库也未实现。
 - 建议：`Done` 且文本空白 → 走 Failed 分支（不落库 + 横幅「回答为空，请重试」）；`AiSession` 透传/使用 `finishReason`；补 `Done("")` 用例。价值：中 × S
@@ -517,7 +520,8 @@
 
 ### 批次 H · 列表 / 搜索 / 导航（P1–P2）
 
-### 89. 搜索 LIKE 转义 + 高亮词 trim + 深命中线索
+### 89. 搜索 LIKE 转义 + 高亮词 trim + 深命中线索 ◐
+- **落地（2026-11-08，部分）**：`NoteDao` 三处 `LIKE` 补 `ESCAPE`；仓库层新增 `escapeLikePattern`（反斜杠 → 双反斜杠、`%` → `\%`、`_` → `\_`）并在两个 `search` 重载里使用；高亮改用 `query.trim()`。**深命中线索未做**。用例 `searchTreatsPercentAsLiteral`、`searchTreatsUnderscoreAsLiteral`、`searchTreatsBackslashAsLiteral`。
 - 现状：三处 `LIKE '%' || :query || '%'` 无 `ESCAPE`（`NoteDao.kt:56,59,62`），仓库只做 `trim()`（`NoteRepository.kt:34-38`）；而高亮用的是**未 trim 的原始 query**（`NotesScreen.kt:440` → `NoteRow.kt:59-63`）；投影只取 `substr(content,1,400)`（`NoteDao.kt:21/56`）。
 - 影响：搜 `_` / `%` 会命中几乎全部笔记（而高亮一处都找不到 → 「全命中却零高亮」），字面 `%` 永远搜不准；输入「会议 」（尾随空格，中文输入法常见）能搜到但不高亮；命中在正文 400 字之后时该行完全没有命中线索。
 - 建议：`LIKE ... ESCAPE '\'` + 绑定前转义 `\ % _`；高亮用 `query.trim()`；深命中改由 DAO 回传「命中位置超出投影」标记，行内给一句小字说明。价值：中 × S
@@ -526,7 +530,8 @@
 - 现状：两处破坏性确认框把保留期写死成「30 天」（`NoteEditScreen.kt:793` 单条删除、`NotesScreen.kt:511` 批量删除），而设置页与回收站用的是可配置的 `TrashRetentionStore`（`TrashScreen.kt:97,172`）；回收站恢复/彻底删除即使什么都没做也会提示「已恢复/已彻底删除」（`TrashViewModel.kt:42-54` 用 `getNote(id)?.let{}` 后无条件 `onDone()`），且 `_purging` 在 launch 内设置，双击可绕过；剩余天数向下取整、不足 1 天一律显示「即将自动清理」，而清理实际只发生在冷启动或打开回收站；术语上回收站里的「删除」实为永久删除，主页批量软删却提示「已删除 N 条」。
 - 建议：保留期文案参数化（抽纯函数，两处共用）；回收站按 `getNote != null` 决定文案；剩余天数上取整并改「剩余不足 1 天」；行按钮改「彻底删除」、批量提示改「已移入回收站 N 条」。可选：回收站支持搜索（`deletedAt IS NOT NULL` 变体），缓解误删后难找回。价值：中 × S
 
-### 91. 多选随搜索/数据收敛（不删看不见的笔记）
+### 91. 多选随搜索/数据收敛（不删看不见的笔记） ✅
+- **落地（2026-11-08）**：`onQueryChange` 值变化时 `exitSelection()`；`notes` 流水线在 `stateIn` 前加 `onEach { pruneSelection(it) }`，选中集随可见集收敛（同时覆盖「笔记被别处删除/移出筛选」）。用例 `onQueryChangeClearsSelection`、`selectionIsPrunedWhenNoteLeavesList`。
 - 现状：`onQueryChange` 只改关键词、不清多选（`NotesViewModel.kt:59-61`，对比 `onFilterSelect:63-67` 会清）；搜索栏在多选下仍显示（`NotesScreen.kt:326`）；`runBatch`（`:111-120`）按 id 重读但不与当前可见集取交集；`selectAll` 读 `notes.value`，防抖窗口内可能选中上一轮结果集。
 - 影响：搜「a」→ 长按选中 A → 关键词改「b」（A 不在结果里、屏幕上没有任何选中标记）→ 顶栏仍显示「已选 1 项」→ 删除 → **A 被删掉，而它根本不在用户眼前**；选中项被他处删除后计数也会虚高。
 - 建议：`onQueryChange` 非空变更时 `exitSelection()`；`runBatch` 与可见集取交集；`notes` 更新时裁剪已消失的 id。价值：中高 × S
@@ -633,6 +638,7 @@
 | 2026-09-15 | **字体切换（条目 68）评估后暂缓**：现状无字体切换；三方案（系统字体 / 内置子集 / 用户自选）成本与收益均已评估，用户拍板保持极致轻量，不实现、不改代码。详见条目 68。 |
 | 2026-09-15 | **笔记日期与日历视图完成（v1.8.0，用户新增需求）**：笔记新增可选归属日期（`NoteEntity.noteDate` 存本地零点毫秒，Room v6 + `MIGRATION_5_6` + 索引）；编辑页底栏「日期」入口 + Material3 DatePickerDialog（可清除，UTC↔本地零点经 `CalendarDates` 互转）；主页 ⋮ → 日历页（月网格圆点 + 当天笔记列表，只读，「今天」与前后月切换，切月选中日回 1 号）；旧笔记迁移后无日期、不进日历；备份含该字段且兼容旧文件；历史恢复旧版保留当前日期。全量单测 547 全绿（本次新增 28 个）。 |
 | 2026-09-15 | **AI 回答 Markdown 渲染完成（v1.9.0，条目 61 升级）**：新增 `MarkdownParser`（标题/递归嵌套列表/引用/分隔线/表格/围栏代码块）、`MarkdownInline`（粗体/斜体/删除线/行内代码/可点链接/图片降级 alt/反斜杠转义）、`MarkdownPlainText`（插入正文与存笔记转纯文本，「复制」保留原文）、`MarkdownContent`（H1–H6、任务 ☐/☑、引用竖线、等宽列表格横向滚动，样式跟随主题）；流式回答逐帧实时渲染、完成后无跳变；移除 `CodeBlockParser`；零新增依赖、VM/数据库零改动。全量单测 547 全绿（本批净增 0：新增 `MarkdownPlainTextTest` 12 条、移除 `CodeBlockParserTest` 12 条；Markdown 特性累计新增 68 条、移除 12 条，其中 56 条已计入 v1.8.0 的 547 基线）。 |
+| 2026-11-08 | **批次 F/G/H 快修（条目 77、82、83、89、91）**：77 明文 Key 不再进 saved instance state；82 看门狗超时与重发真正断流（`session.stop()` / `streamer.cancel()`）；83 空回答按失败处理（不落库空 done，横幅给重试线索；`finish_reason` 透传留待后续）；89 搜索 `LIKE` 转义（反斜杠 / `%` / `_` 按字面量匹配）+ 高亮用 trim 词；91 改搜索词清多选 + 选中集随可见集裁剪。红灯 7 例 → 全量 667 单测全绿；`assembleDebug` 通过。设计/计划见 `docs/superpowers/specs|plans/2026-11-08-backlog-fgh-quick-fixes*`。 |
 | 2026-09-15 | **AI 服务商可切换完成（v1.10.0，条目 69）**：`AiProvider` 枚举收敛一切服务商差异（DeepSeek / 硅基流动 / 自定义 OpenAI 兼容：地址、`thinking` 对象 / `enable_thinking` 布尔、余额接口与 schema、`?sub_type=chat` 模型过滤、默认模型、Key 提示文案）；`DeepSeekApiClient`→`AiApiClient`、`DeepSeekApiSession`→`AiApiSession`、`DeepSeekSseParser`→`AiSseParser`（协议层不变，端点驱动）；请求体改 `buildJsonObject` 组装，422 去参数重试仅对支持思考的服务商生效；错误详情兼容 `error.message` / `message` / 纯字符串三种形态，文案去 DeepSeek 化；设置页新增服务商 tab、自定义地址（http(s) 校验）与模型自由填写，深度思考/查询余额按能力显示；Key、模型、思考开关按 serviceId 命名空间隔离（DeepSeek 沿用旧 key 名兼容）；聊天页隐私弹窗用 `session.displayName`。全量单测 547 → 582 全绿。 |
 | 2026-09-15 | **AI 模型选择体验优化（v1.10.1，条目 70）**：连接成功文案模型数 > 5 时收敛为「共 N 个可用模型」；设置页模型数 > 8 改用可搜索 `ModelPickerDialog`（LazyColumn + 过滤 + 当前项对勾，≤ 8 仍用 tab）；聊天页顶栏副标题显示「服务商 · 模型」（`UiState.modelName` 进入会话时快照）。同批修正 AGENTS.md worktree 说明（signingConfig 配置期无条件读取签名文件，新 worktree 需从主树复制 `keystore.properties` 与 `app/mynote-release.keystore` 才能跑测试）。全量单测 582 → 584 全绿。 |
 | 2026-09-15 | **版本演进欠账清理·文档批（非发布批，不改版本号）**：build-guide 单测数 376 → 582、release 产物体积统一为约 2.0MB；backlog 条目状态回写（36 已完成、37/38 已作废、40 缩略图部分已撤销、46 部分完成），总览表补齐 51–70 行（此前状态需在表格与正文两处维护，正是上述矛盾的成因）；补记一次从未记录的回退——v1.6.1 整体移除缩略图机制（`ImageStore` 仅保留 `thumb_*` 遗留清理）；已发布特性的设计文档状态由「实现中/待实现」回写为「已实现（版本）」，两份网页驱动 AI 文档加「已被 API 方案替换」横幅。校正历史口径：v1.6.0 修订记录的 351 经逐提交核对应为 352。 |
