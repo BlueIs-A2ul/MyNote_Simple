@@ -60,9 +60,9 @@
 | 45 | notes 索引 + 投影查询（Room v5） | P1 | M | 已完成（2026-09-14，v1.5.0） | 批次D |
 | 46 | 备份导入导出流式化 | P2 | M | 已完成（2026-11-10） | 批次D |
 | 47 | 历史时间线摘要/对比命名/图片渲染 | P2 | S | 已完成（2026-11-10） | 可选 |
-| 48 | 删除/恢复反馈与就地撤销 | P2 | M | 已建议（2026-09-14，待实现） | 可选 |
+| 48 | 删除/恢复反馈与就地撤销 | P2 | M | 已完成（2026-11-10） | 可选 |
 | 49 | 分类空名/删除确认反馈 | P2 | S | 已完成（2026-11-10） | 可选 |
-| 50 | 深链 mynote://note/{id} | P2 | M | 已建议（2026-09-14，待实现） | 可选 |
+| 50 | 深链 mynote://note/{id} | P2 | M | 已完成（2026-11-10） | 可选 |
 | 51–64 | AI 助手优化批（看门狗/重试/预算/用量/草稿等 14 项） | P1 | L | 已完成（2026-09-15，v1.7.0） | — |
 | 65–66 | AI 兼容性加固（动态模型列表 / 422 参数降级） | P1 | S/M | 已完成（2026-09-15，v1.7.1） | — |
 | 67 | 新用户欢迎笔记 | P1 | S | 已完成（2026-09-15，v1.7.2） | — |
@@ -81,13 +81,13 @@
 | 80 | 导入与 GC 边界加固合集 | P1 | S/M | 已完成（2026-11-10） | 批次F |
 | 81 | AI 服务商身份与聊天页保持一致 | P1 | M | 已完成（2026-11-10） | 批次G |
 | 82 | 看门狗超时与重发必须真正停流 | P1 | S | 已完成（2026-11-08） | 批次G |
-| 83 | 空回答按失败处理 + finish_reason + 重试入口 | P1 | S | 部分完成（2026-11-08：空回答按失败 + 横幅；finish_reason 透传未做） | 批次G |
+| 83 | 空回答按失败处理 + finish_reason + 重试入口 | P1 | S | 已完成（2026-11-10） | 批次G |
 | 84 | 历史裁剪保持 user/assistant 配对 | P1 | S | 已完成（2026-11-10） | 批次G |
 | 85 | 流式 Markdown 渲染节流（避免 O(n²)） | P1 | M | 已完成（2026-11-10） | 批次G |
 | 86 | 自定义地址明文 http 策略与错误文案 | P1 | S | 已完成（2026-11-10） | 批次G |
 | 87 | Markdown 链接 scheme 白名单 | P1 | S | 已完成（2026-11-10） | 批次G |
 | 88 | AI 体验小坑合集 | P2 | S/M | 部分完成（2026-11-10：①②③④⑤⑥⑦；⑧⑨ 为设计/能力缺口，暂不做） | 批次G |
-| 89 | 搜索 LIKE 转义 + 高亮词 trim + 深命中线索 | P1 | S | 部分完成（2026-11-08：LIKE 转义 + 高亮 trim；深命中线索未做） | 批次H |
+| 89 | 搜索 LIKE 转义 + 高亮词 trim + 深命中线索 | P1 | S | 已完成（2026-11-10） | 批次H |
 | 90 | 保留期文案与回收站口径统一 | P1 | S | 已完成（2026-11-10） | 批次H |
 | 91 | 多选随搜索/数据收敛（不删看不见的笔记） | P1 | S | 已完成（2026-11-08） | 批次H |
 | 92 | 首帧加载态统一 + debounce 首帧不延迟 | P2 | S | 已完成（2026-11-10） | 批次H |
@@ -356,9 +356,9 @@
 
 ### 可选 · P2
 - **47 历史时间线**：行摘要（plainText take 40）、页签改「与上一版对比」、全文渲染图片占位（`NoteHistoryScreen.kt:143-162,225,235`）。中 × S
-- **48 删除/恢复反馈**：编辑页删除后列表弹「已移入回收站可恢复」snackbar + 就地「撤销」（复用 `restoreNote`）；回收站恢复带标题提示 + 「查看」入口。中 × M
+- **48 删除/恢复反馈**：编辑页删除后列表弹「已移入回收站可恢复」snackbar + 就地「撤销」（复用 `restoreNote`）；回收站恢复带标题提示 + 「查看」入口。中 × M ✅ 已完成（2026-11-10）
 - **49 分类反馈**：删除框带名称与笔记数；空名添加/重命名禁用确定（`CategoriesScreen.kt:197-209`、`CategoriesViewModel.kt:22-28`）。低 × S
-- **50 深链**：`mynote://note/{id}` VIEW filter（`AndroidManifest.xml:20-24`、`AppNavHost.kt:34`）。低 × M（按需）
+- **50 深链**：`mynote://note/{id}` VIEW filter（`AndroidManifest.xml:20-24`、`AppNavHost.kt:34`）。低 × M（按需）✅ 已完成（2026-11-10）
 
 ### AI 助手优化批（51–64，2026-09-15 立项）✅ 已完成（v1.7.0）
 
@@ -492,7 +492,8 @@
 - 影响：超时后旧 HTTP 连接继续跑到服务端生成完（token 照常计费后被丢弃）；用户点「重试」也不会打断旧流。
 - 建议：超时分支补 `session.stop()`；`send()` 在 `job?.cancel()` 后补 `streamer.cancel()`；测试补 `assertEquals(1, fake.stopCount)` 断言。价值：中 × S
 
-### 83. 空回答按失败处理 + finish_reason 规则 + 重试入口 ◐
+### 83. 空回答按失败处理 + finish_reason 规则 + 重试入口 ✅
+- **补充落地（2026-11-10）**：`AiEvent.Done` 增加 `finishReason`，`AiApiSession` 透传；空回答时按 `content_filter` / `insufficient_system_resource` 给出专用横幅（`blankAnswerReason`）。用例 `blankAnswerReasonUsesFinishReason`、`contentFilteredEmptyDoneShowsSpecificBanner`。
 - **落地（2026-11-08，部分）**：`Done` 全文与已收分片都为空 → 抽出的 `finishWithoutMessage()` 收尾（不落库、保留 user 消息、横幅「回答为空，请重试」）；分片非空时仍按 completed 落库。`finish_reason` 透传**未做**。用例 `emptyDoneIsTreatedAsFailureWithoutStoringMessage`、`emptyDoneKeepsStreamedText`。
 - 现状：HTTP 200 但读不到任何 `data:` 行时直接 `emit(Finished(""))`（`AiApiClient.kt:170-198`），`AiApiSession.kt:55` 转发 `Done("")` 并**丢弃 finishReason**，`AiChatViewModel.finalizeAssistant` 无判空（`:385-398`）→ 落库 `content=""`、`status=done`。
 - 影响：服务商/网关忽略 `stream:true` 返回整段普通 JSON 时，有效回答被静默丢弃，界面显示「（没有内容）」；因 `status==done`，重试按钮不出现，用户只能重打字。设计文档要求的 `content_filter / insufficient_system_resource / aborted` 无内容按失败落库也未实现。
@@ -529,7 +530,8 @@
 
 ### 批次 H · 列表 / 搜索 / 导航（P1–P2）
 
-### 89. 搜索 LIKE 转义 + 高亮词 trim + 深命中线索 ◐
+### 89. 搜索 LIKE 转义 + 高亮词 trim + 深命中线索 ✅
+- **补充落地（2026-11-10）**：`NoteListItem` 增加 `deepHit`，搜索投影用 `CASE WHEN` 判断命中是否落在 400 字投影内；列表行显示「命中在正文更靠后的位置」。用例 `searchMarksDeepHitBeyondProjection`。
 - **落地（2026-11-08，部分）**：`NoteDao` 三处 `LIKE` 补 `ESCAPE`；仓库层新增 `escapeLikePattern`（反斜杠 → 双反斜杠、`%` → `\%`、`_` → `\_`）并在两个 `search` 重载里使用；高亮改用 `query.trim()`。**深命中线索未做**。用例 `searchTreatsPercentAsLiteral`、`searchTreatsUnderscoreAsLiteral`、`searchTreatsBackslashAsLiteral`。
 - 现状：三处 `LIKE '%' || :query || '%'` 无 `ESCAPE`（`NoteDao.kt:56,59,62`），仓库只做 `trim()`（`NoteRepository.kt:34-38`）；而高亮用的是**未 trim 的原始 query**（`NotesScreen.kt:440` → `NoteRow.kt:59-63`）；投影只取 `substr(content,1,400)`（`NoteDao.kt:21/56`）。
 - 影响：搜 `_` / `%` 会命中几乎全部笔记（而高亮一处都找不到 → 「全命中却零高亮」），字面 `%` 永远搜不准；输入「会议 」（尾随空格，中文输入法常见）能搜到但不高亮；命中在正文 400 字之后时该行完全没有命中线索。
@@ -658,6 +660,7 @@
 | 2026-11-08 | **批次 F/G/H 快修（条目 77、82、83、89、91）**：77 明文 Key 不再进 saved instance state；82 看门狗超时与重发真正断流（`session.stop()` / `streamer.cancel()`）；83 空回答按失败处理（不落库空 done，横幅给重试线索；`finish_reason` 透传留待后续）；89 搜索 `LIKE` 转义（反斜杠 / `%` / `_` 按字面量匹配）+ 高亮用 trim 词；91 改搜索词清多选 + 选中集随可见集裁剪。红灯 7 例 → 全量 667 单测全绿；`assembleDebug` 通过。设计/计划见 `docs/superpowers/specs|plans/2026-11-08-backlog-fgh-quick-fixes*`。 |
 | 2026-11-10 | **穷尽批次（一）**：条目 84（历史裁剪成对保留）、87（Markdown 链接白名单，防 `intent://`/`file://` 崩溃）、90（保留期文案与回收站口径统一）、92（首帧加载态 + 空查询不防抖）落地。全量单测 667 → 674 全绿，`assembleDebug` 通过。 |
 | 2026-11-10 | **穷尽批次（二/三）**：条目 79/46（GC 投影 + 备份导出流式化）、80（导入与 GC 六项边界加固）、94/95/96（编辑页加载态、保存失败反馈、不保存抑制、保存期只读、旋转状态）。全量 674 → 678 全绿。 |
+| 2026-11-10 | **穷尽批次（八）**：条目 83 余项（finish_reason 透传 + 专用文案）、89 余项（deepHit 深命中线索）、50（深链）、48（删除可撤销 + 恢复可查看）。 |
 | 2026-11-10 | **穷尽批次（七）**：条目 47（历史摘要/对比命名/图片占位）、98（导出绘制期缺图记账 + txt 剥离图片标记）。 |
 | 2026-11-10 | **穷尽批次（六）**：条目 78（备份导出/导入与 txt 导出搬进 ViewModel，旋转不再丢在途任务与提示）。 |
 | 2026-11-10 | **穷尽批次（五）**：条目 81（切服务商后重建会话，请求不再发给旧服务商）、85（长回答分片合并刷新，短回答行为不变）、88（测试连接存 Key、Key 输入按服务商隔离、折叠选区改插入、空回答禁用落地、空模型拦截、删会话清草稿、抽屉显示服务商）。 |

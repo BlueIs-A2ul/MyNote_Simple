@@ -464,6 +464,17 @@ class NoteRepositoryTest {
     }
 
     /** 反斜杠本身也要转义，否则用户搜含 `\` 的路径会匹配到不该命中的内容。 */
+    /** 条目 89：命中落在 400 字投影之外时，行标记 deepHit，界面据此给出线索。 */
+    @Test
+    fun searchMarksDeepHitBeyondProjection() = runTest {
+        repo.saveNote(null, "深命中", "x".repeat(600) + "关键线索", null, false, null)
+        repo.saveNote(null, "浅命中", "关键线索 " + "y".repeat(600), null, false, null)
+
+        val hits = repo.search("关键线索").first().associateBy { it.title }
+        assertTrue("正文深处命中应标记 deepHit", hits.getValue("深命中").deepHit)
+        assertFalse("前 400 字内命中不算 deepHit", hits.getValue("浅命中").deepHit)
+    }
+
     @Test
     fun searchTreatsBackslashAsLiteral() = runTest {
         repo.saveNote(null, "路径 C:\\temp", "c1", null, false, null)

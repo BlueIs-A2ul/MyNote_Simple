@@ -119,6 +119,15 @@ fun NoteRow(
                     modifier = Modifier.padding(top = 4.dp)
                 )
             }
+            // 条目 89：命中在 400 字投影之外时给一句线索，否则用户只看到「全命中却零高亮」
+            if (item.deepHit && query != null) {
+                Text(
+                    "命中在正文更靠后的位置",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
         }
         Spacer(Modifier.width(12.dp))
         Column(horizontalAlignment = Alignment.End) {

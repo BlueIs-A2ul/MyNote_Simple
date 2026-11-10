@@ -1,6 +1,7 @@
 package com.mynote.app.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -32,11 +33,24 @@ object AiNavKeys {
 
 object NavResults {
     const val RESTORE_MESSAGE = "restore_message"
+
+    /** 条目 48：编辑页删除笔记后回传给列表的目标 id（列表据此弹「撤销」）。 */
+    const val DELETED_NOTE_ID = "deleted_note_id"
 }
 
 @Composable
-fun AppNavHost(container: AppContainer) {
+fun AppNavHost(
+    container: AppContainer,
+    deepLinkNoteId: Long? = null,
+    onDeepLinkConsumed: () -> Unit = {}
+) {
     val navController = rememberNavController()
+    // 条目 50：冷启动/热启动收到的 mynote://note/{id} 只消费一次
+    LaunchedEffect(deepLinkNoteId) {
+        val id = deepLinkNoteId ?: return@LaunchedEffect
+        onDeepLinkConsumed()
+        navController.navigate("edit/" + id) { launchSingleTop = true }
+    }
     NavHost(navController = navController, startDestination = "notes") {
         composable("notes") { backStack ->
             val vm: NotesViewModel = viewModel(
@@ -50,10 +64,16 @@ fun AppNavHost(container: AppContainer) {
             val restoreMessage by backStack.savedStateHandle
                 .getStateFlow<String?>(NavResults.RESTORE_MESSAGE, null).collectAsState()
             val retentionDays by container.trashRetentionStore.retentionDays.collectAsState()
+            val deletedNoteId by backStack.savedStateHandle
+                .getStateFlow<Long?>(NavResults.DELETED_NOTE_ID, null).collectAsState()
             NotesScreen(
                 viewModel = vm,
                 backupManager = container.backupManager,
                 retentionDays = retentionDays,
+                deletedNoteId = deletedNoteId,
+                onDeletedNoteConsumed = {
+                    backStack.savedStateHandle.remove<Long>(NavResults.DELETED_NOTE_ID)
+                },
                 restoreMessage = restoreMessage,
                 onRestoreMessageConsumed = {
                     backStack.savedStateHandle.remove<String>(NavResults.RESTORE_MESSAGE)
@@ -117,6 +137,11 @@ fun AppNavHost(container: AppContainer) {
                     backStack.savedStateHandle[AiNavKeys.NOTE_TITLE] = noteTitle
                     backStack.savedStateHandle[AiNavKeys.NOTE_CONTENT] = noteContent
                     navController.navigate("ai_chat/$id")
+                },
+                onNoteDeleted = { deletedId ->
+                    // 条目 48：写回列表页（start destination 恒在栈上）
+                    navController.getBackStackEntry("notes")
+                        .savedStateHandle[NavResults.DELETED_NOTE_ID] = deletedId
                 },
                 onOpenHistory = { dirty -> id?.let { navController.navigate("note_history/$it?dirty=$dirty") } },
                 onBack = { navController.popBackStack() }
@@ -185,6 +210,9 @@ fun AppNavHost(container: AppContainer) {
             TrashScreen(
                 repository = container.noteRepository,
                 retentionStore = container.trashRetentionStore,
+                onOpenNote = { id ->
+                    navController.navigate("edit/" + id) { launchSingleTop = true }
+                },
                 onBack = { navController.popBackStack() }
             )
         }

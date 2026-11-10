@@ -268,6 +268,9 @@ class NoteEditViewModel(
         }
     }
 
+    /** 条目 48：当前笔记 id（未保存的新笔记返回 null）。 */
+    fun currentNoteId(): Long? = _note.value?.id ?: draftId.value
+
     fun delete(onDone: () -> Unit) {
         if (deleting) return
         val n = _note.value ?: return
@@ -348,6 +351,7 @@ fun NoteEditScreen(
     onAiResultConsumed: () -> Unit,
     restoreMessage: String? = null,
     onRestoreMessageConsumed: () -> Unit = {},
+    onNoteDeleted: (Long) -> Unit = {},
     onOpenAi: (selStart: Int, selEnd: Int, noteTitle: String, noteContent: String) -> Unit,
     onOpenHistory: (Boolean) -> Unit,
     onBack: () -> Unit
@@ -912,7 +916,14 @@ fun NoteEditScreen(
             title = "删除笔记？",
             text = { Text(TrashRetentionStore.deleteHint(retentionDays)) },
             confirmButton = {
-                TextButton(onClick = { vm.delete(onBack) }) { Text("删除") }
+                TextButton(onClick = {
+                    val deletedId = vm.currentNoteId()
+                    vm.delete {
+                        // 条目 48：把 id 回传给列表页，由它弹「已移入回收站 / 撤销」
+                        deletedId?.let(onNoteDeleted)
+                        onBack()
+                    }
+                }) { Text("删除") }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) { Text("取消") }

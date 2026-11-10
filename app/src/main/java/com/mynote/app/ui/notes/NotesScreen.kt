@@ -33,9 +33,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -80,6 +82,8 @@ fun NotesScreen(
     viewModel: NotesViewModel,
     backupManager: BackupManager,
     retentionDays: Int,
+    deletedNoteId: Long? = null,
+    onDeletedNoteConsumed: () -> Unit = {},
     restoreMessage: String?,
     onRestoreMessageConsumed: () -> Unit,
     onOpenNote: (Long) -> Unit,
@@ -160,6 +164,18 @@ fun NotesScreen(
 
     LaunchedEffect(searchActive) {
         if (searchActive) focusRequester.requestFocus()
+    }
+
+    // 条目 48：编辑页删除后给「已移入回收站 + 撤销」，先消费再展示
+    LaunchedEffect(deletedNoteId) {
+        val id = deletedNoteId ?: return@LaunchedEffect
+        onDeletedNoteConsumed()
+        val result = snackbarHostState.showSnackbar(
+            message = "已移入回收站",
+            actionLabel = "撤销",
+            duration = SnackbarDuration.Long
+        )
+        if (result == SnackbarResult.ActionPerformed) viewModel.restoreDeleted(id)
     }
 
     // 历史恢复成功后的提示：条目 93 改为「先消费再展示」，

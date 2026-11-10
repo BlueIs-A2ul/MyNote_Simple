@@ -66,7 +66,8 @@ class AiApiSessionTest {
         assertEquals(DeepSeekModels.V4_PRO, streamer.lastModel)
         assertEquals(true, streamer.lastDeepThinking)
         assertEquals(
-            listOf(AiEvent.Chunk("a"), AiEvent.Chunk("b"), AiEvent.Done("ab")),
+            // 条目 83：结束原因随 Done 一起回传
+            listOf(AiEvent.Chunk("a"), AiEvent.Chunk("b"), AiEvent.Done("ab", null, "stop")),
             received
         )
     }
@@ -96,7 +97,7 @@ class AiApiSessionTest {
                 AiEvent.Reasoning("想一"),
                 AiEvent.Reasoning("想二"),
                 AiEvent.Chunk("答"),
-                AiEvent.Done("答", usage)
+                AiEvent.Done("答", usage, "stop")
             ),
             received
         )

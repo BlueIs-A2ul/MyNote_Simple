@@ -1,5 +1,6 @@
 package com.mynote.app
 
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -14,12 +15,20 @@ import com.mynote.app.data.settings.DarkMode
 import com.mynote.app.ui.navigation.AppNavHost
 import com.mynote.app.ui.theme.MyNoteTheme
 import com.mynote.app.ui.theme.ThemePresets
+import com.mynote.app.util.deepLinkNoteId
+import kotlinx.coroutines.flow.MutableStateFlow
 
 class MainActivity : ComponentActivity() {
+
+    /** 条目 50：待处理的深链目标（消费后清空，避免旋转重复导航）。 */
+    private val pendingDeepLink = MutableStateFlow<Long?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val container = (application as MyNoteApp).container
+        pendingDeepLink.value = deepLinkNoteId(intent?.data)
         setContent {
+            val deepLinkId by pendingDeepLink.collectAsState()
             val settings by container.themeSettingsStore.settings.collectAsState()
             val darkTheme = when (settings.darkMode) {
                 DarkMode.SYSTEM -> isSystemInDarkTheme()
@@ -53,8 +62,19 @@ class MainActivity : ComponentActivity() {
                 dynamicColor = settings.dynamicColor,
                 preset = ThemePresets.resolve(settings.themeColorIndex)
             ) {
-                AppNavHost(container)
+                AppNavHost(
+                    container,
+                    deepLinkNoteId = deepLinkId,
+                    onDeepLinkConsumed = { pendingDeepLink.value = null }
+                )
             }
         }
+    }
+
+    /** 应用已在运行时从外部链接打开：重新收一次深链。 */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        deepLinkNoteId(intent.data)?.let { pendingDeepLink.value = it }
     }
 }

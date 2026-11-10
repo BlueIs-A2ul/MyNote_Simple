@@ -18,8 +18,10 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -51,6 +53,7 @@ import kotlinx.coroutines.launch
 fun TrashScreen(
     repository: NoteRepository,
     retentionStore: TrashRetentionStore,
+    onOpenNote: (Long) -> Unit,
     onBack: () -> Unit
 ) {
     val vm: TrashViewModel = viewModel(
@@ -126,9 +129,19 @@ fun TrashScreen(
                             onRestore = {
                                 vm.restore(item, onDone = { restored ->
                                     scope.launch {
-                                        snackbarHostState.showSnackbar(
-                                            if (restored) "已恢复" else "笔记已不存在"
+                                        if (!restored) {
+                                            snackbarHostState.showSnackbar("笔记已不存在")
+                                            return@launch
+                                        }
+                                        // 条目 48：带上标题并能直接跳到恢复后的笔记
+                                        val result = snackbarHostState.showSnackbar(
+                                            message = "已恢复「" + item.title.ifBlank { "无标题" } + "」",
+                                            actionLabel = "查看",
+                                            duration = SnackbarDuration.Long
                                         )
+                                        if (result == SnackbarResult.ActionPerformed) {
+                                            onOpenNote(item.id)
+                                        }
                                     }
                                 }, onFailed = {
                                     scope.launch { snackbarHostState.showSnackbar(OPERATION_FAILED) }

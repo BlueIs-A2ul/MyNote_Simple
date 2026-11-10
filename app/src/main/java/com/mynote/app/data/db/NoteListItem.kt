@@ -12,5 +12,10 @@ data class NoteListItem(
     val createdAt: Long,
     val updatedAt: Long,
     val deletedAt: Long?,
-    val summary: String
+    val summary: String,
+    /**
+     * 条目 89：搜索命中落在 400 字投影之外（列表看不到命中片段）。
+     * 非搜索查询恒为 false。
+     */
+    val deepHit: Boolean = false
 )

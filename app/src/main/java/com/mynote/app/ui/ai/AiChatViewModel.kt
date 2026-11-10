@@ -426,7 +426,8 @@ class AiChatViewModel(
                 // 不能按 done 落一条空回答——既没内容、也不会出现重试按钮
                 val text = event.text.ifEmpty { _state.value.streamingText }
                 if (text.isBlank()) {
-                    finishWithoutMessage(EMPTY_ANSWER_REASON)
+                    // 条目 83：结束原因能解释「为什么没有内容」，优先用它给文案
+                    finishWithoutMessage(blankAnswerReason(event.finishReason))
                     return
                 }
                 finalizeAssistant(AiMessageEntity.STATUS_DONE, text)
@@ -527,7 +528,20 @@ class AiChatViewModel(
         const val MODEL_MISSING_REASON = "未选择模型，请在「设置 → AI 助手」填写模型 id"
 
         /** 条目 83：HTTP 200 但流里没有任何内容的统一文案（同时作为「可重试」提示）。 */
-        private const val EMPTY_ANSWER_REASON = "回答为空，请重试"
+        internal const val EMPTY_ANSWER_REASON = "回答为空，请重试"
+
+        /** 条目 83：内容被服务商安全策略拦下时的文案。 */
+        internal const val CONTENT_FILTER_REASON = "回答被服务商的安全策略拦截，请换一种问法"
+
+        /** 条目 83：服务商资源不足（DeepSeek 的 insufficient_system_resource）。 */
+        internal const val RESOURCE_EXHAUSTED_REASON = "服务商暂时资源不足，请稍后重试"
+
+        /** 条目 83：空回答时按结束原因给出更具体的提示。 */
+        internal fun blankAnswerReason(finishReason: String?): String = when (finishReason) {
+            "content_filter" -> CONTENT_FILTER_REASON
+            "insufficient_system_resource" -> RESOURCE_EXHAUSTED_REASON
+            else -> EMPTY_ANSWER_REASON
+        }
 
         fun factory(
             noteId: Long,

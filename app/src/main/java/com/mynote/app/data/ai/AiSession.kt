@@ -15,7 +15,12 @@ data class AiUsage(
 sealed interface AiEvent {
     data class Chunk(val text: String) : AiEvent
     data class Reasoning(val text: String) : AiEvent
-    data class Done(val text: String, val usage: AiUsage? = null) : AiEvent
+    data class Done(
+        val text: String,
+        val usage: AiUsage? = null,
+        /** 条目 83：服务商给的结束原因（stop / length / content_filter / insufficient_system_resource）。 */
+        val finishReason: String? = null
+    ) : AiEvent
     data class Failed(val reason: String, val settingsHint: Boolean = false) : AiEvent
 }
 

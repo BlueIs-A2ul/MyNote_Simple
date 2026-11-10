@@ -870,6 +870,35 @@ class AiChatViewModelTest {
         assertEquals("", drafts.get(aiDraftKey(noteId, sessionId)))
     }
 
+    /** 条目 83：空回答的原因文案由 finish_reason 决定。 */
+    @Test
+    fun blankAnswerReasonUsesFinishReason() {
+        assertEquals(
+            AiChatViewModel.CONTENT_FILTER_REASON,
+            AiChatViewModel.blankAnswerReason("content_filter")
+        )
+        assertEquals(
+            AiChatViewModel.RESOURCE_EXHAUSTED_REASON,
+            AiChatViewModel.blankAnswerReason("insufficient_system_resource")
+        )
+        assertEquals(AiChatViewModel.EMPTY_ANSWER_REASON, AiChatViewModel.blankAnswerReason("stop"))
+        assertEquals(AiChatViewModel.EMPTY_ANSWER_REASON, AiChatViewModel.blankAnswerReason(null))
+    }
+
+    /** 条目 83：被安全策略拦截的空回答，横幅要说清原因而不是笼统「回答为空」。 */
+    @Test
+    fun contentFilteredEmptyDoneShowsSpecificBanner() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val vm = createVm(noteId)
+        vm.send("问")
+        vm.state.first { it.sending }
+
+        fake.emit(AiEvent.Done("", finishReason = "content_filter"))
+        vm.state.first { !it.sending }
+
+        assertEquals(AiChatViewModel.CONTENT_FILTER_REASON, vm.state.value.banner)
+    }
+
     // ---------- 条目 82 / 83：看门狗必须真停流、空回答按失败处理 ----------
 
     /** 看门狗超时后必须真正停掉底层流，否则服务端继续生成、token 继续计费。 */

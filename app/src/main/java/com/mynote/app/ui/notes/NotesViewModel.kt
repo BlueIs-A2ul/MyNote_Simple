@@ -113,6 +113,13 @@ class NotesViewModel(
         }
     }
 
+    /** 条目 48：删除后的「撤销」——把刚移入回收站的笔记恢复回来。 */
+    fun restoreDeleted(noteId: Long) {
+        viewModelScope.launch {
+            repository.getNote(noteId)?.let { repository.restoreNote(it) }
+        }
+    }
+
     fun consumeBackupMessage() {
         _backupUi.update { it.copy(message = null) }
     }
