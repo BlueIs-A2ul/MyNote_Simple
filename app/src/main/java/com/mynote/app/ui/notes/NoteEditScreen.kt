@@ -355,6 +355,8 @@ fun NoteEditScreen(
     var isSaving by remember { mutableStateOf(false) }
     // 条目 95：用户明确选「不保存」后，ON_STOP 的草稿兜底必须被抑制，否则仍会静默入库
     var discarded by remember { mutableStateOf(false) }
+    // 条目 88：AI 结果落地时的提示（在 snackbar 宿主声明之前就要能写入）
+    var pendingSnackbar by remember { mutableStateOf<String?>(null) }
     // 导出在途标志：禁用导出入口，防止重复提交
     var exporting by remember { mutableStateOf(false) }
     // 是否已从已保存笔记回填过字段：只回填一次，清空内容后旋转/重建不再被旧内容覆盖
@@ -400,9 +402,13 @@ fun NoteEditScreen(
         val text = aiResultText ?: return@LaunchedEffect
         // 记录应用 AI 结果前的状态，使「贴入 AI 结果」也可撤销；结构性变更强制新开一格
         undoController.record(content, force = true)
+        // 条目 88：替换需要非空选区；选区已折叠时改为插入并提示，避免点「替换选中」毫无反应
+        val collapsedReplace = type == "replace" && content.selection.collapsed
+        if (collapsedReplace) pendingSnackbar = "未选中文本，已插入到光标处"
         content = AiResultApplier.apply(
             content,
-            if (type == "replace") AiResultApplier.Type.REPLACE else AiResultApplier.Type.INSERT,
+            if (type == "replace" && !collapsedReplace) AiResultApplier.Type.REPLACE
+            else AiResultApplier.Type.INSERT,
             text
         )
         // 贴入结果后恢复正文焦点，与插图路径一致；预览态无法聚焦，延后到切回编辑
@@ -412,6 +418,13 @@ fun NoteEditScreen(
 
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // 条目 88：AI 落地提示（选区折叠时改为插入）
+    LaunchedEffect(pendingSnackbar) {
+        val message = pendingSnackbar ?: return@LaunchedEffect
+        pendingSnackbar = null
+        snackbarHostState.showSnackbar(message)
+    }
 
     // 条目 93：历史页恢复成功后弹提示（先消费再展示，避免旋转重弹或中途离开永不消费）
     LaunchedEffect(restoreMessage) {

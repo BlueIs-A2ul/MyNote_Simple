@@ -79,14 +79,14 @@
 | 78 | 导出/导入脱离 composition 作用域 | P1 | M | 已建议（2026-09-15，待实现） | 批次F |
 | 79 | 图片 GC 与备份的内存口径（投影 / 流式） | P1 | M | 已完成（2026-11-10） | 批次F |
 | 80 | 导入与 GC 边界加固合集 | P1 | S/M | 已完成（2026-11-10） | 批次F |
-| 81 | AI 服务商身份与聊天页保持一致 | P1 | M | 已建议（2026-09-15，待实现） | 批次G |
+| 81 | AI 服务商身份与聊天页保持一致 | P1 | M | 已完成（2026-11-10） | 批次G |
 | 82 | 看门狗超时与重发必须真正停流 | P1 | S | 已完成（2026-11-08） | 批次G |
 | 83 | 空回答按失败处理 + finish_reason + 重试入口 | P1 | S | 部分完成（2026-11-08：空回答按失败 + 横幅；finish_reason 透传未做） | 批次G |
 | 84 | 历史裁剪保持 user/assistant 配对 | P1 | S | 已完成（2026-11-10） | 批次G |
-| 85 | 流式 Markdown 渲染节流（避免 O(n²)） | P1 | M | 已建议（2026-09-15，待实现） | 批次G |
+| 85 | 流式 Markdown 渲染节流（避免 O(n²)） | P1 | M | 已完成（2026-11-10） | 批次G |
 | 86 | 自定义地址明文 http 策略与错误文案 | P1 | S | 已完成（2026-11-10） | 批次G |
 | 87 | Markdown 链接 scheme 白名单 | P1 | S | 已完成（2026-11-10） | 批次G |
-| 88 | AI 体验小坑合集 | P2 | S/M | 已建议（2026-09-15，待实现） | 批次G |
+| 88 | AI 体验小坑合集 | P2 | S/M | 部分完成（2026-11-10：①②③④⑤⑥⑦；⑧⑨ 为设计/能力缺口，暂不做） | 批次G |
 | 89 | 搜索 LIKE 转义 + 高亮词 trim + 深命中线索 | P1 | S | 部分完成（2026-11-08：LIKE 转义 + 高亮 trim；深命中线索未做） | 批次H |
 | 90 | 保留期文案与回收站口径统一 | P1 | S | 已完成（2026-11-10） | 批次H |
 | 91 | 多选随搜索/数据收敛（不删看不见的笔记） | P1 | S | 已完成（2026-11-08） | 批次H |
@@ -479,7 +479,8 @@
 
 ### 批次 G · AI 助手（P1）
 
-### 81. AI 服务商身份与聊天页保持一致
+### 81. AI 服务商身份与聊天页保持一致 ✅
+- **落地（2026-11-10）**：`AiChatViewModel` 新增 `sessionFactory`，`send/retry` 前比对 `settingsStore.provider().serviceId`，不一致就停旧流、重建会话、重订阅事件并刷新 providerName/modelName/隐私与 Key 状态。用例 `switchProviderRebuildsSessionBeforeNextSend`。
 - 现状：`AppNavHost.kt:119` 在目的地 lambda 里 `container.aiSessionFactory()` 建会话，而 `AppContainer.kt:90-101` 把 provider **闭包捕获**（endpoint / serviceId / key / model / thinking 全按旧 provider 取），聊天页 push 在设置页之下、返回时 VM 不重建；而 `AiChatViewModel.kt:144` 的 `hasApiKey()` 用的是**当前** provider。
 - 影响：DeepSeek 已配 Key 时打开聊天 → 设置里切到未配 Key 的硅基流动 → 返回发送被「未配置 API Key」拦下；用户照提示填了硅基流动的 Key 后再发，请求**仍然发给 DeepSeek**（账单与预期不符）。同 provider 换模型则立刻生效但顶栏副标题仍是旧模型名，与 `UiState.modelName` 注释宣称的正好相反。
 - 建议：给 VM 传一个「当前服务商/设置版本」的 `StateFlow`，变化时重建 session 并刷新 `providerName/modelName`；或离开聊天页时强制重建该 BackStackEntry。价值：中高 × M
@@ -502,7 +503,8 @@
 - 影响：长会话超 60k 字符后，保留列表可能出现「凭空出现的回答」（其对应提问已被丢弃）或连续两条 user；模型容易回答被丢弃的那个问题。
 - 建议：按 user+assistant 成对丢弃（`firstMiddle` 每次 +2 或对齐到 user 边界），并补「保留列表 role 交替」断言。价值：中 × S
 
-### 85. 流式 Markdown 渲染节流（避免 O(n²)）
+### 85. 流式 Markdown 渲染节流（避免 O(n²)） ✅
+- **落地（2026-11-10）**：`AiChatViewModel` 增加分片合并缓冲——累计 < 300 字仍逐片即时上屏（行为不变），超过后按 80ms 合并刷新；`Done/Failed/finalize/onCleared` 前强制冲刷，保证落库内容完整。
 - 现状：每个 SSE 分片都更新 `streamingText`（`AiChatViewModel.kt:337-341`，修好分片追加后每片都会触发 UI），而 `MarkdownContent.kt:37` 以 `content` 为 key 全量重解析、每块再 `MarkdownInline.build`（`:93-99`），流式气泡把所有块放在同一个 LazyColumn item（`AiChatScreen.kt:363-370`），且每片都 `scrollToItem`（`:301-303`）。
 - 影响：长回答流式时主线程 O(n²) 解析 + 重排 → 掉帧、发热（此前被「只显示最后一片」掩盖，修复后会立刻暴露）。
 - 建议：VM 侧对 `streamingText` 做 60–100ms 节流合并（零依赖），或只对最后一个未闭合块增量渲染；`UiState` 标 `@Immutable` 减少无效重组。价值：中 × M
@@ -519,7 +521,8 @@
 - 影响：回答里出现 `file://`、`javascript:`、`intent://` 或未知 scheme 时，用户一点可能抛 `ActivityNotFoundException`/`FileUriExposedException`（进程内崩溃）或直接跳到任意第三方 App。
 - 建议：传 `linkInteractionListener`，只放行 http/https，其余给 snackbar 提示；scheme 过滤抽成纯函数便于单测。价值：中 × S
 
-### 88. AI 体验小坑合集
+### 88. AI 体验小坑合集 ◐
+- **落地（2026-11-10）**：①「测试连接」同时保存输入框里的 Key；② Key 输入框按服务商隔离（`remember(aiProvider)`）；③ 选区折叠时「替换选中」改为插入并提示；④ 空回答禁用「插入正文/存为新笔记」；⑤ 模型为空时发送前拦截并提示；⑥ 删除会话清理 `ai_drafts` 键；⑦ 会话抽屉显示服务商名。**⑧ 思考内容完成即清空、⑨ 无单条消息删除/编辑** 属设计取舍与能力缺口，本次不做。用例 `blankModelBlocksSendWithHint`、`deleteSessionClearsItsDraft`。
 - 现状：① 「测试连接」不保存输入框里的 Key（`SettingsScreen.kt:459-469` vs `:441-451`）→ 测试成功但进聊天仍「未配置 API Key」；② 跨服务商共用同一个 `apiKeyInput`（`:102`）→ 切 tab 后未保存的输入残留，可能存错服务商；③ 选区折叠时「替换选中」静默 no-op（`AiResultApplier.kt:20` + `NoteEditScreen.kt:350-357` 已消费结果）；④ 空回答上点「插入正文」插入空串且无提示；⑤ 自定义服务商模型留空 → `"model": ""` → 服务商 400「参数错误」，设置页事前不校验；⑥ 删除会话不清理 `ai_drafts` 键（`AiChatViewModel.kt:223-231`），随删笔记无限累积；⑦ 会话抽屉不显示所属服务商（`serviceId` 已入库但未展示，多服务商无法区分）；⑧ 深度思考内容随回答完成即清空（设计如此），计费的思维链事后无法回看/复制；⑨ 无单条消息删除/编辑（能力缺口）。
 - 建议：逐项小改（保存 Key、输入框按服务商隔离、折叠选区给提示、空回答禁用落地按钮、模型必填校验、purge 时清草稿键、抽屉显示服务商）。价值：中 × S/M
 
@@ -652,6 +655,7 @@
 | 2026-11-08 | **批次 F/G/H 快修（条目 77、82、83、89、91）**：77 明文 Key 不再进 saved instance state；82 看门狗超时与重发真正断流（`session.stop()` / `streamer.cancel()`）；83 空回答按失败处理（不落库空 done，横幅给重试线索；`finish_reason` 透传留待后续）；89 搜索 `LIKE` 转义（反斜杠 / `%` / `_` 按字面量匹配）+ 高亮用 trim 词；91 改搜索词清多选 + 选中集随可见集裁剪。红灯 7 例 → 全量 667 单测全绿；`assembleDebug` 通过。设计/计划见 `docs/superpowers/specs|plans/2026-11-08-backlog-fgh-quick-fixes*`。 |
 | 2026-11-10 | **穷尽批次（一）**：条目 84（历史裁剪成对保留）、87（Markdown 链接白名单，防 `intent://`/`file://` 崩溃）、90（保留期文案与回收站口径统一）、92（首帧加载态 + 空查询不防抖）落地。全量单测 667 → 674 全绿，`assembleDebug` 通过。 |
 | 2026-11-10 | **穷尽批次（二/三）**：条目 79/46（GC 投影 + 备份导出流式化）、80（导入与 GC 六项边界加固）、94/95/96（编辑页加载态、保存失败反馈、不保存抑制、保存期只读、旋转状态）。全量 674 → 678 全绿。 |
+| 2026-11-10 | **穷尽批次（五）**：条目 81（切服务商后重建会话，请求不再发给旧服务商）、85（长回答分片合并刷新，短回答行为不变）、88（测试连接存 Key、Key 输入按服务商隔离、折叠选区改插入、空回答禁用落地、空模型拦截、删会话清草稿、抽屉显示服务商）。 |
 | 2026-11-10 | **穷尽批次（四）**：条目 86（明文 http 专用提示 + 设置页预警）、93（历史页恢复只弹一层、空态区分、全文惰性布局）、49（分类空名禁用确定、删除确认带名称与笔记数，新增 `CategoryNoteCount` 投影）。 |
 | 2026-09-15 | **AI 服务商可切换完成（v1.10.0，条目 69）**：`AiProvider` 枚举收敛一切服务商差异（DeepSeek / 硅基流动 / 自定义 OpenAI 兼容：地址、`thinking` 对象 / `enable_thinking` 布尔、余额接口与 schema、`?sub_type=chat` 模型过滤、默认模型、Key 提示文案）；`DeepSeekApiClient`→`AiApiClient`、`DeepSeekApiSession`→`AiApiSession`、`DeepSeekSseParser`→`AiSseParser`（协议层不变，端点驱动）；请求体改 `buildJsonObject` 组装，422 去参数重试仅对支持思考的服务商生效；错误详情兼容 `error.message` / `message` / 纯字符串三种形态，文案去 DeepSeek 化；设置页新增服务商 tab、自定义地址（http(s) 校验）与模型自由填写，深度思考/查询余额按能力显示；Key、模型、思考开关按 serviceId 命名空间隔离（DeepSeek 沿用旧 key 名兼容）；聊天页隐私弹窗用 `session.displayName`。全量单测 547 → 582 全绿。 |
 | 2026-09-15 | **AI 模型选择体验优化（v1.10.1，条目 70）**：连接成功文案模型数 > 5 时收敛为「共 N 个可用模型」；设置页模型数 > 8 改用可搜索 `ModelPickerDialog`（LazyColumn + 过滤 + 当前项对勾，≤ 8 仍用 tab）；聊天页顶栏副标题显示「服务商 · 模型」（`UiState.modelName` 进入会话时快照）。同批修正 AGENTS.md worktree 说明（signingConfig 配置期无条件读取签名文件，新 worktree 需从主树复制 `keystore.properties` 与 `app/mynote-release.keystore` 才能跑测试）。全量单测 582 → 584 全绿。 |

@@ -132,6 +132,8 @@ fun AppNavHost(container: AppContainer) {
                 externalScope = container.applicationScope,
                 session = container.aiSessionFactory(),
                 draftStore = container.aiDraftStore,
+                // 条目 81：设置页切服务商后，下一次发送会自动用新服务商重建会话
+                sessionFactory = { container.aiSessionFactory() },
                 onApplyResult = { type, text ->
                     prev?.set(AiNavKeys.RESULT_TYPE, type)
                     prev?.set(AiNavKeys.RESULT_TEXT, text)

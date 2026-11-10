@@ -108,7 +108,8 @@ fun SettingsScreen(
     // 条目 77：明文 Key 不进 saved instance state。rememberSaveable 会把用户刚粘贴、尚未保存的 Key
     // 序列化进 Activity 的 Bundle（系统进程持有且可能落盘），与本页「Key 仅本机加密保存」的承诺相悖；
     // 旋转后清空输入框可接受，已保存的 Key 不受影响。
-    var apiKeyInput by remember { mutableStateOf("") }
+    // 条目 88：输入框按服务商隔离，避免切 tab 后把硅基流动的 Key 存给 DeepSeek
+    var apiKeyInput by remember(aiProvider) { mutableStateOf("") }
     var keyVisible by rememberSaveable { mutableStateOf(false) }
     var baseUrlInput by rememberSaveable { mutableStateOf(customBaseUrl) }
     var customModelInput by rememberSaveable { mutableStateOf(aiModel) }
@@ -547,6 +548,12 @@ fun SettingsScreen(
                         if (hint != null) {
                             snackbarHostState.showSnackbar(hint)
                         } else {
+                            // 条目 88：测试连接同时保存输入框里的 Key，
+                            // 否则「测试成功」后进聊天仍提示未配置
+                            val typed = apiKeyInput.trim()
+                            if (typed.isNotEmpty() && vm.saveApiKey(typed)) {
+                                apiKeyInput = ""
+                            }
                             val key = resolveApiKey(apiKeyInput) { vm.savedApiKey() }
                             snackbarHostState.showSnackbar(vm.testConnection(key))
                         }

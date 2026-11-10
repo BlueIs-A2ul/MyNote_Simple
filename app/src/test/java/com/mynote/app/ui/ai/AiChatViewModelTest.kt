@@ -84,7 +84,8 @@ class AiChatViewModelTest {
         content: String = "正文",
         store: AiSettingsStore = settings,
         draftStore: FakeAiDraftStore = FakeAiDraftStore(),
-        watchdogTimeoutMs: Long = 0L
+        watchdogTimeoutMs: Long = 0L,
+        sessionFactory: ((String) -> AiSession)? = null
     ): AiChatViewModel {        val vm = AiChatViewModel(
             noteId = noteId,
             noteTitle = title,
@@ -95,7 +96,8 @@ class AiChatViewModelTest {
             externalScope = CoroutineScope(dispatcher),
             session = fake,
             draftStore = draftStore,
-            watchdogTimeoutMs = watchdogTimeoutMs
+            watchdogTimeoutMs = watchdogTimeoutMs,
+            sessionFactory = sessionFactory ?: { fake }
         )
         vms += vm
         return vm
@@ -796,6 +798,78 @@ class AiChatViewModelTest {
         assertEquals(11_200, fake.sent[1].last().content.count { it == 'x' })
     }
 
+    /**
+     * 条目 81：设置页切服务商后再发消息，必须走新服务商的会话与身份。
+     * 旧实现里 endpoint/key 是闭包捕获的旧服务商，消息仍会发给旧服务商。
+     */
+    @Test
+    fun switchProviderRebuildsSessionBeforeNextSend() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val siliconFlow = FakeAiSession(
+            serviceId = AiProvider.SILICON_FLOW.serviceId,
+            displayName = AiProvider.SILICON_FLOW.displayName
+        )
+        val vm = createVm(
+            noteId,
+            sessionFactory = { id ->
+                if (id == AiProvider.SILICON_FLOW.serviceId) siliconFlow else fake
+            }
+        )
+        vm.send("第一问")
+        vm.state.first { it.sending }
+        fake.emit(AiEvent.Done("答"))
+        vm.state.first { !it.sending }
+        assertEquals(1, fake.sent.size)
+
+        settings.setProvider(AiProvider.SILICON_FLOW)
+        settings.setApiKey("sk-sf", AiProvider.SILICON_FLOW)
+
+        // 新服务商还没做隐私确认：发送被拦下，但身份与会话已切过去
+        assertFalse(vm.send("第二问"))
+        assertEquals(AiProvider.SILICON_FLOW.displayName, vm.state.value.providerName)
+        assertEquals(AiProvider.SILICON_FLOW.defaultModels.first(), vm.state.value.modelName)
+        assertFalse(vm.state.value.privacyAccepted)
+
+        vm.acceptPrivacy()
+        assertTrue(vm.send("第二问"))
+        vm.state.first { it.sending }
+        assertEquals("请求应发给新服务商的会话", 1, siliconFlow.sent.size)
+        assertEquals("旧服务商不应再收到请求", 1, fake.sent.size)
+    }
+
+    /** 条目 88：自定义服务商没有默认模型时，发送前就拦住，避免 "model": "" 被 400。 */
+    @Test
+    fun blankModelBlocksSendWithHint() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val store = AiSettingsStore(context, FakeCipher())
+        store.acceptPrivacy(AiProvider.CUSTOM.serviceId)
+        store.setProvider(AiProvider.CUSTOM)
+        store.setApiKey("sk-custom")
+        val vm = createVm(noteId, store = store)
+
+        assertFalse(vm.send("问"))
+        assertEquals(AiChatViewModel.MODEL_MISSING_REASON, vm.state.value.banner)
+        assertTrue(fake.sent.isEmpty())
+    }
+
+    /** 条目 88：删会话时清掉该会话的输入草稿，避免 ai_drafts 无限累积。 */
+    @Test
+    fun deleteSessionClearsItsDraft() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val drafts = FakeAiDraftStore()
+        val vm = createVm(noteId, draftStore = drafts)
+        vm.send("问")
+        vm.state.first { it.sending }
+        fake.emit(AiEvent.Done("答"))
+        vm.state.first { !it.sending }
+        val sessionId = aiRepo.observeSessions(noteId).first().single().id
+        vm.updateDraft("没发出去的草稿")
+
+        vm.deleteSession(sessionId)
+        vm.state.first { it.sessions.isEmpty() }
+        assertEquals("", drafts.get(aiDraftKey(noteId, sessionId)))
+    }
+
     // ---------- 条目 82 / 83：看门狗必须真停流、空回答按失败处理 ----------
 
     /** 看门狗超时后必须真正停掉底层流，否则服务端继续生成、token 继续计费。 */
@@ -866,9 +940,10 @@ class AiChatViewModelTest {
         }
     }
 
-    private class FakeAiSession : AiSession {
-        override val serviceId: String = AiProvider.DEEPSEEK.serviceId
+    private class FakeAiSession(
+        override val serviceId: String = AiProvider.DEEPSEEK.serviceId,
         override val displayName: String = AiProvider.DEEPSEEK.displayName
+    ) : AiSession {
         override var contextTokens: Int = 0
 
         private val _events = MutableSharedFlow<AiEvent>(extraBufferCapacity = 16)

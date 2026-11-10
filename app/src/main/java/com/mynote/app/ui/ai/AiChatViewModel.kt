@@ -35,9 +35,11 @@ class AiChatViewModel(
     private val noteRepository: NoteRepository,
     private val settingsStore: AiSettingsStore,
     private val externalScope: CoroutineScope,
-    private val session: AiSession,
+    // 条目 81：服务商可能在设置页被切换，会话需要能按当前服务商重建
+    private var session: AiSession,
     private val draftStore: AiDraftStore,
-    private val watchdogTimeoutMs: Long = WATCHDOG_TIMEOUT_MS
+    private val watchdogTimeoutMs: Long = WATCHDOG_TIMEOUT_MS,
+    private val sessionFactory: (String) -> AiSession = { session }
 ) : ViewModel() {
 
     data class UiState(
@@ -78,6 +80,11 @@ class AiChatViewModel(
     private var userStartedNewChat = false
     private var sendRequested = false
     private var watchdogJob: Job? = null
+    private var eventsJob: Job? = null
+    // 条目 85：流式分片的合并缓冲。长回答每片都整体重解析 Markdown 是 O(n²)，
+    // 超过阈值后按 80ms 合并刷新；短回答仍逐片即时上屏（行为不变）。
+    private val pendingChunk = StringBuilder()
+    private var lastFlushAt = 0L
 
     init {
         viewModelScope.launch {
@@ -92,7 +99,33 @@ class AiChatViewModel(
                 }
             }
         }
-        viewModelScope.launch {
+        eventsJob = viewModelScope.launch {
+            session.events.collect { handleEvent(it) }
+        }
+    }
+
+    /**
+     * 条目 81：设置页切服务商后，旧会话的 endpoint / key / model 仍是闭包捕获的旧值，
+     * 继续发送会把请求发给旧服务商（账单与界面都不符）。发请求前对齐当前服务商。
+     */
+    private fun ensureSessionMatchesProvider() {
+        val current = settingsStore.provider()
+        if (session.serviceId == current.serviceId) return
+        eventsJob?.cancel()
+        session.stop()
+        session = sessionFactory(current.serviceId)
+        val accepted = settingsStore.isPrivacyAccepted(session.serviceId)
+        val hasKey = settingsStore.hasApiKey()
+        _state.update {
+            it.copy(
+                providerName = session.displayName,
+                modelName = settingsStore.model(),
+                privacyAccepted = accepted,
+                apiKeyMissing = !hasKey,
+                banner = if (hasKey) null else AiSession.KEY_MISSING_REASON
+            )
+        }
+        eventsJob = viewModelScope.launch {
             session.events.collect { handleEvent(it) }
         }
     }
@@ -143,6 +176,7 @@ class AiChatViewModel(
 
     /** 返回是否真正进入发送流程；被拒（空输入 / 生成中 / 重复请求 / 未接受隐私 / 未配置 Key）返回 false。 */
     fun send(rawInput: String): Boolean {
+        ensureSessionMatchesProvider()
         val input = rawInput.trim()
         val snapshot = _state.value
         if (input.isEmpty() || snapshot.sending || sendRequested || !snapshot.privacyAccepted) return false
@@ -150,6 +184,11 @@ class AiChatViewModel(
             _state.update {
                 it.copy(banner = AiSession.KEY_MISSING_REASON, apiKeyMissing = true)
             }
+            return false
+        }
+        // 条目 88：自定义服务商可能没有默认模型，留空会发出 "model": "" 被服务商 400
+        if (settingsStore.model().isBlank()) {
+            _state.update { it.copy(banner = MODEL_MISSING_REASON) }
             return false
         }
         sendRequested = true
@@ -189,6 +228,7 @@ class AiChatViewModel(
      * 不重复插入 user、不重复落库；被拒（生成中 / 无 user 消息 / 无会话 / 未接受隐私 / 未配置 Key）返回 false。
      */
     fun retry(): Boolean {
+        ensureSessionMatchesProvider()
         val snapshot = _state.value
         if (snapshot.sending || sendRequested) return false
         if (!snapshot.privacyAccepted) return false
@@ -196,6 +236,10 @@ class AiChatViewModel(
             _state.update {
                 it.copy(banner = AiSession.KEY_MISSING_REASON, apiKeyMissing = true)
             }
+            return false
+        }
+        if (settingsStore.model().isBlank()) {
+            _state.update { it.copy(banner = MODEL_MISSING_REASON) }
             return false
         }
         val lastUserIndex = snapshot.messages.indexOfLast { it.role == AiMessageEntity.ROLE_USER }
@@ -231,6 +275,8 @@ class AiChatViewModel(
     fun deleteSession(sessionId: Long) {
         if (_state.value.sending && sessionId == _state.value.currentSessionId) return
         viewModelScope.launch {
+            // 条目 88：删会话时一并清掉该会话的输入草稿，否则 ai_drafts 会随删笔记无限累积
+            draftStore.set(aiDraftKey(noteId, sessionId), "")
             aiRepository.deleteSession(sessionId)
             if (_state.value.currentSessionId == sessionId) {
                 newChat()
@@ -257,6 +303,7 @@ class AiChatViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        flushChunks()
         val snapshot = _state.value
         val sessionId = snapshot.currentSessionId
         if (snapshot.sending && sessionId != null) {
@@ -351,7 +398,7 @@ class AiChatViewModel(
             is AiEvent.Chunk -> {
                 if (!_state.value.sending) return
                 // Chunk 是增量分片（服务端 delta），必须追加；全文另有 Done 事件携带
-                _state.update { it.copy(streamingText = it.streamingText + event.text) }
+                accumulateChunk(event.text)
                 resetWatchdog()
             }
             is AiEvent.Reasoning -> {
@@ -361,6 +408,7 @@ class AiChatViewModel(
             }
             is AiEvent.Done -> {
                 if (!_state.value.sending) return
+                flushChunks()
                 _state.update { state ->
                     // usage 缺失的轮次不改变累计口径（只统计服务商真实回报的用量）
                     val accumulated = event.usage?.let { used ->
@@ -384,6 +432,7 @@ class AiChatViewModel(
                 finalizeAssistant(AiMessageEntity.STATUS_DONE, text)
             }
             is AiEvent.Failed -> {
+                flushChunks()
                 if (!_state.value.sending) {
                     if (event.settingsHint) {
                         _state.update { it.copy(banner = event.reason, apiKeyMissing = true) }
@@ -406,6 +455,28 @@ class AiChatViewModel(
         }
     }
 
+    /**
+     * 条目 85：分片合并。短于 [STREAM_FLUSH_MIN_CHARS] 时立即上屏（与旧行为一致），
+     * 长回答按 [STREAM_FLUSH_INTERVAL_MS] 合并，避免每个分片都触发整篇 Markdown 重解析。
+     */
+    private fun accumulateChunk(text: String) {
+        pendingChunk.append(text)
+        val now = System.currentTimeMillis()
+        if (pendingChunk.length < STREAM_FLUSH_MIN_CHARS ||
+            now - lastFlushAt >= STREAM_FLUSH_INTERVAL_MS
+        ) {
+            flushChunks()
+        }
+    }
+
+    private fun flushChunks() {
+        if (pendingChunk.isEmpty()) return
+        val text = pendingChunk.toString()
+        pendingChunk.setLength(0)
+        lastFlushAt = System.currentTimeMillis()
+        _state.update { it.copy(streamingText = it.streamingText + text) }
+    }
+
     /** 本轮没有任何可落库内容时收尾：停表、复位发送态、只留横幅（失败气泡不再成串出现）。 */
     private fun finishWithoutMessage(reason: String, settingsHint: Boolean = false) {
         watchdogJob?.cancel()
@@ -422,6 +493,7 @@ class AiChatViewModel(
     }
 
     private fun finalizeAssistant(status: String, textOverride: String? = null) {
+        flushChunks()
         val snapshot = _state.value
         if (!snapshot.sending) return
         watchdogJob?.cancel()
@@ -445,6 +517,15 @@ class AiChatViewModel(
     companion object {
         private const val WATCHDOG_TIMEOUT_MS = 120_000L
 
+        /** 条目 85：回答累计超过该长度后才启用合并刷新（短回答保持逐片上屏）。 */
+        private const val STREAM_FLUSH_MIN_CHARS = 300
+
+        /** 条目 85：合并刷新的最小间隔。 */
+        private const val STREAM_FLUSH_INTERVAL_MS = 80L
+
+        /** 条目 88：自定义服务商未填模型时的提示。 */
+        const val MODEL_MISSING_REASON = "未选择模型，请在「设置 → AI 助手」填写模型 id"
+
         /** 条目 83：HTTP 200 但流里没有任何内容的统一文案（同时作为「可重试」提示）。 */
         private const val EMPTY_ANSWER_REASON = "回答为空，请重试"
 
@@ -458,12 +539,13 @@ class AiChatViewModel(
             externalScope: CoroutineScope,
             session: AiSession,
             draftStore: AiDraftStore,
-            watchdogTimeoutMs: Long = WATCHDOG_TIMEOUT_MS
+            watchdogTimeoutMs: Long = WATCHDOG_TIMEOUT_MS,
+            sessionFactory: (String) -> AiSession = { session }
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 AiChatViewModel(
                     noteId, noteTitle, noteContent, aiRepository, noteRepository,
-                    settingsStore, externalScope, session, draftStore, watchdogTimeoutMs
+                    settingsStore, externalScope, session, draftStore, watchdogTimeoutMs, sessionFactory
                 )
             }
         }

@@ -62,6 +62,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mynote.app.data.ai.AiChatRepository
+import com.mynote.app.data.ai.AiProvider
 import com.mynote.app.data.ai.AiSession
 import com.mynote.app.data.ai.AiUsage
 import com.mynote.app.data.db.AiMessageEntity
@@ -86,6 +87,7 @@ fun AiChatScreen(
     externalScope: CoroutineScope,
     session: AiSession,
     draftStore: AiDraftStore,
+    sessionFactory: (String) -> AiSession = { session },
     onApplyResult: (type: String, text: String) -> Unit,
     onOpenSettings: () -> Unit,
     onBack: () -> Unit
@@ -94,7 +96,8 @@ fun AiChatScreen(
         key = "ai_chat_$noteId",
         factory = AiChatViewModel.factory(
             noteId, noteTitle, noteContent, aiRepository, noteRepository,
-            settingsStore, externalScope, session, draftStore = draftStore
+            settingsStore, externalScope, session, draftStore = draftStore,
+            sessionFactory = sessionFactory
         )
     )
     val state by vm.state.collectAsState()
@@ -251,7 +254,11 @@ private fun SessionItem(
 ) {
     ListItem(
         headlineContent = { Text(session.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        supportingContent = { Text(TimeFormat.dateTime(session.updatedAt)) },
+        supportingContent = {
+            // 条目 88：多服务商下会话需要能区分来源
+            val providerName = AiProvider.of(session.serviceId)?.displayName ?: session.serviceId
+            Text(providerName + " · " + TimeFormat.dateTime(session.updatedAt))
+        },
         trailingContent = {
             IconButton(onClick = onDelete, enabled = deleteEnabled) {
                 Icon(Icons.Default.Delete, contentDescription = "删除会话")
@@ -463,7 +470,8 @@ private fun MessageBubble(
                 MarkdownPlainText.convert(message.content)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = { onInsert(plainContent) }) {
+                // 条目 88：空回答（纯空白/只有格式符）禁用落地按钮，避免插入空串
+                TextButton(onClick = { onInsert(plainContent) }, enabled = plainContent.isNotBlank()) {
                     Text("插入正文", style = MaterialTheme.typography.labelMedium)
                 }
                 TextButton(onClick = { onReplace(plainContent) }, enabled = hasSelection) {
@@ -472,7 +480,7 @@ private fun MessageBubble(
                 TextButton(onClick = { onCopy(message.content) }) {
                     Text("复制", style = MaterialTheme.typography.labelMedium)
                 }
-                TextButton(onClick = { onSaveAsNote(plainContent) }) {
+                TextButton(onClick = { onSaveAsNote(plainContent) }, enabled = plainContent.isNotBlank()) {
                     Text("存为新笔记", style = MaterialTheme.typography.labelMedium)
                 }
             }
