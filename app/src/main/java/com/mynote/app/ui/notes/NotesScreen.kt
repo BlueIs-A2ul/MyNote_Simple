@@ -96,6 +96,7 @@ fun NotesScreen(
     val sortMode by viewModel.sortMode.collectAsState()
     val selectionMode by viewModel.selectionMode.collectAsState()
     val selectedIds by viewModel.selectedIds.collectAsState()
+    val backupUi by viewModel.backupUi.collectAsState()
 
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -106,9 +107,9 @@ fun NotesScreen(
     var showBatchDeleteDialog by remember { mutableStateOf(false) }
     // 选好文件后先弹确认框，确认后才执行导入（合并策略对用户可见，见 PaperAlertDialog）
     var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
-    // 导出/导入在途标记：防重复触发，菜单项与确认按钮据此禁用
-    var exporting by remember { mutableStateOf(false) }
-    var importing by remember { mutableStateOf(false) }
+    // 条目 78：在途标记与提示都在 ViewModel 里，旋转不会丢（也不再绑在 composition 作用域）
+    val exporting = backupUi.exporting
+    val importing = backupUi.importing
     // 列表相对时间的基准：每分钟刷新一次，界面停留时「5 分钟前」等文案保持准确
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val focusRequester = remember { FocusRequester() }
@@ -137,18 +138,7 @@ fun NotesScreen(
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
     ) { uri ->
-        uri?.let {
-            exporting = true
-            scope.launch {
-                try {
-                    val message = runCatching { backupManager.exportZip(it) }
-                        .fold(onSuccess = { n -> "已导出 $n 条笔记" }, onFailure = { "导出失败" })
-                    snackbarHostState.showSnackbar(message)
-                } finally {
-                    exporting = false
-                }
-            }
-        }
+        uri?.let { viewModel.exportBackup(it) }
     }
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -158,26 +148,14 @@ fun NotesScreen(
     }
 
     fun runImport(uri: Uri) {
-        importing = true
-        scope.launch {
-            try {
-                val message = runCatching { backupManager.importZip(uri) }
-                    .fold(
-                        onSuccess = { r ->
-                            buildString {
-                                append("导入完成：新增 ${r.inserted} · 更新 ${r.updated} · 跳过 ${r.skipped}")
-                                if (r.trashed > 0) append(" · 回收站 ${r.trashed}")
-                            }
-                        },
-                        onFailure = { e ->
-                            if (e is BackupFormatException) "不是有效的备份文件" else "导入失败"
-                        }
-                    )
-                snackbarHostState.showSnackbar(message)
-            } finally {
-                importing = false
-            }
-        }
+        viewModel.importBackup(uri)
+    }
+
+    // 备份结果提示：由 VM 发回，先消费再展示（旋转不重弹）
+    LaunchedEffect(backupUi.message) {
+        val message = backupUi.message ?: return@LaunchedEffect
+        viewModel.consumeBackupMessage()
+        snackbarHostState.showSnackbar(message)
     }
 
     LaunchedEffect(searchActive) {

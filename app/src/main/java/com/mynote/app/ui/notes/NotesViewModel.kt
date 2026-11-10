@@ -5,6 +5,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import android.net.Uri
+import com.mynote.app.data.backup.BackupFormatException
+import com.mynote.app.data.backup.BackupManager
 import com.mynote.app.data.db.CategoryEntity
 import com.mynote.app.data.db.NoteEntity
 import com.mynote.app.data.db.NoteListItem
@@ -23,13 +26,25 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class NotesViewModel(
     private val repository: NoteRepository,
-    private val sortStore: NoteSortStore
+    private val sortStore: NoteSortStore,
+    private val backupManager: BackupManager
 ) : ViewModel() {
+
+    /** 条目 78：备份导出/导入在 ViewModel 里跑，旋转不会取消协程（否则会留下半截 zip 且无提示）。 */
+    data class BackupUiState(
+        val exporting: Boolean = false,
+        val importing: Boolean = false,
+        val message: String? = null
+    )
+
+    private val _backupUi = MutableStateFlow(BackupUiState())
+    val backupUi: StateFlow<BackupUiState> = _backupUi
 
     val query = MutableStateFlow("")
     val selectedFilter = MutableStateFlow<CategoryFilter>(CategoryFilter.All)
@@ -65,6 +80,42 @@ class NotesViewModel(
     /** 新建笔记的预选分类：仅「某个分类」筛选下有值，其余为 null（未分类）。 */
     val newNoteCategoryId: Long?
         get() = (selectedFilter.value as? CategoryFilter.Single)?.categoryId
+
+    fun exportBackup(uri: Uri) {
+        if (_backupUi.value.exporting) return
+        _backupUi.update { it.copy(exporting = true) }
+        viewModelScope.launch {
+            val message = try {
+                "已导出 " + backupManager.exportZip(uri) + " 条笔记"
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                "导出失败"
+            }
+            _backupUi.update { it.copy(exporting = false, message = message) }
+        }
+    }
+
+    fun importBackup(uri: Uri) {
+        if (_backupUi.value.importing) return
+        _backupUi.update { it.copy(importing = true) }
+        viewModelScope.launch {
+            val message = try {
+                val r = backupManager.importZip(uri)
+                buildString {
+                    append("导入完成：新增 " + r.inserted + " · 更新 " + r.updated + " · 跳过 " + r.skipped)
+                    if (r.trashed > 0) append(" · 回收站 " + r.trashed)
+                }
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                if (t is BackupFormatException) "不是有效的备份文件" else "导入失败"
+            }
+            _backupUi.update { it.copy(importing = false, message = message) }
+        }
+    }
+
+    fun consumeBackupMessage() {
+        _backupUi.update { it.copy(message = null) }
+    }
 
     fun onQueryChange(value: String) {
         if (value == query.value) return
@@ -167,8 +218,12 @@ class NotesViewModel(
 
         private const val SEARCH_DEBOUNCE_MS = 200L
 
-        fun factory(repository: NoteRepository, sortStore: NoteSortStore): ViewModelProvider.Factory = viewModelFactory {
-            initializer { NotesViewModel(repository, sortStore) }
+        fun factory(
+            repository: NoteRepository,
+            sortStore: NoteSortStore,
+            backupManager: BackupManager
+        ): ViewModelProvider.Factory = viewModelFactory {
+            initializer { NotesViewModel(repository, sortStore, backupManager) }
         }
     }
 }

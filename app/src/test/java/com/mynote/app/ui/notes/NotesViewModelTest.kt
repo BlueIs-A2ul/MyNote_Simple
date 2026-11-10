@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.viewModelScope
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.mynote.app.data.backup.BackupManager
 import com.mynote.app.data.db.AppDatabase
 import com.mynote.app.data.db.NoteSortMode
 import com.mynote.app.data.image.ImageStore
@@ -37,6 +38,7 @@ import org.robolectric.annotation.Config
 class NotesViewModelTest {
 
     private val dispatcher = StandardTestDispatcher()
+    private lateinit var context: Context
     private lateinit var db: AppDatabase
     private lateinit var repo: NoteRepository
     private lateinit var vm: NotesViewModel
@@ -44,13 +46,13 @@ class NotesViewModelTest {
     @Before
     fun setup() {
         Dispatchers.setMain(dispatcher)
-        val context = ApplicationProvider.getApplicationContext<Context>()
+        context = ApplicationProvider.getApplicationContext<Context>()
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries().build()
         repo = NoteRepository(db.noteDao(), db.categoryDao(), db.noteRevisionDao(), ImageStore(context), db)
         // 排序偏好跨测试共享同一 SharedPreferences，显式复位避免顺序依赖
         NoteSortStore(context).setMode(NoteSortMode.UPDATED_DESC)
-        vm = NotesViewModel(repo, NoteSortStore(context))
+        vm = NotesViewModel(repo, NoteSortStore(context), BackupManager(context, ImageStore(context), db))
     }
 
     @After
@@ -273,6 +275,29 @@ class NotesViewModelTest {
         assertEquals(0L, NotesViewModel.searchDebounceMillis(""))
         assertEquals(200L, NotesViewModel.searchDebounceMillis("a"))
         assertEquals(200L, NotesViewModel.searchDebounceMillis("会议"))
+    }
+
+    /** 条目 78：备份导出在 ViewModel 作用域执行（旋转不取消），结果经状态回传。 */
+    @Test
+    fun exportBackupReportsCountThroughState() = runTest(dispatcher) {
+        repo.saveNote(null, "a", "c", null, false, null)
+        val out = java.io.ByteArrayOutputStream()
+        val backup = BackupManager(
+            context,
+            ImageStore(context),
+            db,
+            openOutput = { out },
+            openInput = { null }
+        )
+        val backupVm = NotesViewModel(repo, NoteSortStore(context), backup)
+
+        backupVm.exportBackup(android.net.Uri.parse("content://test/backup.zip"))
+
+        val state = backupVm.backupUi.first { it.message != null }
+        assertTrue("应报告导出条数，实际=" + state.message, state.message!!.contains("已导出 1 条笔记"))
+        assertFalse(state.exporting)
+        assertTrue("zip 应已写入", out.size() > 0)
+        backupVm.viewModelScope.cancel()
     }
 
     @Test

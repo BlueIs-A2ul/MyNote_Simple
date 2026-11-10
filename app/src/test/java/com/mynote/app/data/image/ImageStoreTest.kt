@@ -34,8 +34,10 @@ class ImageStoreTest {
         drop.writeText("x")
         dropThumb.writeText("x")
 
-        // 越过 GC 宽限期（新鲜文件按条目 71 受保护）
-        store.collectGarbage(setOf("keep.jpg"), now = keep.lastModified() + ImageStore.GC_GRACE_MS + 1)
+        // 越过 GC 宽限期（新鲜文件按条目 71 受保护）；以三个文件里最晚的时间为基准，
+        // 避免跨毫秒创建导致某个文件仍落在宽限期内
+        val base = maxOf(keep.lastModified(), drop.lastModified(), dropThumb.lastModified())
+        store.collectGarbage(setOf("keep.jpg"), now = base + ImageStore.GC_GRACE_MS + 1)
 
         assertTrue(keep.exists())
         assertFalse(drop.exists())

@@ -39,7 +39,13 @@ fun AppNavHost(container: AppContainer) {
     val navController = rememberNavController()
     NavHost(navController = navController, startDestination = "notes") {
         composable("notes") { backStack ->
-            val vm: NotesViewModel = viewModel(factory = NotesViewModel.factory(container.noteRepository, container.noteSortStore))
+            val vm: NotesViewModel = viewModel(
+                factory = NotesViewModel.factory(
+                    container.noteRepository,
+                    container.noteSortStore,
+                    container.backupManager
+                )
+            )
             // 历史恢复成功后回传的提示：由历史页写入本条目的 savedStateHandle，此处读取
             val restoreMessage by backStack.savedStateHandle
                 .getStateFlow<String?>(NavResults.RESTORE_MESSAGE, null).collectAsState()

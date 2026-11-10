@@ -76,7 +76,7 @@
 | 75 | 导入分类冲突改为复用同名分类 | P0 | S | 已完成（2026-09-15） | 批次E |
 | 76 | 批量/回收站操作异常处理 + IN 列表切块 | P0 | S/M | 已完成（2026-09-15） | 批次E |
 | 77 | API Key 输入框不进 saved instance state | P1 | S | 已完成（2026-11-08） | 批次F |
-| 78 | 导出/导入脱离 composition 作用域 | P1 | M | 已建议（2026-09-15，待实现） | 批次F |
+| 78 | 导出/导入脱离 composition 作用域 | P1 | M | 已完成（2026-11-10） | 批次F |
 | 79 | 图片 GC 与备份的内存口径（投影 / 流式） | P1 | M | 已完成（2026-11-10） | 批次F |
 | 80 | 导入与 GC 边界加固合集 | P1 | S/M | 已完成（2026-11-10） | 批次F |
 | 81 | AI 服务商身份与聊天页保持一致 | P1 | M | 已完成（2026-11-10） | 批次G |
@@ -461,7 +461,8 @@
 - 影响：尚未点保存就旋转/进程重建 → 明文 Key 进入 Activity 的 saved instance state Bundle（系统进程持有、可被序列化落盘），与承诺不符。
 - 建议：改成 `remember`（旋转后清空输入框，已保存的 Key 不受影响）。价值：中 × S
 
-### 78. 导出/导入脱离 composition 作用域
+### 78. 导出/导入脱离 composition 作用域 ✅
+- **落地（2026-11-10）**：主页备份导出/导入搬到 `NotesViewModel`（`backupUi` 状态 + `exportBackup/importBackup`），编辑器 txt 导出搬到 `NoteEditViewModel`（`exportState/exportTxt`）；页面只消费状态弹提示、按在途标志禁用入口。旋转不再取消协程，也就不会再留半截 zip/txt 且无提示。用例 `exportBackupReportsCountThroughState`。
 - 现状：`NotesScreen.kt:97`（`rememberCoroutineScope`）驱动导出 `:139-147` 与导入 `:159-177`；`NoteEditScreen.kt` 的 txt 导出同理；`exporting/importing` 是 `remember`。`runCatching` 还吞掉了 `CancellationException`。
 - 影响：导出大备份时旋转屏幕 → 协程取消 → **留下半截 zip 且没有任何提示**，用户以为备份成功；导入同样是「静默中断」（DB 有事务保护，但完成提示丢失）。
 - 建议：把这两件事放进存活期更长的作用域（VM 或 `container.applicationScope`），结果经 VM `StateFlow` 回传给 `LaunchedEffect` 弹 snackbar；失败/取消都要有提示。价值：中 × M
@@ -655,6 +656,7 @@
 | 2026-11-08 | **批次 F/G/H 快修（条目 77、82、83、89、91）**：77 明文 Key 不再进 saved instance state；82 看门狗超时与重发真正断流（`session.stop()` / `streamer.cancel()`）；83 空回答按失败处理（不落库空 done，横幅给重试线索；`finish_reason` 透传留待后续）；89 搜索 `LIKE` 转义（反斜杠 / `%` / `_` 按字面量匹配）+ 高亮用 trim 词；91 改搜索词清多选 + 选中集随可见集裁剪。红灯 7 例 → 全量 667 单测全绿；`assembleDebug` 通过。设计/计划见 `docs/superpowers/specs|plans/2026-11-08-backlog-fgh-quick-fixes*`。 |
 | 2026-11-10 | **穷尽批次（一）**：条目 84（历史裁剪成对保留）、87（Markdown 链接白名单，防 `intent://`/`file://` 崩溃）、90（保留期文案与回收站口径统一）、92（首帧加载态 + 空查询不防抖）落地。全量单测 667 → 674 全绿，`assembleDebug` 通过。 |
 | 2026-11-10 | **穷尽批次（二/三）**：条目 79/46（GC 投影 + 备份导出流式化）、80（导入与 GC 六项边界加固）、94/95/96（编辑页加载态、保存失败反馈、不保存抑制、保存期只读、旋转状态）。全量 674 → 678 全绿。 |
+| 2026-11-10 | **穷尽批次（六）**：条目 78（备份导出/导入与 txt 导出搬进 ViewModel，旋转不再丢在途任务与提示）。 |
 | 2026-11-10 | **穷尽批次（五）**：条目 81（切服务商后重建会话，请求不再发给旧服务商）、85（长回答分片合并刷新，短回答行为不变）、88（测试连接存 Key、Key 输入按服务商隔离、折叠选区改插入、空回答禁用落地、空模型拦截、删会话清草稿、抽屉显示服务商）。 |
 | 2026-11-10 | **穷尽批次（四）**：条目 86（明文 http 专用提示 + 设置页预警）、93（历史页恢复只弹一层、空态区分、全文惰性布局）、49（分类空名禁用确定、删除确认带名称与笔记数，新增 `CategoryNoteCount` 投影）。 |
 | 2026-09-15 | **AI 服务商可切换完成（v1.10.0，条目 69）**：`AiProvider` 枚举收敛一切服务商差异（DeepSeek / 硅基流动 / 自定义 OpenAI 兼容：地址、`thinking` 对象 / `enable_thinking` 布尔、余额接口与 schema、`?sub_type=chat` 模型过滤、默认模型、Key 提示文案）；`DeepSeekApiClient`→`AiApiClient`、`DeepSeekApiSession`→`AiApiSession`、`DeepSeekSseParser`→`AiSseParser`（协议层不变，端点驱动）；请求体改 `buildJsonObject` 组装，422 去参数重试仅对支持思考的服务商生效；错误详情兼容 `error.message` / `message` / 纯字符串三种形态，文案去 DeepSeek 化；设置页新增服务商 tab、自定义地址（http(s) 校验）与模型自由填写，深度思考/查询余额按能力显示；Key、模型、思考开关按 serviceId 命名空间隔离（DeepSeek 沿用旧 key 名兼容）；聊天页隐私弹窗用 `session.displayName`。全量单测 547 → 582 全绿。 |

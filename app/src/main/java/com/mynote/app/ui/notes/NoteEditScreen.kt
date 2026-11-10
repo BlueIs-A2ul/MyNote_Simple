@@ -103,6 +103,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -110,8 +111,29 @@ class NoteEditViewModel(
     private val repository: NoteRepository,
     private val imageStore: ImageStore,
     private val noteId: Long?,
-    private val savedState: SavedStateHandle = SavedStateHandle()
+    private val savedState: SavedStateHandle = SavedStateHandle(),
+    // 条目 78：txt 导出搬进 VM 作用域；测试可省略（不导出即可）
+    private val backupManager: BackupManager? = null
 ) : ViewModel() {
+
+    /** 条目 78：txt 导出在 VM 作用域执行，旋转不会留下半截文件且提示不丢。 */
+    data class ExportState(val exporting: Boolean = false, val message: String? = null)
+
+    private val _export = MutableStateFlow(ExportState())
+    val exportState: StateFlow<ExportState> = _export
+
+    fun exportTxt(uri: Uri, title: String, content: String) {
+        if (_export.value.exporting) return
+        _export.update { it.copy(exporting = true) }
+        viewModelScope.launch {
+            val ok = backupManager?.exportNoteAsTxt(uri, title, content) ?: false
+            _export.update { it.copy(exporting = false, message = if (ok) "已导出" else "导出失败") }
+        }
+    }
+
+    fun consumeExportMessage() {
+        _export.update { it.copy(message = null) }
+    }
 
     private val _categories = MutableStateFlow<List<CategoryEntity>>(emptyList())
     val categories: StateFlow<List<CategoryEntity>> = _categories
@@ -277,9 +299,14 @@ class NoteEditViewModel(
             repo: NoteRepository,
             imageStore: ImageStore,
             noteId: Long?,
-            savedState: SavedStateHandle = SavedStateHandle()
+            savedState: SavedStateHandle = SavedStateHandle(),
+            backupManager: BackupManager? = null
         ): ViewModelProvider.Factory =
-            viewModelFactory { initializer { NoteEditViewModel(repo, imageStore, noteId, savedState) } }
+            viewModelFactory {
+                initializer {
+                    NoteEditViewModel(repo, imageStore, noteId, savedState, backupManager)
+                }
+            }
     }
 }
 
@@ -327,7 +354,7 @@ fun NoteEditScreen(
 ) {
     val vm: NoteEditViewModel = viewModel(
         key = "note_edit_$noteId",
-        factory = NoteEditViewModel.factory(repository, imageStore, noteId, draftIdHandle)
+        factory = NoteEditViewModel.factory(repository, imageStore, noteId, draftIdHandle, backupManager)
     )
     val note by vm.note.collectAsState()
     val categories by vm.categories.collectAsState()
@@ -357,8 +384,9 @@ fun NoteEditScreen(
     var discarded by remember { mutableStateOf(false) }
     // 条目 88：AI 结果落地时的提示（在 snackbar 宿主声明之前就要能写入）
     var pendingSnackbar by remember { mutableStateOf<String?>(null) }
-    // 导出在途标志：禁用导出入口，防止重复提交
-    var exporting by remember { mutableStateOf(false) }
+    // 导出在途标志与结果都在 VM 里（条目 78）
+    val exportState by vm.exportState.collectAsState()
+    val exporting = exportState.exporting
     // 是否已从已保存笔记回填过字段：只回填一次，清空内容后旋转/重建不再被旧内容覆盖
     var initialized by rememberSaveable(noteId) { mutableStateOf(false) }
 
@@ -457,17 +485,13 @@ fun NoteEditScreen(
     val exportTxtLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/plain")
     ) { uri ->
-        uri?.let { u ->
-            scope.launch {
-                exporting = true
-                try {
-                    val ok = backupManager.exportNoteAsTxt(u, title, content.text)
-                    snackbarHostState.showSnackbar(if (ok) "已导出" else "导出失败")
-                } finally {
-                    exporting = false
-                }
-            }
-        }
+        uri?.let { vm.exportTxt(it, title, content.text) }
+    }
+
+    LaunchedEffect(exportState.message) {
+        val message = exportState.message ?: return@LaunchedEffect
+        vm.consumeExportMessage()
+        snackbarHostState.showSnackbar(message)
     }
 
     val context = LocalContext.current
