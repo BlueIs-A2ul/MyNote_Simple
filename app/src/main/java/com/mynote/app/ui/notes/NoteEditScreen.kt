@@ -48,7 +48,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,6 +66,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
@@ -360,9 +363,9 @@ fun NoteEditScreen(
         key = "note_edit_$noteId",
         factory = NoteEditViewModel.factory(repository, imageStore, noteId, draftIdHandle, backupManager)
     )
-    val note by vm.note.collectAsState()
-    val categories by vm.categories.collectAsState()
-    val draftId by vm.draftId.collectAsState()
+    val note by vm.note.collectAsStateWithLifecycle()
+    val categories by vm.categories.collectAsStateWithLifecycle()
+    val draftId by vm.draftId.collectAsStateWithLifecycle()
 
     var title by rememberSaveable(noteId) { mutableStateOf("") }
     var content by rememberSaveable(noteId, stateSaver = TextFieldValue.Saver) {
@@ -389,7 +392,7 @@ fun NoteEditScreen(
     // 条目 88：AI 结果落地时的提示（在 snackbar 宿主声明之前就要能写入）
     var pendingSnackbar by remember { mutableStateOf<String?>(null) }
     // 导出在途标志与结果都在 VM 里（条目 78）
-    val exportState by vm.exportState.collectAsState()
+    val exportState by vm.exportState.collectAsStateWithLifecycle()
     val exporting = exportState.exporting
     // 是否已从已保存笔记回填过字段：只回填一次，清空内容后旋转/重建不再被旧内容覆盖
     var initialized by rememberSaveable(noteId) { mutableStateOf(false) }
@@ -497,6 +500,9 @@ fun NoteEditScreen(
         vm.consumeExportMessage()
         snackbarHostState.showSnackbar(message)
     }
+
+    // 条目 100：字数只在正文变化时重算，避免每次重组都跑一遍正则
+    val wordCount by remember { derivedStateOf { NoteContentParser.plainText(content.text).length } }
 
     val context = LocalContext.current
 
@@ -636,7 +642,9 @@ fun NoteEditScreen(
                     readOnly = isSaving || !loaded,
                     modifier = Modifier
                         .weight(1f)
-                        .focusRequester(titleFocusRequester),
+                        .focusRequester(titleFocusRequester)
+                        // 条目 99：TalkBack 之前读作两个无名编辑框
+                        .semantics { contentDescription = "标题" },
                     textStyle = MaterialTheme.typography.titleLarge.copy(
                         color = MaterialTheme.colorScheme.onBackground
                     ),
@@ -663,7 +671,7 @@ fun NoteEditScreen(
                 )
                 // 字数与列表摘要同口径：图片标记不计入
                 Text(
-                    "字数 ${NoteContentParser.plainText(content.text).length}",
+                    "字数 ${wordCount}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 8.dp)
@@ -710,7 +718,8 @@ fun NoteEditScreen(
                     // 条目 94/95：未回填完成或保存中都不接受输入
                     readOnly = isSaving || !loaded,
                     modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp, vertical = 4.dp)
-                        .focusRequester(contentFocusRequester),
+                        .focusRequester(contentFocusRequester)
+                        .semantics { contentDescription = "正文" },
                     textStyle = MaterialTheme.typography.bodyLarge.copy(
                         color = MaterialTheme.colorScheme.onBackground
                     ),

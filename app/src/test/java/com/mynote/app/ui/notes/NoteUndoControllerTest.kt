@@ -13,6 +13,25 @@ class NoteUndoControllerTest {
     /** 构造文本快照，光标置于末尾，便于比较。 */
     private fun value(text: String): TextFieldValue = TextFieldValue(text, TextRange(text.length))
 
+    /** 条目 100：字符预算超出时丢最旧快照，避免长笔记常驻上百份全文副本。 */
+    @Test
+    fun recordDropsOldestWhenCharBudgetExceeded() {
+        val controller = NoteUndoController(maxEntries = 100, maxTotalChars = 100)
+        repeat(5) { i ->
+            controller.record(value("x".repeat(60) + i), atMillis = i * 10_000L, force = true)
+        }
+        assertTrue("至少保留最新一格", controller.canUndo)
+
+        var undone = 0
+        var current = value("now")
+        while (true) {
+            val previous = controller.undo(current) ?: break
+            current = previous
+            undone++
+        }
+        assertTrue("应丢掉旧快照，实际可撤销 " + undone + " 次", undone <= 2)
+    }
+
     @Test
     fun recordEnablesUndoAndDisablesRedo() {
         val controller = NoteUndoController()

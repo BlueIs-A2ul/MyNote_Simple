@@ -25,7 +25,7 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,9 +60,9 @@ fun TrashScreen(
         key = "trash",
         factory = TrashViewModel.factory(repository, retentionStore)
     )
-    val notes by vm.notes.collectAsState()
-    val retentionDays by vm.retentionDays.collectAsState()
-    val purging by vm.purging.collectAsState()
+    val notes by vm.notes.collectAsStateWithLifecycle()
+    val retentionDays by vm.retentionDays.collectAsStateWithLifecycle()
+    val purging by vm.purging.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var purgeTarget by remember { mutableStateOf<NoteListItem?>(null) }

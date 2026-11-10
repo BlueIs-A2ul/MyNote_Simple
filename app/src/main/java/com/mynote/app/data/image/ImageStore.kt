@@ -62,6 +62,14 @@ class ImageStore(private val context: Context) {
             }
             bitmap.recycle()
             true
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // 条目 100：取消要原样抛出，否则调用方会把「被取消」当成解码失败
+            target.delete()
+            throw e
+        } catch (e: OutOfMemoryError) {
+            // 条目 100：超大图解码可能直接 OOM，清理半成品并返回失败，而不是让整个进程崩掉
+            target.delete()
+            false
         } catch (e: Exception) {
             // 失败时清理半成品文件，避免残留占用空间
             target.delete()

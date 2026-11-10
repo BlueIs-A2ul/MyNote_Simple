@@ -9,7 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import com.mynote.app.data.settings.DarkMode
 import com.mynote.app.ui.navigation.AppNavHost
@@ -25,11 +25,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 条目 100：先开一次 edge-to-edge，首帧就不会缺 inset（深色模式变化的更新仍由下面的 effect 负责）
+        enableEdgeToEdge()
         val container = (application as MyNoteApp).container
         pendingDeepLink.value = deepLinkNoteId(intent?.data)
         setContent {
-            val deepLinkId by pendingDeepLink.collectAsState()
-            val settings by container.themeSettingsStore.settings.collectAsState()
+            val deepLinkId by pendingDeepLink.collectAsStateWithLifecycle()
+            val settings by container.themeSettingsStore.settings.collectAsStateWithLifecycle()
             val darkTheme = when (settings.darkMode) {
                 DarkMode.SYSTEM -> isSystemInDarkTheme()
                 DarkMode.LIGHT -> false

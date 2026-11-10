@@ -42,7 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -93,14 +93,14 @@ fun NotesScreen(
     onOpenCalendar: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
-    val notes by viewModel.notes.collectAsState()
-    val categories by viewModel.categories.collectAsState()
-    val query by viewModel.query.collectAsState()
-    val selectedFilter by viewModel.selectedFilter.collectAsState()
-    val sortMode by viewModel.sortMode.collectAsState()
-    val selectionMode by viewModel.selectionMode.collectAsState()
-    val selectedIds by viewModel.selectedIds.collectAsState()
-    val backupUi by viewModel.backupUi.collectAsState()
+    val notes by viewModel.notes.collectAsStateWithLifecycle()
+    val categories by viewModel.categories.collectAsStateWithLifecycle()
+    val query by viewModel.query.collectAsStateWithLifecycle()
+    val selectedFilter by viewModel.selectedFilter.collectAsStateWithLifecycle()
+    val sortMode by viewModel.sortMode.collectAsStateWithLifecycle()
+    val selectionMode by viewModel.selectionMode.collectAsStateWithLifecycle()
+    val selectedIds by viewModel.selectedIds.collectAsStateWithLifecycle()
+    val backupUi by viewModel.backupUi.collectAsStateWithLifecycle()
 
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }

@@ -2,7 +2,7 @@ package com.mynote.app.ui.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
@@ -62,10 +62,10 @@ fun AppNavHost(
             )
             // 历史恢复成功后回传的提示：由历史页写入本条目的 savedStateHandle，此处读取
             val restoreMessage by backStack.savedStateHandle
-                .getStateFlow<String?>(NavResults.RESTORE_MESSAGE, null).collectAsState()
-            val retentionDays by container.trashRetentionStore.retentionDays.collectAsState()
+                .getStateFlow<String?>(NavResults.RESTORE_MESSAGE, null).collectAsStateWithLifecycle()
+            val retentionDays by container.trashRetentionStore.retentionDays.collectAsStateWithLifecycle()
             val deletedNoteId by backStack.savedStateHandle
-                .getStateFlow<Long?>(NavResults.DELETED_NOTE_ID, null).collectAsState()
+                .getStateFlow<Long?>(NavResults.DELETED_NOTE_ID, null).collectAsStateWithLifecycle()
             NotesScreen(
                 viewModel = vm,
                 backupManager = container.backupManager,
@@ -103,13 +103,13 @@ fun AppNavHost(
                 ?.getLong("categoryId")
                 ?.takeIf { it >= 0L }
             val resultType by backStack.savedStateHandle
-                .getStateFlow<String?>(AiNavKeys.RESULT_TYPE, null).collectAsState()
+                .getStateFlow<String?>(AiNavKeys.RESULT_TYPE, null).collectAsStateWithLifecycle()
             val resultText by backStack.savedStateHandle
-                .getStateFlow<String?>(AiNavKeys.RESULT_TEXT, null).collectAsState()
+                .getStateFlow<String?>(AiNavKeys.RESULT_TEXT, null).collectAsStateWithLifecycle()
             // 条目 93：历史恢复提示现在回传给自己（编辑器），而不是弹到主页
             val restoreMessage by backStack.savedStateHandle
-                .getStateFlow<String?>(NavResults.RESTORE_MESSAGE, null).collectAsState()
-            val retentionDays by container.trashRetentionStore.retentionDays.collectAsState()
+                .getStateFlow<String?>(NavResults.RESTORE_MESSAGE, null).collectAsStateWithLifecycle()
+            val retentionDays by container.trashRetentionStore.retentionDays.collectAsStateWithLifecycle()
             NoteEditScreen(
                 noteId = id,
                 initialCategoryId = initialCategoryId,

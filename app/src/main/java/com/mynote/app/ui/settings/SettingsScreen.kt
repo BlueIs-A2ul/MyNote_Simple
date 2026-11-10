@@ -41,7 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -95,16 +95,16 @@ fun SettingsScreen(
             themeStore, sortStore, trashStore, repository, aiSettingsStore, clientFactory
         )
     )
-    val settings by vm.settings.collectAsState()
-    val defaultSort by vm.defaultSort.collectAsState()
-    val retentionDays by vm.retentionDays.collectAsState()
-    val aiProvider by vm.aiProvider.collectAsState()
-    val customBaseUrl by vm.customBaseUrl.collectAsState()
-    val aiModel by vm.aiModel.collectAsState()
-    val availableModels by vm.availableModels.collectAsState()
-    val deepThinking by vm.deepThinking.collectAsState()
-    val apiKeyConfigured by vm.apiKeyConfigured.collectAsState()
-    val customSystemPrompt by vm.customSystemPrompt.collectAsState()
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val defaultSort by vm.defaultSort.collectAsStateWithLifecycle()
+    val retentionDays by vm.retentionDays.collectAsStateWithLifecycle()
+    val aiProvider by vm.aiProvider.collectAsStateWithLifecycle()
+    val customBaseUrl by vm.customBaseUrl.collectAsStateWithLifecycle()
+    val aiModel by vm.aiModel.collectAsStateWithLifecycle()
+    val availableModels by vm.availableModels.collectAsStateWithLifecycle()
+    val deepThinking by vm.deepThinking.collectAsStateWithLifecycle()
+    val apiKeyConfigured by vm.apiKeyConfigured.collectAsStateWithLifecycle()
+    val customSystemPrompt by vm.customSystemPrompt.collectAsStateWithLifecycle()
     // 条目 77：明文 Key 不进 saved instance state。rememberSaveable 会把用户刚粘贴、尚未保存的 Key
     // 序列化进 Activity 的 Bundle（系统进程持有且可能落盘），与本页「Key 仅本机加密保存」的承诺相悖；
     // 旋转后清空输入框可接受，已保存的 Key 不受影响。

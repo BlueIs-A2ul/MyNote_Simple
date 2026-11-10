@@ -97,8 +97,8 @@
 | 96 | 旋转保留对话框与待写文件状态 | P2 | M | 已完成（2026-11-10） | 批次I |
 | 97 | 图片编辑体验（标记可视化 / 删图入口 / 孤儿图） | P2 | M | 已建议（2026-09-15，待实现） | 批次I |
 | 98 | 导出缺图统计与渲染同口径 + txt 图片说明 | P1 | S/M | 已完成（2026-11-10） | 批次I |
-| 99 | 无障碍一批（输入框标签 / 日历圆点 / 多选语义 / 触点） | P2 | M | 已建议（2026-09-15，待实现） | 批次J |
-| 100 | 撤销栈封顶 + 字数统计缓存 + 平台加固合集 | P2 | S/M | 已建议（2026-09-15，待实现） | 批次J |
+| 99 | 无障碍一批（输入框标签 / 日历圆点 / 多选语义 / 触点） | P2 | M | 部分完成（2026-11-10：输入框标签 / 多选语义；日历圆点与触点待做） | 批次J |
+| 100 | 撤销栈封顶 + 字数统计缓存 + 平台加固合集 | P2 | S/M | 部分完成（2026-11-10：①②③⑤⑥；④ Keystore 主线程、⑦ Bundle 体积待做） | 批次J |
 | 101 | 启动图标改自适应图标（「记」字标 + Indigo→Teal 渐变 + 单色层） | P1 | S | 已完成（2026-10-29，v1.11.0） | — |
 | 102 | AI 助手自定义 system 提示词（内置默认 + 可完全覆盖） | P1 | S/M | 已完成（2026-10-30，v1.12.0） | — |
 
@@ -589,11 +589,13 @@
 
 ### 批次 J · 体验打磨与平台加固（P2）
 
-### 99. 无障碍一批
+### 99. 无障碍一批 ◐
+- **落地（2026-11-10，部分）**：编辑页标题/正文输入框补 `contentDescription`；列表行多选态补 `semantics { selected + Role.Checkbox }`。**日历圆点语义、色点 48dp 触点、预览关闭按钮** 待做。
 - 现状：编辑页两个输入框都没有 `semantics`/标签（占位文字画在 `decorationBox` 里，TalkBack 读作两个无名编辑框，`NoteEditScreen.kt:518-542,582-605`）；预览里的图片共用 `contentDescription = "图片"`（`:570`），全屏预览只能点图片本身关闭（`NoteImagePreviewDialog.kt:26-44`）；日历的 4dp 圆点无语义、格子固定 44dp/36dp（`CalendarScreen.kt:180-217`）；多选只靠底色表达（`NotesScreen.kt:442` + `NoteRow.kt:70-84`，无 `semantics { selected }`、无 Role）；分类页色点 24dp 且无描述（`CategoriesScreen.kt:228-236`）。
 - 建议：输入框加 `semantics { contentDescription = "标题"/"正文" }`；预览图补可读的关闭按钮；日历格子按 `DateMark.count` 给「9月10日，3 篇笔记」；多选行加 `selected` 语义；色点点击区补到 48dp 并加描述。价值：中 × M
 
-### 100. 撤销栈封顶 + 字数统计缓存 + 平台加固合集
+### 100. 撤销栈封顶 + 字数统计缓存 + 平台加固合集 ◐
+- **落地（2026-11-10，部分）**：① 撤销栈增加 200k 字符预算（超预算从最旧开始丢）；② 字数统计改 `derivedStateOf`，只在正文变化时重算；③ 全部 `collectAsState()` → `collectAsStateWithLifecycle()`（11 个文件 57 处）；⑤ `enableEdgeToEdge` 提前到 `onCreate`，首帧不再缺 inset；⑥ 图片解码补 `OutOfMemoryError` 与 `CancellationException` 处理。**④ KeyStore 读写移出主线程、⑦ 长正文 Bundle 体积** 需真机验证与较大的状态重构，留待后续。
 - 现状：① `NoteUndoController` 只按**条数**限流（`maxEntries = 100`，存整份 `TextFieldValue`），长笔记常驻约 100 份全文副本（`NoteUndoController.kt:14,36-38`）；② 字数统计每次重组都对全文跑正则（`NoteEditScreen.kt:545` → `NoteContentParser.kt:34`）；③ `collectAsState`（约 30 处，如 `NotesScreen.kt:89-95`、`MainActivity.kt:23`）而非 `collectAsStateWithLifecycle`（依赖已在）；④ Keystore 往返在主线程（`AiChatViewModel.kt:61-70` 构造期读 Key、`SettingsViewModel.kt:60,106-118` 按钮回调直调）；⑤ `enableEdgeToEdge` 放在 `LaunchedEffect(darkTheme)` 里（`MainActivity.kt:40-50`）→ 首帧无 edge-to-edge，可能跳一下；⑥ 图片解码 `catch (e: Exception)` 兜不住 `OutOfMemoryError`，且顺带吞掉 `CancellationException`（`ImageStore.kt:50`）；⑦ 超长正文经 `rememberSaveable` 进 Bundle（`NoteEditScreen.kt:293-295`），AI 入口又把正文与选区写进导航 `SavedStateHandle`（`AppNavHost.kt:94-99,111-113`）→ 超长笔记有 `TransactionTooLargeException`/状态被丢弃的风险（**需真机确认**）。
 - 建议：撤销栈加「保留字符数」上限（或改存 delta）；字数统计用 `derivedStateOf` 缓存；`collectAsStateWithLifecycle`；Key 读写移入 `withContext(Dispatchers.IO)` + 用 `StateFlow` 暴露「已配置」；`enableEdgeToEdge` 移出 `LaunchedEffect`；`catch` 补 `OutOfMemoryError`/重抛 `CancellationException`；长正文只把 `noteId/draftId` 放进 Bundle、正文靠 DB 草稿回读。价值：中 × S/M
 
@@ -660,6 +662,7 @@
 | 2026-11-08 | **批次 F/G/H 快修（条目 77、82、83、89、91）**：77 明文 Key 不再进 saved instance state；82 看门狗超时与重发真正断流（`session.stop()` / `streamer.cancel()`）；83 空回答按失败处理（不落库空 done，横幅给重试线索；`finish_reason` 透传留待后续）；89 搜索 `LIKE` 转义（反斜杠 / `%` / `_` 按字面量匹配）+ 高亮用 trim 词；91 改搜索词清多选 + 选中集随可见集裁剪。红灯 7 例 → 全量 667 单测全绿；`assembleDebug` 通过。设计/计划见 `docs/superpowers/specs|plans/2026-11-08-backlog-fgh-quick-fixes*`。 |
 | 2026-11-10 | **穷尽批次（一）**：条目 84（历史裁剪成对保留）、87（Markdown 链接白名单，防 `intent://`/`file://` 崩溃）、90（保留期文案与回收站口径统一）、92（首帧加载态 + 空查询不防抖）落地。全量单测 667 → 674 全绿，`assembleDebug` 通过。 |
 | 2026-11-10 | **穷尽批次（二/三）**：条目 79/46（GC 投影 + 备份导出流式化）、80（导入与 GC 六项边界加固）、94/95/96（编辑页加载态、保存失败反馈、不保存抑制、保存期只读、旋转状态）。全量 674 → 678 全绿。 |
+| 2026-11-10 | **穷尽批次（九）**：条目 100 大部分（撤销栈字符预算、字数统计缓存、lifecycle-aware 收集、首帧 edge-to-edge、解码 OOM/取消）与 99 核心（输入框标签、多选语义）。 |
 | 2026-11-10 | **穷尽批次（八）**：条目 83 余项（finish_reason 透传 + 专用文案）、89 余项（deepHit 深命中线索）、50（深链）、48（删除可撤销 + 恢复可查看）。 |
 | 2026-11-10 | **穷尽批次（七）**：条目 47（历史摘要/对比命名/图片占位）、98（导出绘制期缺图记账 + txt 剥离图片标记）。 |
 | 2026-11-10 | **穷尽批次（六）**：条目 78（备份导出/导入与 txt 导出搬进 ViewModel，旋转不再丢在途任务与提示）。 |

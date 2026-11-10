@@ -32,7 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -89,8 +89,8 @@ fun NoteExportDialog(
         onDispose { owner.viewModelStore.clear() }
     }
 
-    val state by vm.state.collectAsState()
-    val exporting by vm.exporting.collectAsState()
+    val state by vm.state.collectAsStateWithLifecycle()
+    val exporting by vm.exporting.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val snackbarHost = remember { SnackbarHostState() }
     // 条目 96：待写文件改存路径并进 saved state——否则旋转后 SAF 回调回来时 files 为空，

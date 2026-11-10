@@ -11,7 +11,14 @@ import androidx.compose.ui.text.input.TextFieldValue
  * 一次撤销回退一整段；停顿超过 [MERGE_WINDOW_MS] 或传 `force = true`
  * （插图、贴 AI 结果等结构性变更）则强制新开一格。
  */
-class NoteUndoController(private val maxEntries: Int = 100) {
+class NoteUndoController(
+    private val maxEntries: Int = 100,
+    /**
+     * 条目 100：除条数外再加字符预算——长笔记若常驻 100 份全文副本，内存会随正文长度线性膨胀。
+     * 超出预算时从最旧的一格开始丢（至少保留最新一格）。
+     */
+    private val maxTotalChars: Int = 200_000
+) {
 
     private val undoStack = ArrayDeque<TextFieldValue>()
     private val redoStack = ArrayDeque<TextFieldValue>()
@@ -39,7 +46,9 @@ class NoteUndoController(private val maxEntries: Int = 100) {
             return
         }
         undoStack.addLast(before)
-        while (undoStack.size > maxEntries) {
+        while (undoStack.size > maxEntries ||
+            (undoStack.size > 1 && undoStack.sumOf { it.text.length } > maxTotalChars)
+        ) {
             undoStack.removeFirst()
         }
         lastBefore = before

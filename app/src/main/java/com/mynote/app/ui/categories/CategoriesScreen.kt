@@ -33,7 +33,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,8 +61,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun CategoriesScreen(repository: NoteRepository, onBack: () -> Unit) {
     val vm: CategoriesViewModel = viewModel(factory = CategoriesViewModel.factory(repository))
-    val categoriesState by vm.categories.collectAsState()
-    val noteCounts by vm.noteCounts.collectAsState()
+    val categoriesState by vm.categories.collectAsStateWithLifecycle()
+    val noteCounts by vm.noteCounts.collectAsStateWithLifecycle()
     // 条目 92：null = 首帧加载中，避免进页面先闪「暂无分类」
     val categories = categoriesState.orEmpty()
     val snackbarHostState = remember { SnackbarHostState() }

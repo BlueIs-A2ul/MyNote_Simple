@@ -28,7 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
@@ -61,12 +61,12 @@ fun CalendarScreen(
     onBack: () -> Unit
 ) {
     val vm: CalendarViewModel = viewModel(factory = CalendarViewModel.factory(repository))
-    val year by vm.year.collectAsState()
-    val month by vm.month.collectAsState()
-    val selectedDay by vm.selectedDay.collectAsState()
-    val marks by vm.marks.collectAsState()
-    val dayNotes by vm.dayNotes.collectAsState()
-    val categories by vm.categories.collectAsState()
+    val year by vm.year.collectAsStateWithLifecycle()
+    val month by vm.month.collectAsStateWithLifecycle()
+    val selectedDay by vm.selectedDay.collectAsStateWithLifecycle()
+    val marks by vm.marks.collectAsStateWithLifecycle()
+    val dayNotes by vm.dayNotes.collectAsStateWithLifecycle()
+    val categories by vm.categories.collectAsStateWithLifecycle()
 
     // 行内相对时间每分钟 tick（与列表页一致）
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
