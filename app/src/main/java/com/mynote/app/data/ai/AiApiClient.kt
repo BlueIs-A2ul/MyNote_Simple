@@ -231,8 +231,8 @@ class AiApiClient(
             throw e
         } catch (e: IOException) {
             if (!currentCoroutineContext().isActive) throw CancellationException()
-            // 已发出的 chunk 由上层保留；这里只报告失败原因
-            emit(ApiStreamEvent.Error(NETWORK_ERROR))
+            // 已发出的 chunk 由上层保留；这里只报告失败原因（条目 86：明文 http 被系统拦截要能说清楚）
+            emit(ApiStreamEvent.Error(ioErrorMessage(e)))
         } finally {
             activeConnections -= connection
             runCatching { connection.close() }
@@ -479,10 +479,29 @@ class AiApiClient(
         return if (text.isNullOrBlank()) "" else "：" + text.take(DETAIL_MAX_CHARS)
     }
 
-    private companion object {
+    /**
+     * 条目 86：Android 9+ 默认禁止明文 http，系统抛出的 IOException 文案里带 CLEARTEXT，
+     * 或直接是 UnknownServiceException；笼统的「网络错误」会让局域网自建用户毫无线索。
+     */
+    internal fun ioErrorMessage(error: IOException): String {
+        val text = (error.message ?: "") + " " + (error.cause?.message ?: "")
+        return if (error is java.net.UnknownServiceException ||
+            text.contains("CLEARTEXT", ignoreCase = true)
+        ) {
+            CLEARTEXT_BLOCKED
+        } else {
+            NETWORK_ERROR
+        }
+    }
+
+    companion object {
         const val THINKING_ENABLED = "enabled"
         const val THINKING_DISABLED = "disabled"
-        const val NETWORK_ERROR = "网络错误，请检查网络后重试"
+        internal const val NETWORK_ERROR = "网络错误，请检查网络后重试"
+
+        /** 条目 86：明文 http 被系统安全策略拦截时的专用文案。 */
+        internal const val CLEARTEXT_BLOCKED =
+            "系统禁止明文 http 连接（Android 9+ 默认策略），请改用 https 地址"
         const val PARSE_ERROR = "返回数据无法解析"
         const val BALANCE_UNSUPPORTED = "当前服务商不支持余额查询"
         const val DETAIL_MAX_CHARS = 200

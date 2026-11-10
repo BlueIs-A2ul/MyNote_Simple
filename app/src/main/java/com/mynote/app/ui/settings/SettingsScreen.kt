@@ -365,12 +365,20 @@ fun SettingsScreen(
                     isError = baseUrlInvalid,
                     placeholder = { Text("https://example.com/v1") }
                 )
+                // 条目 86：明文 http 在 Android 9+ 会被系统拦截，保存前就提示，别等发送时才报「网络错误」
+                val cleartextHint = baseUrlInput.trim().startsWith("http://")
                 Text(
-                    if (baseUrlInvalid) "地址需以 http:// 或 https:// 开头"
-                    else "需包含版本路径（如 /v1），请求将直连该地址",
+                    when {
+                        baseUrlInvalid -> "地址需以 http:// 或 https:// 开头"
+                        cleartextHint -> "明文 http 会被 Android 9+ 拦截，建议改用 https（局域网自建需自签证书或反代）"
+                        else -> "需包含版本路径（如 /v1），请求将直连该地址"
+                    },
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (baseUrlInvalid) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = when {
+                        baseUrlInvalid -> MaterialTheme.colorScheme.error
+                        cleartextHint -> MaterialTheme.colorScheme.tertiary
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                     modifier = Modifier.padding(top = 6.dp)
                 )
             }

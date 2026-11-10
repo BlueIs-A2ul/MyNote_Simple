@@ -58,7 +58,7 @@
 | 43 | 导入事务 + 条目名校验 + 流式写盘 | P0 | M | 已完成（2026-09-15，v1.6.1） | 批次D |
 | 44 | 导入结果真实汇报（新增/更新/跳过） | P0 | S/M | 已完成（2026-09-15，v1.6.1） | 批次D |
 | 45 | notes 索引 + 投影查询（Room v5） | P1 | M | 已完成（2026-09-14，v1.5.0） | 批次D |
-| 46 | 备份导入导出流式化 | P2 | M | 部分完成（导入随条目 43 于 v1.6.1 流式化；导出流式化待实现） | 批次D |
+| 46 | 备份导入导出流式化 | P2 | M | 已完成（2026-11-10） | 批次D |
 | 47 | 历史时间线摘要/对比命名/图片渲染 | P2 | S | 已建议（2026-09-14，待实现） | 可选 |
 | 48 | 删除/恢复反馈与就地撤销 | P2 | M | 已建议（2026-09-14，待实现） | 可选 |
 | 49 | 分类空名/删除确认反馈 | P2 | S | 已建议（2026-09-14，待实现） | 可选 |
@@ -77,14 +77,14 @@
 | 76 | 批量/回收站操作异常处理 + IN 列表切块 | P0 | S/M | 已完成（2026-09-15） | 批次E |
 | 77 | API Key 输入框不进 saved instance state | P1 | S | 已完成（2026-11-08） | 批次F |
 | 78 | 导出/导入脱离 composition 作用域 | P1 | M | 已建议（2026-09-15，待实现） | 批次F |
-| 79 | 图片 GC 与备份的内存口径（投影 / 流式） | P1 | M | 已建议（2026-09-15，待实现） | 批次F |
-| 80 | 导入与 GC 边界加固合集 | P1 | S/M | 已建议（2026-09-15，待实现） | 批次F |
+| 79 | 图片 GC 与备份的内存口径（投影 / 流式） | P1 | M | 已完成（2026-11-10） | 批次F |
+| 80 | 导入与 GC 边界加固合集 | P1 | S/M | 已完成（2026-11-10） | 批次F |
 | 81 | AI 服务商身份与聊天页保持一致 | P1 | M | 已建议（2026-09-15，待实现） | 批次G |
 | 82 | 看门狗超时与重发必须真正停流 | P1 | S | 已完成（2026-11-08） | 批次G |
 | 83 | 空回答按失败处理 + finish_reason + 重试入口 | P1 | S | 部分完成（2026-11-08：空回答按失败 + 横幅；finish_reason 透传未做） | 批次G |
 | 84 | 历史裁剪保持 user/assistant 配对 | P1 | S | 已完成（2026-11-10） | 批次G |
 | 85 | 流式 Markdown 渲染节流（避免 O(n²)） | P1 | M | 已建议（2026-09-15，待实现） | 批次G |
-| 86 | 自定义地址明文 http 策略与错误文案 | P1 | S | 已建议（2026-09-15，待实现） | 批次G |
+| 86 | 自定义地址明文 http 策略与错误文案 | P1 | S | 已完成（2026-11-10） | 批次G |
 | 87 | Markdown 链接 scheme 白名单 | P1 | S | 已完成（2026-11-10） | 批次G |
 | 88 | AI 体验小坑合集 | P2 | S/M | 已建议（2026-09-15，待实现） | 批次G |
 | 89 | 搜索 LIKE 转义 + 高亮词 trim + 深命中线索 | P1 | S | 部分完成（2026-11-08：LIKE 转义 + 高亮 trim；深命中线索未做） | 批次H |
@@ -92,9 +92,9 @@
 | 91 | 多选随搜索/数据收敛（不删看不见的笔记） | P1 | S | 已完成（2026-11-08） | 批次H |
 | 92 | 首帧加载态统一 + debounce 首帧不延迟 | P2 | S | 已完成（2026-11-10） | 批次H |
 | 93 | 历史页与导航层级修正 | P2 | S/M | 已建议（2026-09-15，待实现） | 批次H |
-| 94 | 编辑页加载态与保存失败反馈 | P1 | S/M | 已建议（2026-09-15，待实现） | 批次I |
-| 95 | 「不保存」抑制标志 + 保存期间只读输入 | P1 | S | 已建议（2026-09-15，待实现） | 批次I |
-| 96 | 旋转保留对话框与待写文件状态 | P2 | M | 已建议（2026-09-15，待实现） | 批次I |
+| 94 | 编辑页加载态与保存失败反馈 | P1 | S/M | 已完成（2026-11-10） | 批次I |
+| 95 | 「不保存」抑制标志 + 保存期间只读输入 | P1 | S | 已完成（2026-11-10） | 批次I |
+| 96 | 旋转保留对话框与待写文件状态 | P2 | M | 已完成（2026-11-10） | 批次I |
 | 97 | 图片编辑体验（标记可视化 / 删图入口 / 孤儿图） | P2 | M | 已建议（2026-09-15，待实现） | 批次I |
 | 98 | 导出缺图统计与渲染同口径 + txt 图片说明 | P1 | S/M | 已建议（2026-09-15，待实现） | 批次I |
 | 99 | 无障碍一批（输入框标签 / 日历圆点 / 多选语义 / 触点） | P2 | M | 已建议（2026-09-15，待实现） | 批次J |
@@ -466,12 +466,14 @@
 - 影响：导出大备份时旋转屏幕 → 协程取消 → **留下半截 zip 且没有任何提示**，用户以为备份成功；导入同样是「静默中断」（DB 有事务保护，但完成提示丢失）。
 - 建议：把这两件事放进存活期更长的作用域（VM 或 `container.applicationScope`），结果经 VM `StateFlow` 回传给 `LaunchedEffect` 弹 snackbar；失败/取消都要有提示。价值：中 × M
 
-### 79. 图片 GC 与备份的内存口径
+### 79. 图片 GC 与备份的内存口径 ◐→✅
+- **落地（2026-11-10）**：`NoteDao.getContentsWithImageMarkup()` 让图片 GC 只读含图正文（不再 `getAll()` 全库正文）；备份导出改为 `getBackupPage` 分页 + 逐条写 JSON（不再拼一整块字符串 + ByteArray 副本）；导入 `notes.json` 改为带上限流式读取。用例 `importClampsAbsurdTimestamps` 等。
 - 现状：`collectImageGarbage` 用 `noteDao.getAll()`（`SELECT * FROM notes`，`NoteDao.kt:124-125`）把所有笔记完整正文读进内存再正则扫描（`NoteRepository.kt:242-243`）；而 revision 侧早已用 SQL `LIKE` 预筛并注释「避免全量载入内存」（`NoteRevisionDao.kt:37-39`）。备份侧 `BackupManager.kt:102,105-112,145` 把全库拼成一个 JSON 字符串再做第二份 `ByteArray`，导入又 `zip.readBytes()` 整包载入，且无条目大小上限。
 - 影响：与「内存占用小」硬约束冲突；大库低端机在启动清理/清空回收站/备份时有 OOM 与卡顿风险。
 - 建议：新增与 revision 对称的 `SELECT content FROM notes WHERE content LIKE '%![](img/%'`（引用集语义等价），GC 改用它；备份改流式写 JSON、导入限制单条目大小。价值：中 × M
 
-### 80. 导入与 GC 边界加固合集
+### 80. 导入与 GC 边界加固合集 ✅
+- **落地（2026-11-10）**：导入时间戳钳制到 `[0, now+1d]`；`img/..` 纯点条目名拒绝（`isValidImageName`）；`deleteCategory` 包事务；`thumb_*` 仅在无引用时清理；全部列表查询 `ORDER BY` 补 `id DESC`。用例 `importRejectsDotOnlyImageEntry`、`collectGarbageKeepsThumbnailStillReferenced`。
 - 现状：① 导入直落时间戳（`BackupManager.kt:92-93`），`updatedAt = Long.MAX_VALUE` 的笔记会永远置顶且此后导入「更新不动」；② `deleteCategory` 的 `clearCategory` + `delete` 不在同一事务（`NoteRepository.kt:233-236`），中途失败会留下悬空 `categoryId`；③ 导入不限制 `notes.json` 大小（`:145`）；④ zip 条目名白名单 `^[A-Za-z0-9._-]+$`（`:48`）放行 `..`/`.`，`img/..` 会抛「导入失败」而非「不是有效的备份文件」；⑤ `thumb_*` 无条件删除（`ImageStore.kt:70-73`），旧备份里正文引用的 `thumb_xxx` 会被下次 GC 秒删；⑥ 列表类查询的 `ORDER BY` 无 tiebreaker（`NoteDao.kt` 全部列表查询；对比 `NoteRevisionDao.kt:16` 有 `id DESC`），叠加上 `NotesScreen.kt:443` 的 `animateItem()` 会出现「等值时间戳下行自己跳」。
 - 建议：逐项小改（时间戳钳制到 `[0, now+1d]`、`deleteCategory` 包事务、条目大小上限、白名单加纯点名校验、`thumb_` 仅在无引用时删、ORDER BY 末尾补 `, id DESC`）。价值：中 × S/M
 
@@ -505,7 +507,8 @@
 - 影响：长回答流式时主线程 O(n²) 解析 + 重排 → 掉帧、发热（此前被「只显示最后一片」掩盖，修复后会立刻暴露）。
 - 建议：VM 侧对 `streamingText` 做 60–100ms 节流合并（零依赖），或只对最后一个未闭合块增量渲染；`UiState` 标 `@Immutable` 减少无效重组。价值：中 × M
 
-### 86. 自定义地址明文 http 策略与错误文案
+### 86. 自定义地址明文 http 策略与错误文案 ✅
+- **落地（2026-11-10）**：`AiApiClient.ioErrorMessage` 把 `UnknownServiceException` / 含 CLEARTEXT 的 IOException 映射为专用文案「系统禁止明文 http 连接…」；设置页自定义地址为 `http://` 时即时显示提示（不再等发送才报「网络错误」）。用例 `cleartextIoErrorMapsToDedicatedMessage`。
 - 现状：设置页显式接受并宣传 `http://`（`SettingsViewModel.kt:85-93`、`SettingsScreen.kt:316-323,586-589`），但 manifest 无 `usesCleartextTraffic`/`networkSecurityConfig`（`res/xml/` 只有 `file_paths.xml`）、targetSdk 34 → 运行时明文被系统阻断，`IOException` 被吞成 `NETWORK_ERROR`（`AiApiClient.kt:255-262,417`）。
 - 影响：局域网自建（Ollama / LM Studio 等 `http://192.168.x.x:11434/v1`）永远只会得到「网络错误，请检查网络后重试」，用户没有任何线索；空地址同理（聊天页不校验地址非空）。
 - 建议：二选一 —— UI 只接受 https 并给出明确文案，或加作用域受限的明文放行配置；同时把 `UnknownServiceException` 映射成专有提示，并在聊天页前置校验地址非空。需真机确认（Robolectric 不复现明文策略）。价值：中 × S
@@ -550,16 +553,19 @@
 
 ### 批次 I · 编辑页 / 平台（P1–P2）
 
-### 94. 编辑页加载态与保存失败反馈
+### 94. 编辑页加载态与保存失败反馈 ✅
+- **落地（2026-11-10）**：`loaded = isNewNote || note != null`，未回填前标题/正文只读、保存禁用、标题占位显示「加载中…」；`NoteEditViewModel.save` 在目标行不存在时回调 `SAVE_TARGET_GONE`、异常回调 `SAVE_FAILED`，界面留在编辑页并 snackbar 提示。用例 `saveMissingTargetReportsError`。
 - 现状：`canSave` 对存量笔记恒为 true（`NoteEditScreen.kt:404-405`），回填有「用户先敲字就不再回填」的守卫（`:322-336`），而 `saveNote` 目标行不存在时 `existing == null → return id` 静默成功（`NoteRepository.kt:91-93`）；`save()` 无 catch，DB 异常直接逃出 `viewModelScope`。
 - 影响：① 冷启动/迁移后用空编辑器敲了标题就保存 → 正文被空文本覆盖（可经历史快照找回）；② 笔记在别处被删除/彻底清理 → 点保存**什么都没写**却直接退回列表，用户以为存住了；③ 任何 DB 失败 → 崩溃而不是「保存失败」。
 - 建议：新增 `loaded = isNewNote || note != null`，未加载时正文只读并显示占位、保存禁用；`saveNote` 目标缺失时返回失败信号，UI 提示「笔记已不存在，无法保存」；`save/saveDraft/delete` 包 try/catch 并给文案。价值：中高 × S/M
 
-### 95. 「不保存」抑制标志 + 保存期间只读输入
+### 95. 「不保存」抑制标志 + 保存期间只读输入 ✅
+- **落地（2026-11-10）**：新增 `discarded` 标志，ON_STOP 兜底条件加入 `!discarded`；「不保存」先置位再退出；保存期间两个输入框 `readOnly`、按钮显示「保存中…」。
 - 现状：ON_STOP 兜底只看 `dirty && !isSaving`（`NoteEditScreen.kt:407-411`），「不保存」分支直接 `onBack()`（`:774`），没有抑制标志；`saveDraft` 一进协程就在 `withTransaction` 处挂起，而 `popBackStack` 会让 VM 走向 `onCleared()` 取消 `viewModelScope` → **是否写入取决于时序**（设计文档 `plans/2026-09-13-edit-ux-fixes.md:293` 的验收标准明确要求「不保存 → 列表无新笔记」）。另外保存期间两个输入框没有 `readOnly = isSaving`（`:520`、`:582`）→ 点保存后补敲的字不属于这次保存，且没有任何「保存中」提示。
 - 建议：加 `discarded` 标志并在 ON_STOP 守卫里排除（判定抽成可单测的纯函数）；`isSaving` 时输入框 `readOnly` + 顶栏显示「保存中…」。价值：中 × S
 
-### 96. 旋转保留对话框与待写文件状态
+### 96. 旋转保留对话框与待写文件状态 ✅
+- **落地（2026-11-10）**：编辑页七个对话框开关与新建分类输入框改 `rememberSaveable`；`NoteExportDialog` 的待写文件改为路径 `ArrayList<String>` 进 `rememberSaveable`，旋转后 SAF 回调仍能取到文件（`pendingFiles` 由路径重建）。
 - 现状：`NoteEditScreen.kt:301-313` 的 `menuOpen/showCategorySheet/showDatePicker/showAddCategoryDialog/showDeleteDialog/showExportDialog/showImageExport/showUnsavedDialog/previewFile/exporting` 全是 `remember`，新建分类输入框的 `name` 也是（`:738`）；`NoteExportDialog.kt:95-96` 的 `pendingFiles/writing` 同为 `remember`，而 SAF 回调用 `files != null` 把关（`:113-114`）。
 - 影响：输入「工作安排」后旋转 → 对话框与已输入内容一起消失；导出选好目录后旋转 → 对话框与 `pendingFiles` 都没了，**既不写文件也不报错**。
 - 建议：承载用户意图的开关与输入改 `rememberSaveable`；`pendingFiles/writing` 提到 `NoteExportDialog` 已有的 `DialogViewModelStoreOwner`（`:63-65`）里，或在重建时检测待写文件并重渲染。价值：中 × M
@@ -644,6 +650,7 @@
 | 2026-09-15 | **AI 回答 Markdown 渲染完成（v1.9.0，条目 61 升级）**：新增 `MarkdownParser`（标题/递归嵌套列表/引用/分隔线/表格/围栏代码块）、`MarkdownInline`（粗体/斜体/删除线/行内代码/可点链接/图片降级 alt/反斜杠转义）、`MarkdownPlainText`（插入正文与存笔记转纯文本，「复制」保留原文）、`MarkdownContent`（H1–H6、任务 ☐/☑、引用竖线、等宽列表格横向滚动，样式跟随主题）；流式回答逐帧实时渲染、完成后无跳变；移除 `CodeBlockParser`；零新增依赖、VM/数据库零改动。全量单测 547 全绿（本批净增 0：新增 `MarkdownPlainTextTest` 12 条、移除 `CodeBlockParserTest` 12 条；Markdown 特性累计新增 68 条、移除 12 条，其中 56 条已计入 v1.8.0 的 547 基线）。 |
 | 2026-11-08 | **批次 F/G/H 快修（条目 77、82、83、89、91）**：77 明文 Key 不再进 saved instance state；82 看门狗超时与重发真正断流（`session.stop()` / `streamer.cancel()`）；83 空回答按失败处理（不落库空 done，横幅给重试线索；`finish_reason` 透传留待后续）；89 搜索 `LIKE` 转义（反斜杠 / `%` / `_` 按字面量匹配）+ 高亮用 trim 词；91 改搜索词清多选 + 选中集随可见集裁剪。红灯 7 例 → 全量 667 单测全绿；`assembleDebug` 通过。设计/计划见 `docs/superpowers/specs|plans/2026-11-08-backlog-fgh-quick-fixes*`。 |
 | 2026-11-10 | **穷尽批次（一）**：条目 84（历史裁剪成对保留）、87（Markdown 链接白名单，防 `intent://`/`file://` 崩溃）、90（保留期文案与回收站口径统一）、92（首帧加载态 + 空查询不防抖）落地。全量单测 667 → 674 全绿，`assembleDebug` 通过。 |
+| 2026-11-10 | **穷尽批次（二/三）**：条目 79/46（GC 投影 + 备份导出流式化）、80（导入与 GC 六项边界加固）、94/95/96（编辑页加载态、保存失败反馈、不保存抑制、保存期只读、旋转状态）。全量 674 → 678 全绿。 |
 | 2026-09-15 | **AI 服务商可切换完成（v1.10.0，条目 69）**：`AiProvider` 枚举收敛一切服务商差异（DeepSeek / 硅基流动 / 自定义 OpenAI 兼容：地址、`thinking` 对象 / `enable_thinking` 布尔、余额接口与 schema、`?sub_type=chat` 模型过滤、默认模型、Key 提示文案）；`DeepSeekApiClient`→`AiApiClient`、`DeepSeekApiSession`→`AiApiSession`、`DeepSeekSseParser`→`AiSseParser`（协议层不变，端点驱动）；请求体改 `buildJsonObject` 组装，422 去参数重试仅对支持思考的服务商生效；错误详情兼容 `error.message` / `message` / 纯字符串三种形态，文案去 DeepSeek 化；设置页新增服务商 tab、自定义地址（http(s) 校验）与模型自由填写，深度思考/查询余额按能力显示；Key、模型、思考开关按 serviceId 命名空间隔离（DeepSeek 沿用旧 key 名兼容）；聊天页隐私弹窗用 `session.displayName`。全量单测 547 → 582 全绿。 |
 | 2026-09-15 | **AI 模型选择体验优化（v1.10.1，条目 70）**：连接成功文案模型数 > 5 时收敛为「共 N 个可用模型」；设置页模型数 > 8 改用可搜索 `ModelPickerDialog`（LazyColumn + 过滤 + 当前项对勾，≤ 8 仍用 tab）；聊天页顶栏副标题显示「服务商 · 模型」（`UiState.modelName` 进入会话时快照）。同批修正 AGENTS.md worktree 说明（signingConfig 配置期无条件读取签名文件，新 worktree 需从主树复制 `keystore.properties` 与 `app/mynote-release.keystore` 才能跑测试）。全量单测 582 → 584 全绿。 |
 | 2026-09-15 | **版本演进欠账清理·文档批（非发布批，不改版本号）**：build-guide 单测数 376 → 582、release 产物体积统一为约 2.0MB；backlog 条目状态回写（36 已完成、37/38 已作废、40 缩略图部分已撤销、46 部分完成），总览表补齐 51–70 行（此前状态需在表格与正文两处维护，正是上述矛盾的成因）；补记一次从未记录的回退——v1.6.1 整体移除缩略图机制（`ImageStore` 仅保留 `thumb_*` 遗留清理）；已发布特性的设计文档状态由「实现中/待实现」回写为「已实现（版本）」，两份网页驱动 AI 文档加「已被 API 方案替换」横幅。校正历史口径：v1.6.0 修订记录的 351 经逐提交核对应为 352。 |

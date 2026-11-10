@@ -40,6 +40,21 @@ class AiApiClientTest {
     private val contextOverflowBody =
         """{"error":{"code":"context_length_exceeded","message":"This model's maximum context length is 8192 tokens"}}"""
 
+    /** 条目 86：明文 http 被系统拦截时给出专用文案，而不是笼统的「网络错误」。 */
+    @Test
+    fun cleartextIoErrorMapsToDedicatedMessage() {
+        val client = client(FakeTransport())
+        val blocked = java.io.IOException(
+            "CLEARTEXT communication to 192.168.1.5 not permitted by network security policy"
+        )
+        assertEquals(AiApiClient.CLEARTEXT_BLOCKED, client.ioErrorMessage(blocked))
+        assertEquals(
+            AiApiClient.CLEARTEXT_BLOCKED,
+            client.ioErrorMessage(java.net.UnknownServiceException("no cleartext"))
+        )
+        assertEquals(AiApiClient.NETWORK_ERROR, client.ioErrorMessage(java.io.IOException("timeout")))
+    }
+
     @Test
     fun streamsChunksThenFinished() = runTest {
         val transport = FakeTransport(
