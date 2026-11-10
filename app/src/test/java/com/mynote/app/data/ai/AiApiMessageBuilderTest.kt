@@ -151,17 +151,20 @@ class AiApiMessageBuilderTest {
         assertEquals(listOf("a", "v", "继"), messages.drop(2).map { it.content.first().toString() })
     }
 
+    /** 条目 84 后口径：超限只按「成对」丢弃，因此这里丢的是一整对 (m, l)。 */
     @Test
-    fun overBudgetByOneDropsSingleOldestMiddle() {
+    fun overBudgetByOneDropsOldestPair() {
         val history = listOf(
             message(AiMessageEntity.ROLE_USER, "f".repeat(20_000), id = 1),
             message(AiMessageEntity.ROLE_ASSISTANT, "m".repeat(20_000), id = 2),
-            message(AiMessageEntity.ROLE_USER, "l".repeat(20_001), id = 3)
+            message(AiMessageEntity.ROLE_USER, "l".repeat(10_000), id = 3),
+            message(AiMessageEntity.ROLE_ASSISTANT, "n".repeat(10_001), id = 4)
         )
         val messages = AiApiMessageBuilder.build("", "", history, "继续")
 
+        // 总额 60_001 超 1 字符：丢掉 (m, l) 后回到 30_001
         assertEquals(4, messages.size)
-        assertEquals(listOf("f", "l", "继"), messages.drop(1).map { it.content.first().toString() })
+        assertEquals(listOf("f", "n", "继"), messages.drop(1).map { it.content.first().toString() })
     }
 
     @Test
@@ -170,14 +173,19 @@ class AiApiMessageBuilderTest {
             message(AiMessageEntity.ROLE_USER, "first".padEnd(10_000, 'f'), id = 1),
             message(AiMessageEntity.ROLE_ASSISTANT, "m1".padEnd(30_000, '1'), id = 2),
             message(AiMessageEntity.ROLE_USER, "m2".padEnd(30_000, '2'), id = 3),
-            message(AiMessageEntity.ROLE_ASSISTANT, "latest".padEnd(1_000, 'l'), id = 4)
+            message(AiMessageEntity.ROLE_ASSISTANT, "m3".padEnd(1_000, '3'), id = 4),
+            message(AiMessageEntity.ROLE_USER, "m4".padEnd(1_000, '4'), id = 5),
+            message(AiMessageEntity.ROLE_ASSISTANT, "latest".padEnd(1_000, 'l'), id = 6)
         )
         val messages = AiApiMessageBuilder.build("", "", history, "继续")
 
-        assertEquals(5, messages.size)
-        assertEquals(listOf('f', 'm', 'l', '继'), messages.drop(1).map { it.content.first() })
-        assertEquals("m2", messages[2].content.take(2))
-        assertEquals("latest", messages[3].content.take(6))
+        // 73_000 超预算：丢最旧的一对 (m1, m2) 后 13_000，之后的 m3/m4 保持原顺序
+        assertEquals(6, messages.size)
+        assertEquals(listOf('f', 'm', 'm', 'l', '继'), messages.drop(1).map { it.content.first() })
+        assertEquals("m3", messages[2].content.take(2))
+        assertEquals("m4", messages[3].content.take(2))
+        assertEquals("latest", messages[4].content.take(6))
+        assertFalse(messages.any { it.content.startsWith("m1") || it.content.startsWith("m2") })
     }
 
     @Test
@@ -265,11 +273,12 @@ class AiApiMessageBuilderTest {
         val history = listOf(
             message(AiMessageEntity.ROLE_USER, "f".repeat(5_000), id = 1),
             message(AiMessageEntity.ROLE_ASSISTANT, "m".repeat(5_000), id = 2),
-            message(AiMessageEntity.ROLE_USER, "l".repeat(5_000), id = 3)
+            message(AiMessageEntity.ROLE_USER, "n".repeat(5_000), id = 3),
+            message(AiMessageEntity.ROLE_ASSISTANT, "l".repeat(5_000), id = 4)
         )
         val messages = AiApiMessageBuilder.build("", "", history, "继续", contextTokens = 32_000)
 
-        // 历史预算 11_200：15_000 超限，丢中间一条后 10_000 回到预算内
+        // 历史预算 11_200：20_000 超限，成对丢 (m, n) 后 10_000 回到预算内
         assertEquals(4, messages.size)
         assertEquals(listOf("f", "l", "继"), messages.drop(1).map { it.content.first().toString() })
     }
@@ -285,6 +294,35 @@ class AiApiMessageBuilderTest {
         // 57_143 × 7 / 10 = 40_000（整数除法向下取整），正文下限仍取 MAX_NOTE_CHARS
         val mid = AiApiMessageBuilder.build("", content, emptyList(), "总结", contextTokens = 57_143)
         assertEquals(AiApiMessageBuilder.MAX_NOTE_CHARS, mid[1].content.count { it == 'x' })
+    }
+
+    /**
+     * 条目 84：历史裁剪必须成对丢弃（assistant + 其后的 user），
+     * 否则保留列表会出现「凭空出现的回答」或连续两条 user。
+     */
+    @Test
+    fun historyTrimKeepsUserAssistantPairsAligned() {
+        val history = (0 until 30).flatMap { i ->
+            listOf(
+                message(AiMessageEntity.ROLE_USER, "问题" + i + "x".repeat(2_000), id = i * 2L),
+                message(AiMessageEntity.ROLE_ASSISTANT, "回答" + i + "y".repeat(2_000), id = i * 2L + 1)
+            )
+        }
+        val messages = AiApiMessageBuilder.build("标题", "正文", history, "新问题")
+        // 去掉 system 与本次输入，剩下的就是被裁剪后的历史
+        val trimmed = messages.subList(1, messages.size - 1)
+
+        assertTrue("应当真的裁剪过：" + trimmed.size + " vs " + history.size, trimmed.size < history.size)
+        assertEquals(AiChatMessage.ROLE_USER, trimmed.first().role)
+        assertEquals(AiChatMessage.ROLE_ASSISTANT, trimmed.last().role)
+        trimmed.forEachIndexed { index, m ->
+            if (index > 0) {
+                assertTrue(
+                    "角色必须严格交替，index=" + index + " roles=" + trimmed.map { it.role },
+                    m.role != trimmed[index - 1].role
+                )
+            }
+        }
     }
 
     @Test

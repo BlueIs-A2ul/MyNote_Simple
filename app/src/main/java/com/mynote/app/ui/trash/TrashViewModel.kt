@@ -22,9 +22,10 @@ class TrashViewModel(
     private val retentionStore: TrashRetentionStore
 ) : ViewModel() {
 
-    val notes: StateFlow<List<NoteListItem>> =
+    /** 回收站列表；null 表示首帧加载中（条目 92），避免进页面先闪「回收站是空的」。 */
+    val notes: StateFlow<List<NoteListItem>?> =
         repository.observeDeletedNotes()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** 当前保留期（天），随设置即时生效。 */
     val retentionDays: StateFlow<Int> = retentionStore.retentionDays
@@ -40,12 +41,13 @@ class TrashViewModel(
         }
     }
 
-    /** 恢复（条目 76：失败回调 onFailed，不再让 DB 异常直接崩溃）。 */
-    fun restore(item: NoteListItem, onDone: () -> Unit, onFailed: () -> Unit) {
+    /** 恢复（条目 76：失败回调 onFailed；条目 90：回调是否真的恢复了，避免 no-op 也报成功）。 */
+    fun restore(item: NoteListItem, onDone: (Boolean) -> Unit, onFailed: () -> Unit) {
         viewModelScope.launch {
             try {
-                repository.getNote(item.id)?.let { repository.restoreNote(it) }
-                onDone()
+                val note = repository.getNote(item.id)
+                if (note != null) repository.restoreNote(note)
+                onDone(note != null)
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 onFailed()
@@ -53,12 +55,13 @@ class TrashViewModel(
         }
     }
 
-    /** 彻底删除单条（条目 76）。 */
-    fun purge(item: NoteListItem, onDone: () -> Unit, onFailed: () -> Unit) {
+    /** 彻底删除单条（条目 76；条目 90：回调是否真的删掉了）。 */
+    fun purge(item: NoteListItem, onDone: (Boolean) -> Unit, onFailed: () -> Unit) {
         viewModelScope.launch {
             try {
-                repository.getNote(item.id)?.let { repository.purgeNote(it) }
-                onDone()
+                val note = repository.getNote(item.id)
+                if (note != null) repository.purgeNote(note)
+                onDone(note != null)
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 onFailed()
@@ -69,10 +72,12 @@ class TrashViewModel(
     /** 清空回收站（条目 76）：空列表直接返回 0，异常走 onFailed。 */
     fun purgeAll(onDone: (Int) -> Unit, onFailed: () -> Unit) {
         if (_purging.value) return
+        // 条目 90：置位必须在 launch 之前，否则同一帧内的两次点击都能穿过检查
+        _purging.value = true
+        val ids = notes.value.orEmpty().map { it.id }
         viewModelScope.launch {
-            _purging.value = true
             try {
-                val list = repository.getNotesByIds(notes.value.map { it.id })
+                val list = repository.getNotesByIds(ids)
                 repository.purgeNotes(list)
                 onDone(list.size)
             } catch (t: Throwable) {

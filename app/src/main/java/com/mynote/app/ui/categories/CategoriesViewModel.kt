@@ -17,8 +17,9 @@ import kotlinx.coroutines.launch
 
 class CategoriesViewModel(private val repository: NoteRepository) : ViewModel() {
 
-    val categories: StateFlow<List<CategoryEntity>> = repository.observeCategories()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    /** 分类列表；null 表示首帧加载中（条目 92），避免进页面先闪「暂无分类」。 */
+    val categories: StateFlow<List<CategoryEntity>?> = repository.observeCategories()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** 新建分类：使用对话框选定的颜色创建（不再随机取色）。 */
     fun add(name: String, color: Int, onDone: () -> Unit) {

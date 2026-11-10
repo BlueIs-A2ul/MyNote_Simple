@@ -12,6 +12,7 @@ import com.mynote.app.data.db.NoteSortMode
 import com.mynote.app.data.repository.NoteRepository
 import com.mynote.app.data.settings.NoteSortStore
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -24,7 +25,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class NotesViewModel(
     private val repository: NoteRepository,
     private val sortStore: NoteSortStore
@@ -41,8 +42,13 @@ class NotesViewModel(
 
     /** 笔记列表；null 表示首帧加载中（Room 首个真实结果到达前），避免冷启动闪「还没有笔记」空态。 */
     val notes: StateFlow<List<NoteListItem>?> =
-        // 搜索输入防抖 200ms + 去重，避免每敲一个键重启一次 LIKE 全表扫描
-        combine(query.debounce(200).distinctUntilChanged(), selectedFilter, sortMode) { q, filter, sort -> q to Pair(filter, sort) }
+        // 搜索输入防抖 200ms + 去重，避免每敲一个键重启一次 LIKE 全表扫描；
+        // 空查询（含冷启动首帧）不延迟，否则主页会先闪 >=200ms 的「加载中…」
+        combine(
+            query.debounce(::searchDebounceMillis).distinctUntilChanged(),
+            selectedFilter,
+            sortMode
+        ) { q, filter, sort -> q to Pair(filter, sort) }
             .flatMapLatest { (q, filterSort) ->
                 val (filter, sort) = filterSort
                 when {
@@ -153,6 +159,14 @@ class NotesViewModel(
     }
 
     companion object {
+        /**
+         * 条目 92：空查询（冷启动首帧）不延迟，非空输入才防抖 200ms，
+         * 否则主页冷启动必然先闪一次「加载中…」。纯函数便于单测。
+         */
+        internal fun searchDebounceMillis(query: String): Long = if (query.isEmpty()) 0L else SEARCH_DEBOUNCE_MS
+
+        private const val SEARCH_DEBOUNCE_MS = 200L
+
         fun factory(repository: NoteRepository, sortStore: NoteSortStore): ViewModelProvider.Factory = viewModelFactory {
             initializer { NotesViewModel(repository, sortStore) }
         }

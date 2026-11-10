@@ -60,6 +60,7 @@ import com.mynote.app.data.backup.BackupFormatException
 import com.mynote.app.data.backup.BackupManager
 
 import com.mynote.app.data.db.NoteSortMode
+import com.mynote.app.data.settings.TrashRetentionStore
 import com.mynote.app.ui.components.CategoryDot
 import com.mynote.app.ui.components.EmptyState
 import com.mynote.app.ui.components.HairlineDivider
@@ -78,6 +79,7 @@ import kotlinx.coroutines.launch
 fun NotesScreen(
     viewModel: NotesViewModel,
     backupManager: BackupManager,
+    retentionDays: Int,
     restoreMessage: String?,
     onRestoreMessageConsumed: () -> Unit,
     onOpenNote: (Long) -> Unit,
@@ -510,14 +512,14 @@ fun NotesScreen(
         PaperAlertDialog(
             onDismissRequest = { showBatchDeleteDialog = false },
             title = "删除所选笔记？",
-            text = { Text("将把所选 ${selectedIds.size} 条笔记移入回收站，30 天后自动清理，期间可恢复。") },
+            text = { Text(TrashRetentionStore.batchDeleteHint(selectedIds.size, retentionDays)) },
             confirmButton = {
                 TextButton(
                     enabled = selectedIds.isNotEmpty(),
                     onClick = {
                         showBatchDeleteDialog = false
                         viewModel.batchDelete(onDone = { n ->
-                            scope.launch { snackbarHostState.showSnackbar("已删除 $n 条") }
+                            scope.launch { snackbarHostState.showSnackbar("已移入回收站 $n 条") }
                         }, onFailed = { scope.launch { snackbarHostState.showSnackbar(OPERATION_FAILED) } })
                     }
                 ) { Text("删除") }

@@ -39,6 +39,19 @@ object MarkdownInline {
         appendInline(this, text, 0, text.length, codeBackground, linkColor)
     }
 
+    /**
+     * 条目 87：Markdown 链接只放行 http/https。
+     * 回答里出现 file:// / javascript: / intent:// / content:// 时，交给系统 openUri 可能抛
+     * ActivityNotFoundException / FileUriExposedException（进程内崩溃）或跳到任意第三方 App。
+     */
+    fun isSafeLink(url: String): Boolean {
+        val trimmed = url.trim()
+        val schemeEnd = trimmed.indexOf(':')
+        if (schemeEnd <= 0) return false
+        val scheme = trimmed.substring(0, schemeEnd).lowercase()
+        return scheme == "http" || scheme == "https"
+    }
+
     fun plainText(text: String): String {
         val annotated = build(text, Color.Transparent, Color.Unspecified)
         val links = annotated.getLinkAnnotations(0, annotated.length).sortedBy { it.start }

@@ -58,7 +58,7 @@ class TrashViewModelTest {
     fun restoreRemovesNoteFromTrash() = runTest(dispatcher) {
         val id = repo.saveNote(null, "t", "c", null, false, null)
         repo.deleteNote(repo.getNote(id)!!)
-        val inTrash = vm.notes.first { it.isNotEmpty() }
+        val inTrash = vm.notes.first { !it.isNullOrEmpty() }!!
 
         val done = CompletableDeferred<Unit>()
         vm.restore(inTrash.first(), onDone = { done.complete(Unit) }, onFailed = { done.complete(Unit) })
@@ -72,7 +72,7 @@ class TrashViewModelTest {
     fun purgeRemovesNotePermanently() = runTest(dispatcher) {
         val id = repo.saveNote(null, "t", "c", null, false, null)
         repo.deleteNote(repo.getNote(id)!!)
-        val inTrash = vm.notes.first { it.isNotEmpty() }
+        val inTrash = vm.notes.first { !it.isNullOrEmpty() }!!
 
         val done = CompletableDeferred<Unit>()
         vm.purge(inTrash.first(), onDone = { done.complete(Unit) }, onFailed = { done.complete(Unit) })
@@ -87,7 +87,7 @@ class TrashViewModelTest {
         val b = repo.saveNote(null, "b", "c", null, false, null)
         repo.deleteNote(repo.getNote(a)!!)
         repo.deleteNote(repo.getNote(b)!!)
-        vm.notes.first { it.size == 2 }
+        vm.notes.first { it?.size == 2 }
 
         val done = CompletableDeferred<Int>()
         vm.purgeAll(onDone = { done.complete(it) }, onFailed = { done.complete(-1) })
@@ -108,7 +108,7 @@ class TrashViewModelTest {
     fun purgeAllFailureInvokesOnFailed() = runTest(dispatcher) {
         val id = repo.saveNote(null, "t", "c", null, false, null)
         repo.deleteNote(repo.getNote(id)!!)
-        vm.notes.first { it.isNotEmpty() }
+        vm.notes.first { !it.isNullOrEmpty() }
         // 制造确定性的 DB 失败：删掉 notes 表（Robolectric 下 db.close() 之后查询仍能成功，不可靠）
         db.openHelper.writableDatabase.execSQL("DROP TABLE notes")
         assertTrue(runCatching { repo.getNotesByIds(listOf(id)) }.isFailure)
@@ -134,10 +134,35 @@ class TrashViewModelTest {
         // 新 VM 的 init 触发到期清理；等待真实 DB 流收敛到只剩 fresh
         vm.viewModelScope.cancel()
         vm = TrashViewModel(repo, TrashRetentionStore(ApplicationProvider.getApplicationContext()))
-        vm.notes.first { it.size == 1 && it.first().title == "fresh" }
+        vm.notes.first { it != null && it.size == 1 && it.first().title == "fresh" }
 
         assertNull(db.noteDao().getById(expired))
         assertNotNull(db.noteDao().getById(fresh))
+    }
+
+    /** 条目 90：笔记已不存在时，恢复/彻底删除不能报「成功」。 */
+    @Test
+    fun restoreAndPurgeReportFalseWhenNoteIsGone() = runTest(dispatcher) {
+        val id = repo.saveNote(null, "t", "c", null, false, null)
+        repo.deleteNote(repo.getNote(id)!!)
+        val item = vm.notes.first { !it.isNullOrEmpty() }!!.first()
+
+        // 模拟别处已彻底删除
+        db.noteDao().delete(db.noteDao().getById(id)!!)
+
+        val restored = CompletableDeferred<Boolean>()
+        vm.restore(item, onDone = { restored.complete(it) }, onFailed = { restored.complete(false) })
+        assertFalse(restored.await())
+
+        val purged = CompletableDeferred<Boolean>()
+        vm.purge(item, onDone = { purged.complete(it) }, onFailed = { purged.complete(false) })
+        assertFalse(purged.await())
+    }
+
+    /** 条目 92：首帧未到达前 notes 为 null，页面据此显示加载占位。 */
+    @Test
+    fun notesIsNullBeforeFirstEmission() {
+        assertNull(vm.notes.value)
     }
 
     @Test
@@ -154,7 +179,7 @@ class TrashViewModelTest {
         val b = repo.saveNote(null, "b", "c", null, false, null)
         repo.deleteNote(repo.getNote(a)!!)
         repo.deleteNote(repo.getNote(b)!!)
-        vm.notes.first { it.size == 2 }
+        vm.notes.first { it?.size == 2 }
         assertFalse(vm.purging.value)
 
         val done = CompletableDeferred<Int>()

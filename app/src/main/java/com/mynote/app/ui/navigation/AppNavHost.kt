@@ -43,9 +43,11 @@ fun AppNavHost(container: AppContainer) {
             // 历史恢复成功后回传的提示：由历史页写入本条目的 savedStateHandle，此处读取
             val restoreMessage by backStack.savedStateHandle
                 .getStateFlow<String?>(NavResults.RESTORE_MESSAGE, null).collectAsState()
+            val retentionDays by container.trashRetentionStore.retentionDays.collectAsState()
             NotesScreen(
                 viewModel = vm,
                 backupManager = container.backupManager,
+                retentionDays = retentionDays,
                 restoreMessage = restoreMessage,
                 onRestoreMessageConsumed = {
                     backStack.savedStateHandle.remove<String>(NavResults.RESTORE_MESSAGE)
@@ -78,9 +80,11 @@ fun AppNavHost(container: AppContainer) {
                 .getStateFlow<String?>(AiNavKeys.RESULT_TYPE, null).collectAsState()
             val resultText by backStack.savedStateHandle
                 .getStateFlow<String?>(AiNavKeys.RESULT_TEXT, null).collectAsState()
+            val retentionDays by container.trashRetentionStore.retentionDays.collectAsState()
             NoteEditScreen(
                 noteId = id,
                 initialCategoryId = initialCategoryId,
+                retentionDays = retentionDays,
                 repository = container.noteRepository,
                 imageStore = container.imageStore,
                 backupManager = container.backupManager,

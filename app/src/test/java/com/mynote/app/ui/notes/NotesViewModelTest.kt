@@ -13,6 +13,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
@@ -264,6 +265,14 @@ class NotesViewModelTest {
         assertNull(vm.newNoteCategoryId)
         vm.onFilterSelect(CategoryFilter.Single(7L))
         assertEquals(7L, vm.newNoteCategoryId)
+    }
+
+    /** 条目 92：空查询（冷启动首帧）不参与 200ms 防抖，非空输入仍然防抖。 */
+    @Test
+    fun searchDebounceSkipsEmptyQuery() {
+        assertEquals(0L, NotesViewModel.searchDebounceMillis(""))
+        assertEquals(200L, NotesViewModel.searchDebounceMillis("a"))
+        assertEquals(200L, NotesViewModel.searchDebounceMillis("会议"))
     }
 
     @Test

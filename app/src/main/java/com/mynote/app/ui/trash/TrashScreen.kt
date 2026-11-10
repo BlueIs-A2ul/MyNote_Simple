@@ -10,9 +10,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -73,7 +75,7 @@ fun TrashScreen(
                 title = "回收站",
                 onBack = onBack,
                 actions = {
-                    if (notes.isNotEmpty()) {
+                    if (!notes.isNullOrEmpty()) {
                         TextButton(
                             onClick = { showPurgeAllDialog = true },
                             enabled = !purging
@@ -100,7 +102,13 @@ fun TrashScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            if (notes.isEmpty()) {
+            val visible = notes
+            if (visible == null) {
+                // 条目 92：首帧加载中，避免先闪「回收站是空的」
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp)
+                }
+            } else if (visible.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
                         "回收站是空的",
@@ -110,21 +118,25 @@ fun TrashScreen(
                 }
             } else {
                 LazyColumn(Modifier.fillMaxSize()) {
-                    itemsIndexed(notes, key = { _, item -> item.id }) { index, item ->
+                    itemsIndexed(visible, key = { _, item -> item.id }) { index, item ->
                         TrashRow(
                             item = item,
                             enabled = !purging,
                             onPreview = { previewTarget = item },
                             onRestore = {
-                                vm.restore(item, onDone = {
-                                    scope.launch { snackbarHostState.showSnackbar("已恢复") }
+                                vm.restore(item, onDone = { restored ->
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            if (restored) "已恢复" else "笔记已不存在"
+                                        )
+                                    }
                                 }, onFailed = {
                                     scope.launch { snackbarHostState.showSnackbar(OPERATION_FAILED) }
                                 })
                             },
                             onPurge = { purgeTarget = item }
                         )
-                        if (index < notes.lastIndex) HairlineDivider()
+                        if (index < visible.lastIndex) HairlineDivider()
                     }
                 }
             }
@@ -155,13 +167,17 @@ fun TrashScreen(
                 TextButton(
                     onClick = {
                         purgeTarget = null
-                        vm.purge(item, onDone = {
-                            scope.launch { snackbarHostState.showSnackbar("已彻底删除") }
+                        vm.purge(item, onDone = { purged ->
+                            scope.launch {
+                                snackbarHostState.showSnackbar(
+                                    if (purged) "已彻底删除" else "笔记已不存在"
+                                )
+                            }
                         }, onFailed = {
                             scope.launch { snackbarHostState.showSnackbar(OPERATION_FAILED) }
                         })
                     }
-                ) { Text("删除") }
+                ) { Text("彻底删除") }
             },
             dismissButton = {
                 TextButton(onClick = { purgeTarget = null }) { Text("取消") }
@@ -174,8 +190,7 @@ fun TrashScreen(
         val summary = NoteContentParser.plainText(item.summary)
         val imageCount = NoteContentParser.extractImageNames(item.summary).size
         val deletedAt = item.deletedAt ?: 0L
-        val remainingDays = ((deletedAt + com.mynote.app.data.settings.TrashRetentionStore.ttlMs(retentionDays) -
-            System.currentTimeMillis()) / 86_400_000L).coerceAtLeast(0L)
+        val remainingDays = TrashRetentionStore.remainingDays(deletedAt, retentionDays)
         PaperAlertDialog(
             onDismissRequest = { previewTarget = null },
             title = "回收站预览",
@@ -203,7 +218,7 @@ fun TrashScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        if (remainingDays > 0) "还有 $remainingDays 天自动清理" else "即将自动清理",
+                        if (remainingDays <= 1L) "剩余不足 1 天" else "还有 $remainingDays 天自动清理",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -225,7 +240,7 @@ fun TrashScreen(
         PaperAlertDialog(
             onDismissRequest = { showPurgeAllDialog = false },
             title = "清空回收站？",
-            text = { Text("将彻底删除全部 ${notes.size} 条笔记，不可恢复。") },
+            text = { Text("将彻底删除全部 ${notes.orEmpty().size} 条笔记，不可恢复。") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -289,7 +304,7 @@ private fun TrashRow(
         Spacer(Modifier.width(8.dp))
         TextButton(onClick = onRestore, enabled = enabled) { Text("恢复") }
         TextButton(onClick = onPurge, enabled = enabled) {
-            Text("删除", color = MaterialTheme.colorScheme.error)
+            Text("彻底删除", color = MaterialTheme.colorScheme.error)
         }
     }
 }

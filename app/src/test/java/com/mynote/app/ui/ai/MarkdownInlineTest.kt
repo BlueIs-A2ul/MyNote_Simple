@@ -7,6 +7,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -17,6 +18,21 @@ class MarkdownInlineTest {
     private val linkColor = Color(0xFF0000FF)
 
     private fun build(text: String) = MarkdownInline.build(text, codeBackground, linkColor)
+
+    /** 条目 87：只有 http/https 允许交给系统打开。 */
+    @Test
+    fun onlyHttpLinksAreSafe() {
+        assertTrue(MarkdownInline.isSafeLink("https://example.com/a?b=1"))
+        assertTrue(MarkdownInline.isSafeLink("HTTP://example.com"))
+        assertTrue(MarkdownInline.isSafeLink("  https://example.com  "))
+
+        assertFalse(MarkdownInline.isSafeLink("javascript:alert(1)"))
+        assertFalse(MarkdownInline.isSafeLink("file:///data/local/tmp/x.png"))
+        assertFalse(MarkdownInline.isSafeLink("intent://scan/#Intent;scheme=zxing;end"))
+        assertFalse(MarkdownInline.isSafeLink("content://com.mynote.app.note/1"))
+        assertFalse(MarkdownInline.isSafeLink("/relative/path"))
+        assertFalse(MarkdownInline.isSafeLink(""))
+    }
 
     @Test
     fun plainTextIsUnchanged() {

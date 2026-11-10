@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.outlined.Label
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -60,7 +61,9 @@ import kotlinx.coroutines.launch
 @Composable
 fun CategoriesScreen(repository: NoteRepository, onBack: () -> Unit) {
     val vm: CategoriesViewModel = viewModel(factory = CategoriesViewModel.factory(repository))
-    val categories by vm.categories.collectAsState()
+    val categoriesState by vm.categories.collectAsState()
+    // 条目 92：null = 首帧加载中，避免进页面先闪「暂无分类」
+    val categories = categoriesState.orEmpty()
     val snackbarHostState = remember { SnackbarHostState() }
 
     var showAddDialog by remember { mutableStateOf(false) }
@@ -78,7 +81,11 @@ fun CategoriesScreen(repository: NoteRepository, onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        if (categories.isEmpty()) {
+        if (categoriesState == null) {
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp)
+            }
+        } else if (categories.isEmpty()) {
             EmptyState(
                 icon = Icons.Outlined.Label,
                 text = "暂无分类",

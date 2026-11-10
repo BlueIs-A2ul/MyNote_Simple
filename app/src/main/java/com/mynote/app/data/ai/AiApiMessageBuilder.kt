@@ -98,15 +98,33 @@ object AiApiMessageBuilder {
         var total = history.sumOf { it.content.length }
         if (total <= maxHistoryChars) return history
         var firstMiddle = 1
+        // 条目 84：必须成对丢弃（assistant + 其后的 user）。逐条丢会让保留列表出现
+        // 「凭空出现的回答」（提问被丢掉）或连续两条 user，模型容易答错对象。
         while (total > maxHistoryChars && firstMiddle <= history.size - 2) {
-            total -= history[firstMiddle].content.length
-            firstMiddle++
+            // 中间只剩 1 条时允许单独丢弃（丢掉的是 assistant，不会留下无提问的回答）
+            val take = if (history.size - 2 - firstMiddle + 1 >= 2) 2 else 1
+            for (offset in 0 until take) total -= history[firstMiddle + offset].content.length
+            firstMiddle += take
         }
         if (firstMiddle == 1) return history
         val kept = ArrayList<AiChatMessage>(history.size - firstMiddle + 1)
         kept += history.first()
-        kept.addAll(history.subList(firstMiddle, history.size - 1))
-        kept += history.last()
+        val candidate = ArrayList<AiChatMessage>(history.size - firstMiddle + 1)
+        candidate.addAll(history.subList(firstMiddle, history.size - 1))
+        candidate += history.last()
+        // 兜底：历史本身不严格交替时（如异常落库），退化为「首条 + 最新一条」而不是发出错乱序列
+        if (!alternates(candidate)) {
+            kept += history.last()
+            return kept
+        }
+        kept += candidate
         return kept
+    }
+
+    private fun alternates(messages: List<AiChatMessage>): Boolean {
+        for (index in 1 until messages.size) {
+            if (messages[index].role == messages[index - 1].role) return false
+        }
+        return true
     }
 }

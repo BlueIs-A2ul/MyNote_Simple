@@ -23,6 +23,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -31,11 +33,45 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-/** 助手回答的 Markdown 渲染：按块解析后逐块输出，样式跟随 MaterialTheme。 */
+/**
+ * 助手回答的 Markdown 渲染：按块解析后逐块输出，样式跟随 MaterialTheme。
+ *
+ * [onBlockedLink] 在链接被安全策略拦下（或系统打开失败）时回调，由调用方给用户提示。
+ */
 @Composable
-fun MarkdownContent(content: String, modifier: Modifier = Modifier) {
-    val blocks = remember(content) { MarkdownParser.parse(content) }
-    MarkdownBlocks(blocks, modifier)
+fun MarkdownContent(
+    content: String,
+    modifier: Modifier = Modifier,
+    onBlockedLink: (String) -> Unit = {}
+) {
+    // 条目 87：把 UriHandler 换成白名单包装，子级所有 Text 的链接点击都会经过它
+    val uriHandler = LocalUriHandler.current
+    val safeHandler = remember(uriHandler, onBlockedLink) {
+        SafeUriHandler(uriHandler, onBlockedLink)
+    }
+    CompositionLocalProvider(LocalUriHandler provides safeHandler) {
+        val blocks = remember(content) { MarkdownParser.parse(content) }
+        MarkdownBlocks(blocks, modifier)
+    }
+}
+
+/** 只让 http/https 落到系统 ACTION_VIEW，其余 scheme 直接回绝（避免崩溃或跳转到任意 App）。 */
+private class SafeUriHandler(
+    private val delegate: UriHandler,
+    private val onBlocked: (String) -> Unit
+) : UriHandler {
+    override fun openUri(uri: String) {
+        if (!MarkdownInline.isSafeLink(uri)) {
+            onBlocked(uri)
+            return
+        }
+        try {
+            delegate.openUri(uri)
+        } catch (_: Exception) {
+            // 无浏览器 / 系统拒绝时不要崩在 UI 线程
+            onBlocked(uri)
+        }
+    }
 }
 
 @Composable

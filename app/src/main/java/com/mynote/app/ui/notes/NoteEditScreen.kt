@@ -86,6 +86,7 @@ import com.mynote.app.data.export.ImageExportManager
 import com.mynote.app.data.export.NoteImageRenderer
 import com.mynote.app.data.image.ImageStore
 import com.mynote.app.data.repository.NoteRepository
+import com.mynote.app.data.settings.TrashRetentionStore
 import com.mynote.app.ui.components.CategoryDot
 import com.mynote.app.ui.components.HairlineDivider
 import com.mynote.app.ui.components.PaperAlertDialog
@@ -291,6 +292,7 @@ internal fun hasUnsavedChanges(
 fun NoteEditScreen(
     noteId: Long?,
     initialCategoryId: Long?,
+    retentionDays: Int,
     repository: NoteRepository,
     imageStore: ImageStore,
     backupManager: BackupManager,
@@ -825,7 +827,7 @@ fun NoteEditScreen(
         PaperAlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title = "删除笔记？",
-            text = { Text("删除后将移入回收站，30 天后自动清理，期间可随时恢复。") },
+            text = { Text(TrashRetentionStore.deleteHint(retentionDays)) },
             confirmButton = {
                 TextButton(onClick = { vm.delete(onBack) }) { Text("删除") }
             },
