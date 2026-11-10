@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -48,6 +49,7 @@ import com.mynote.app.ui.components.HairlineDivider
 import com.mynote.app.ui.components.PaperAlertDialog
 import com.mynote.app.ui.components.PaperTopBar
 import com.mynote.app.ui.components.TextTabRow
+import com.mynote.app.ui.notes.NoteContentParser
 import com.mynote.app.util.TimeFormat
 
 private val RemovedBg = Color(0x33EF5350)
@@ -161,6 +163,23 @@ fun NoteHistoryScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(top = 4.dp)
                                 )
+                                // 条目 47：时间线给一行正文摘要，不必点进去才知道改了什么内容
+                                val summary = remember(item.revision.id, item.revision.content) {
+                                    NoteContentParser.plainText(item.revision.content)
+                                        .replace('\n', ' ')
+                                        .trim()
+                                        .take(40)
+                                }
+                                if (summary.isNotEmpty()) {
+                                    Text(
+                                        summary,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(top = 2.dp)
+                                    )
+                                }
                             }
                             if (index < state.revisions.lastIndex) HairlineDivider()
                         }
@@ -203,6 +222,15 @@ fun NoteHistoryScreen(
     }
 }
 
+/** 条目 47：历史全文展示用——图片标记替换为占位符（历史快照只存文本）。 */
+internal fun historyDisplayText(content: String): String =
+    NoteContentParser.parse(content).joinToString("") { block ->
+        when (block) {
+            is NoteContentParser.ContentBlock.Text -> block.text
+            is NoteContentParser.ContentBlock.Image -> "[图片]"
+        }
+    }
+
 @Composable
 private fun DetailContent(
     state: NoteHistoryViewModel.UiState,
@@ -228,14 +256,18 @@ private fun DetailContent(
                     tabs = listOf(false, true),
                     selected = detail.showFullText,
                     onSelect = { fullText -> if (fullText != detail.showFullText) vm.toggleFullText() },
-                    label = { if (it) "全文" else "对比" }
+                    // 条目 47：名称更准确——对比的是「上一版」
+                    label = { if (it) "全文" else "与上一版对比" }
                 )
             }
         }
         HairlineDivider()
         if (detail.showFullText || detail.isFirst) {
             // 条目 93：长文按行惰性布局，避免一次性测量整篇（与 diff 视图口径一致）
-            val lines = remember(detail.revision.content) { detail.revision.content.lines() }
+            // 条目 47：图片标记渲染成占位符，避免全文里出现 ![](img/uuid)
+            val lines = remember(detail.revision.content) {
+                historyDisplayText(detail.revision.content).lines()
+            }
             LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp, vertical = 8.dp)) {
                 items(lines) { line ->
                     Text(

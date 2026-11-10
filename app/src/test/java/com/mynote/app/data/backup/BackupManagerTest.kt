@@ -220,6 +220,19 @@ class BackupManagerTest {
         assertEquals("正文", String(out.toByteArray(), Charsets.UTF_8))
     }
 
+    /** 条目 98：txt 导出剥掉图片标记并说明图片未包含（与分享口径一致）。 */
+    @Test
+    fun exportTxtStripsImageMarkupAndNotesImages() = runTest {
+        val out = ByteArrayOutputStream()
+        val body = "前文 ![](img/a.webp) 后文"
+
+        assertTrue(managerWith(output = out).exportNoteAsTxt(exportUri, "标题", body))
+
+        val text = String(out.toByteArray(), Charsets.UTF_8)
+        assertFalse("不应保留图片标记", text.contains("![]("))
+        assertTrue("应说明图片未包含，实际=" + text, text.contains("含 1 张图片"))
+    }
+
     @Test
     fun importReportsInsertedUpdatedSkippedAndTrashed() = runTest {
         // 本地已有两条：id=201 比备份旧（应被覆盖），id=202 比备份新（应跳过）

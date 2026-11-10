@@ -71,7 +71,12 @@ class NoteExportViewModel(
      * 全清渲染到分享缓存：逐页写盘并立即回收位图（峰值内存 ≈ 一页），
      * [onReady] 收到按页序排列的缓存文件。失败时 [onError] 给出可展示提示。
      */
-    fun renderToCache(onReady: (List<File>) -> Unit, onError: (String) -> Unit) {
+    fun renderToCache(
+        onReady: (List<File>) -> Unit,
+        onError: (String) -> Unit,
+        onWarning: (String) -> Unit = {}
+    ) {
+        val skippedImages = mutableSetOf<String>()
         if (!_exporting.compareAndSet(false, true)) return
         val exportMode = mode
         viewModelScope.launch {
@@ -81,6 +86,7 @@ class NoteExportViewModel(
                 val base = exportManager.baseName(note.title)
                 val files = mutableListOf<File>()
                 renderer.renderPages(note, exportMode, NoteImageRenderer.EXPORT_SCALE, measurer) { page, total ->
+                    skippedImages += page.skippedImages
                     val file = exportManager.cacheFile(base, page.index, total)
                     try {
                         withContext(Dispatchers.IO) { exportManager.writePageFile(file, page) }
@@ -105,6 +111,10 @@ class NoteExportViewModel(
                 _exporting.value = false
             }
             ready?.let { files ->
+                if (skippedImages.isNotEmpty()) {
+                    // 条目 98：统计与渲染同口径——绘制期失败的图片也要告诉用户
+                    onWarning("导出完成，但有 " + skippedImages.size + " 张图片无法读取，已跳过")
+                }
                 runCatching { onReady(files) }
                     .onFailure { Log.w(TAG, "导出完成回调异常", it) }
             }

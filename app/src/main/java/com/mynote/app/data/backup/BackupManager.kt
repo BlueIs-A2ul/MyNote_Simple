@@ -340,17 +340,27 @@ class BackupManager(
         imageStore.pendingDir().listFiles()?.forEach { it.deleteRecursively() }
     }
 
-    /** 单条笔记导出为 txt（标记原样保留）：标题非空时写「标题 + 空行 + 正文」，否则仅正文。 */
+    /**
+     * 单条笔记导出为 txt：条目 98 起剥掉图片标记并追加一句说明（与系统分享同口径），
+     * 避免用户拿到一堆 ![](img/uuid) 却不知道图片没被导出。
+     */
     suspend fun exportNoteAsTxt(uri: Uri, title: String, content: String): Boolean =
         withContext(Dispatchers.IO) {
             try {
                 val output = openOutput(uri) ?: return@withContext false
+                val imageCount = NoteContentParser.extractImageNames(content).size
+                val text = NoteContentParser.plainText(content)
                 output.use { out ->
                     if (title.isNotBlank()) {
                         out.write(title.toByteArray(Charsets.UTF_8))
                         out.write("\n\n".toByteArray(Charsets.UTF_8))
                     }
-                    out.write(content.toByteArray(Charsets.UTF_8))
+                    out.write(text.toByteArray(Charsets.UTF_8))
+                    if (imageCount > 0) {
+                        out.write(
+                            ("\n\n（含 " + imageCount + " 张图片，未包含在文本中）").toByteArray(Charsets.UTF_8)
+                        )
+                    }
                 }
                 true
             } catch (e: Exception) {

@@ -343,6 +343,8 @@ class NoteImageRenderer(private val imageStore: ImageStore) {
         val heightPx = ceil(height).toInt()
         val bitmap = Bitmap.createBitmap(render.width, heightPx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap.asImageBitmap())
+        // 条目 98：绘制阶段解码失败要记账，不能只是静默跳过（预览统计只看文件头，会漏）
+        val skipped = LinkedHashSet<String>()
         CanvasDrawScope().draw(
             Density(scale, 1f),
             LayoutDirection.Ltr,
@@ -363,8 +365,14 @@ class NoteImageRenderer(private val imageStore: ImageStore) {
 
                     is PlacedItem.ImagePiece -> {
                         val block = item.block
-                        if (block.width < 1f || block.height < 1f) return@forEach
-                        val decoded = decodeImage(block.file, block.width.roundToInt()) ?: return@forEach
+                        if (block.width < 1f || block.height < 1f) {
+                            skipped += block.file.name
+                            return@forEach
+                        }
+                        val decoded = decodeImage(block.file, block.width.roundToInt()) ?: run {
+                            skipped += block.file.name
+                            return@forEach
+                        }
                         val x = if (block.centered) {
                             render.padding + (render.contentWidth - block.width) / 2f
                         } else {
@@ -391,7 +399,7 @@ class NoteImageRenderer(private val imageStore: ImageStore) {
                 }
             }
         }
-        return RenderedPage(bitmap, index)
+        return RenderedPage(bitmap, index, skipped)
     }
 
     private fun contentSpace(firstContent: Boolean, scale: Float): Float =

@@ -159,7 +159,8 @@ fun NoteExportDialog(
                     chooseTree.launch(null)
                 }
             },
-            onError = { showMessage(it) }
+            onError = { showMessage(it) },
+            onWarning = { showMessage(it) }
         )
     }
 
@@ -178,7 +179,8 @@ fun NoteExportDialog(
                         .onFailure { showMessage(it.message ?: "分享失败") }
                 }
             },
-            onError = { showMessage(it) }
+            onError = { showMessage(it) },
+            onWarning = { showMessage(it) }
         )
     }
 
