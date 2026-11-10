@@ -30,6 +30,10 @@ object NoteContentParser {
 
     fun makeImageMarkup(name: String): String = "![](img/$name)"
 
+    /** 条目 97：按文件名移除图片标记（预览态长按删除图片用）。 */
+    fun removeImageMarkup(content: String, name: String): String =
+        content.replace(makeImageMarkup(name), "")
+
     /** 剥离图片标记得到纯文本（列表预览等场景用，修订记录第 7 条）。 */
     fun plainText(content: String): String = IMAGE_REGEX.replace(content, "")
 }

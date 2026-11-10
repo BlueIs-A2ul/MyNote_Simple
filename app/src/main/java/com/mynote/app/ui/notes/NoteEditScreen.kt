@@ -6,7 +6,9 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -337,7 +339,7 @@ internal fun hasUnsavedChanges(
         categoryId != saved.categoryId || pinned != saved.pinned || noteDate != saved.noteDate
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun NoteEditScreen(
     noteId: Long?,
@@ -391,6 +393,8 @@ fun NoteEditScreen(
     var discarded by remember { mutableStateOf(false) }
     // 条目 88：AI 结果落地时的提示（在 snackbar 宿主声明之前就要能写入）
     var pendingSnackbar by remember { mutableStateOf<String?>(null) }
+    // 条目 97：预览态长按待删的图片名
+    var pendingDeleteImage by remember { mutableStateOf<String?>(null) }
     // 导出在途标志与结果都在 VM 里（条目 78）
     val exportState by vm.exportState.collectAsStateWithLifecycle()
     val exporting = exportState.exporting
@@ -503,6 +507,8 @@ fun NoteEditScreen(
 
     // 条目 100：字数只在正文变化时重算，避免每次重组都跑一遍正则
     val wordCount by remember { derivedStateOf { NoteContentParser.plainText(content.text).length } }
+    // 条目 97：图片数量随时可见，删图后立即变化
+    val imageCount by remember { derivedStateOf { NoteContentParser.extractImageNames(content.text).size } }
 
     val context = LocalContext.current
 
@@ -671,7 +677,7 @@ fun NoteEditScreen(
                 )
                 // 字数与列表摘要同口径：图片标记不计入
                 Text(
-                    "字数 ${wordCount}",
+                    "字数 ${wordCount} · 图 ${imageCount}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 8.dp)
@@ -699,8 +705,12 @@ fun NoteEditScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(MaterialTheme.shapes.large)
-                                        // 点开全屏预览（NoteImagePreviewDialog 接线，用原图）
-                                        .clickable { previewFile = imageStore.physicalFile(block.name) },
+                                        // 点开全屏预览（NoteImagePreviewDialog 接线，用原图）；
+                                        // 条目 97：长按可删除这张图片，不必手工抠标记
+                                        .combinedClickable(
+                                            onClick = { previewFile = imageStore.physicalFile(block.name) },
+                                            onLongClick = { pendingDeleteImage = block.name }
+                                        ),
                                     contentScale = ContentScale.FillWidth
                                 )
                             }
@@ -915,6 +925,28 @@ fun NoteEditScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showUnsavedDialog = false }) { Text("取消") }
+            }
+        )
+    }
+
+    // 条目 97：删除图片 = 移除正文里的标记（保存时既有 GC 会回收文件）
+    pendingDeleteImage?.let { imageName ->
+        PaperAlertDialog(
+            onDismissRequest = { pendingDeleteImage = null },
+            title = "删除这张图片？",
+            text = { Text("将从正文中移除这张图片；保存后图片文件也会被回收。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingDeleteImage = null
+                    undoController.record(content, force = true)
+                    content = TextFieldValue(
+                        NoteContentParser.removeImageMarkup(content.text, imageName),
+                        content.selection
+                    )
+                }) { Text("删除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteImage = null }) { Text("取消") }
             }
         )
     }

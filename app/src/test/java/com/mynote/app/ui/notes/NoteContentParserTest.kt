@@ -5,6 +5,25 @@ import org.junit.Test
 
 class NoteContentParserTest {
 
+    /** 条目 97：按名字移除标记时只删那一张，其余内容原样保留。 */
+    @Test
+    fun removeImageMarkupDropsOnlyTargetImage() {
+        val content = "a ![](img/x.webp) b ![](img/y.webp)"
+
+        assertEquals("a  b ![](img/y.webp)", NoteContentParser.removeImageMarkup(content, "x.webp"))
+        assertEquals(content, NoteContentParser.removeImageMarkup(content, "missing.webp"))
+    }
+
+    /** 条目 97：半截标记（缺右括号）按普通文本处理，不能被当成图片吞掉。 */
+    @Test
+    fun halfWrittenMarkupIsPlainText() {
+        val content = "残缺 ![](img/x.webp 与 ![](img/"
+
+        assertEquals(listOf(NoteContentParser.ContentBlock.Text(content)), NoteContentParser.parse(content))
+        assertEquals(content, NoteContentParser.plainText(content))
+        assertEquals(0, NoteContentParser.extractImageNames(content).size)
+    }
+
     @Test
     fun pureTextYieldsSingleTextBlock() {
         val blocks = NoteContentParser.parse("hello world")

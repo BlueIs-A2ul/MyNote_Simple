@@ -37,6 +37,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -177,7 +179,14 @@ private fun DayCell(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Box(modifier = modifier.height(44.dp), contentAlignment = Alignment.Center) {
+    // 条目 99：圆点不能只有视觉，读屏要能听到「几号、有没有笔记」
+    val dayLabel = day?.let {
+        CalendarDates.dayOfMonth(it).toString() + " 号" + if (hasNotes) "，有笔记" else ""
+    } ?: "无日期"
+    Box(
+        modifier = modifier.height(44.dp).semantics { contentDescription = dayLabel },
+        contentAlignment = Alignment.Center
+    ) {
         if (day == null) return@Box
         Box(
             modifier = Modifier

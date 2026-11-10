@@ -44,6 +44,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mynote.app.data.db.CategoryEntity
@@ -239,11 +241,13 @@ private fun CategoryRow(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // 色点可点击：循环切到色板下一个颜色（独立于整行点击进入编辑）
+                // 条目 99：视觉 24dp、触达区 48dp，并给读屏一句描述
                 Box(
                     modifier = Modifier
-                        .size(24.dp)
+                        .size(48.dp)
                         .clip(CircleShape)
-                        .clickable { onCycleColor() },
+                        .clickable { onCycleColor() }
+                        .semantics { contentDescription = "切换「" + cat.name + "」的分类颜色" },
                     contentAlignment = Alignment.Center
                 ) {
                     CategoryDot(PaperPalette.nearest(cat.color))
