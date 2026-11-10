@@ -95,10 +95,10 @@
 | 94 | 编辑页加载态与保存失败反馈 | P1 | S/M | 已完成（2026-11-10） | 批次I |
 | 95 | 「不保存」抑制标志 + 保存期间只读输入 | P1 | S | 已完成（2026-11-10） | 批次I |
 | 96 | 旋转保留对话框与待写文件状态 | P2 | M | 已完成（2026-11-10） | 批次I |
-| 97 | 图片编辑体验（标记可视化 / 删图入口 / 孤儿图） | P2 | M | 部分完成（2026-11-10：删图入口/计数/解析测试；编辑态可视化与孤儿图清理待做） | 批次I |
+| 97 | 图片编辑体验（标记可视化 / 删图入口 / 孤儿图） | P2 | M | 已完成（2026-11-10） | 批次I |
 | 98 | 导出缺图统计与渲染同口径 + txt 图片说明 | P1 | S/M | 已完成（2026-11-10） | 批次I |
 | 99 | 无障碍一批（输入框标签 / 日历圆点 / 多选语义 / 触点） | P2 | M | 已完成（2026-11-10） | 批次J |
-| 100 | 撤销栈封顶 + 字数统计缓存 + 平台加固合集 | P2 | S/M | 部分完成（2026-11-10：①②③⑤⑥；④ Keystore 主线程、⑦ Bundle 体积待做） | 批次J |
+| 100 | 撤销栈封顶 + 字数统计缓存 + 平台加固合集 | P2 | S/M | 已完成（2026-11-10） | 批次J |
 | 101 | 启动图标改自适应图标（「记」字标 + Indigo→Teal 渐变 + 单色层） | P1 | S | 已完成（2026-10-29，v1.11.0） | — |
 | 102 | AI 助手自定义 system 提示词（内置默认 + 可完全覆盖） | P1 | S/M | 已完成（2026-10-30，v1.12.0） | — |
 
@@ -577,7 +577,8 @@
 - 影响：输入「工作安排」后旋转 → 对话框与已输入内容一起消失；导出选好目录后旋转 → 对话框与 `pendingFiles` 都没了，**既不写文件也不报错**。
 - 建议：承载用户意图的开关与输入改 `rememberSaveable`；`pendingFiles/writing` 提到 `NoteExportDialog` 已有的 `DialogViewModelStoreOwner`（`:63-65`）里，或在重建时检测待写文件并重渲染。价值：中 × M
 
-### 97. 图片编辑体验（标记可视化 / 删图入口 / 孤儿图） ◐
+### 97. 图片编辑体验（标记可视化 / 删图入口 / 孤儿图） ✅
+- **落地（2026-11-10）**：预览态长按删图；标题行常显「图 N」计数；撤销/放弃编辑时清理本次插入且正文不再引用的图片（`NoteEditViewModel.cleanupUnusedInsertedImages` / `orphanImages`，保存后清空集合，历史快照引用交给 `saveNote` 的 GC）；半截标记按普通文本处理的解析用例。
 - **落地（2026-11-10，部分）**：预览态长按图片可「删除这张图片」（`NoteContentParser.removeImageMarkup`，走既有 GC）；标题行常显「图 N」计数；补「半截标记按普通文本处理」解析用例。**编辑态标记可视化、撤销/离开时清理已插入但未保存的图片** 未做。
 - 现状：编辑态正文就是纯 `BasicTextField`，图片以 `![](img/<uuid>.webp)` 原文显示（`:582-605`），删图必须手工精确删掉整段标记（删漏一个括号正则就不再匹配）；插图后撤销、或插图后未保存直接返回，文件都留在 `notes_images/`（GC 只在 `saveNote` 判定移除标记时触发，`updateDraft` 明确不 GC）。
 - 建议：预览模式长按图片 → 「删除这张图片」（等价于移除标记，保存走既有 GC）；底部给「共 N 张图片」计数；会话内记录本次插入的文件名，撤销/离开时清理已不再被正文引用的那些；补一条「半截标记按普通文本处理」的解析测试。价值：中 × M
@@ -596,7 +597,8 @@
 - 现状：编辑页两个输入框都没有 `semantics`/标签（占位文字画在 `decorationBox` 里，TalkBack 读作两个无名编辑框，`NoteEditScreen.kt:518-542,582-605`）；预览里的图片共用 `contentDescription = "图片"`（`:570`），全屏预览只能点图片本身关闭（`NoteImagePreviewDialog.kt:26-44`）；日历的 4dp 圆点无语义、格子固定 44dp/36dp（`CalendarScreen.kt:180-217`）；多选只靠底色表达（`NotesScreen.kt:442` + `NoteRow.kt:70-84`，无 `semantics { selected }`、无 Role）；分类页色点 24dp 且无描述（`CategoriesScreen.kt:228-236`）。
 - 建议：输入框加 `semantics { contentDescription = "标题"/"正文" }`；预览图补可读的关闭按钮；日历格子按 `DateMark.count` 给「9月10日，3 篇笔记」；多选行加 `selected` 语义；色点点击区补到 48dp 并加描述。价值：中 × M
 
-### 100. 撤销栈封顶 + 字数统计缓存 + 平台加固合集 ◐
+### 100. 撤销栈封顶 + 字数统计缓存 + 平台加固合集 ✅
+- **落地（2026-11-10）**：① 撤销栈 200k 字符预算；② 字数 `derivedStateOf`；③ 全量 `collectAsStateWithLifecycle`；④ `AiSettingsStore` 按服务商缓存解密结果 + `MyNoteApp` 在 IO 线程预热，主线程不再反复走 Keystore；⑤ 首帧 edge-to-edge；⑥ 解码补 OOM/取消；⑦ 编辑态正文移出 Bundle（`EditorTextCache`，Bundle 只存 noteId，进程被杀时由草稿回填）。
 - **落地（2026-11-10，部分）**：① 撤销栈增加 200k 字符预算（超预算从最旧开始丢）；② 字数统计改 `derivedStateOf`，只在正文变化时重算；③ 全部 `collectAsState()` → `collectAsStateWithLifecycle()`（11 个文件 57 处）；⑤ `enableEdgeToEdge` 提前到 `onCreate`，首帧不再缺 inset；⑥ 图片解码补 `OutOfMemoryError` 与 `CancellationException` 处理。**④ KeyStore 读写移出主线程、⑦ 长正文 Bundle 体积** 需真机验证与较大的状态重构，留待后续。
 - 现状：① `NoteUndoController` 只按**条数**限流（`maxEntries = 100`，存整份 `TextFieldValue`），长笔记常驻约 100 份全文副本（`NoteUndoController.kt:14,36-38`）；② 字数统计每次重组都对全文跑正则（`NoteEditScreen.kt:545` → `NoteContentParser.kt:34`）；③ `collectAsState`（约 30 处，如 `NotesScreen.kt:89-95`、`MainActivity.kt:23`）而非 `collectAsStateWithLifecycle`（依赖已在）；④ Keystore 往返在主线程（`AiChatViewModel.kt:61-70` 构造期读 Key、`SettingsViewModel.kt:60,106-118` 按钮回调直调）；⑤ `enableEdgeToEdge` 放在 `LaunchedEffect(darkTheme)` 里（`MainActivity.kt:40-50`）→ 首帧无 edge-to-edge，可能跳一下；⑥ 图片解码 `catch (e: Exception)` 兜不住 `OutOfMemoryError`，且顺带吞掉 `CancellationException`（`ImageStore.kt:50`）；⑦ 超长正文经 `rememberSaveable` 进 Bundle（`NoteEditScreen.kt:293-295`），AI 入口又把正文与选区写进导航 `SavedStateHandle`（`AppNavHost.kt:94-99,111-113`）→ 超长笔记有 `TransactionTooLargeException`/状态被丢弃的风险（**需真机确认**）。
 - 建议：撤销栈加「保留字符数」上限（或改存 delta）；字数统计用 `derivedStateOf` 缓存；`collectAsStateWithLifecycle`；Key 读写移入 `withContext(Dispatchers.IO)` + 用 `StateFlow` 暴露「已配置」；`enableEdgeToEdge` 移出 `LaunchedEffect`；`catch` 补 `OutOfMemoryError`/重抛 `CancellationException`；长正文只把 `noteId/draftId` 放进 Bundle、正文靠 DB 草稿回读。价值：中 × S/M
@@ -665,6 +667,7 @@
 | 2026-11-10 | **穷尽批次（一）**：条目 84（历史裁剪成对保留）、87（Markdown 链接白名单，防 `intent://`/`file://` 崩溃）、90（保留期文案与回收站口径统一）、92（首帧加载态 + 空查询不防抖）落地。全量单测 667 → 674 全绿，`assembleDebug` 通过。 |
 | 2026-11-10 | **穷尽批次（二/三）**：条目 79/46（GC 投影 + 备份导出流式化）、80（导入与 GC 六项边界加固）、94/95/96（编辑页加载态、保存失败反馈、不保存抑制、保存期只读、旋转状态）。全量 674 → 678 全绿。 |
 | 2026-11-10 | **穷尽批次（十）**：条目 97 主体（预览长按删图、图片计数、半截标记用例）与 99 全量（输入框标签、多选语义、日历播报、预览关闭按钮、色点 48dp）。全量 692 单测全绿。 |
+| 2026-11-10 | **穷尽批次（十一）· 收官**：条目 97 余项（撤销/放弃时清理孤儿图）、100 余项（Keystore 解密缓存 + 启动预热、正文移出 Bundle）。全量 697 单测全绿，backlog 可执行条目全部完成。 |
 | 2026-11-10 | **穷尽批次（九）**：条目 100 大部分（撤销栈字符预算、字数统计缓存、lifecycle-aware 收集、首帧 edge-to-edge、解码 OOM/取消）与 99 核心（输入框标签、多选语义）。 |
 | 2026-11-10 | **穷尽批次（八）**：条目 83 余项（finish_reason 透传 + 专用文案）、89 余项（deepHit 深命中线索）、50（深链）、48（删除可撤销 + 恢复可查看）。 |
 | 2026-11-10 | **穷尽批次（七）**：条目 47（历史摘要/对比命名/图片占位）、98（导出绘制期缺图记账 + txt 剥离图片标记）。 |

@@ -56,6 +56,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -111,6 +112,9 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
+
+/** 条目 100⑦：尚未入库的新笔记在 [EditorTextCache] 里的键。 */
+private const val NEW_NOTE_CACHE_KEY = -1L
 
 class NoteEditViewModel(
     private val repository: NoteRepository,
@@ -175,10 +179,14 @@ class NoteEditViewModel(
         }
     }
 
+    // 条目 97：本次编辑会话里插入的图片名（用于撤销/放弃时清理孤儿文件）
+    private val insertedImages = mutableSetOf<String>()
+
     fun insertImage(uri: Uri, onInserted: (markup: String) -> Unit, onFailed: () -> Unit) {
         viewModelScope.launch {
             val target = imageStore.newImageFile("webp")
             if (imageStore.importAndCompress(uri, target)) {
+                insertedImages += target.name
                 onInserted(NoteContentParser.makeImageMarkup(target.name))
             } else {
                 onFailed()
@@ -229,6 +237,8 @@ class NoteEditViewModel(
                 } else {
                     null
                 }
+                // 保存后这些图片已经进入历史快照引用集，后续清理交给 saveNote 的 GC
+                insertedImages.clear()
                 onDone(warning)
             } catch (t: Throwable) {
                 if (t is kotlinx.coroutines.CancellationException) throw t
@@ -273,6 +283,20 @@ class NoteEditViewModel(
         }
     }
 
+    /**
+     * 条目 97：删除「本次会话插入、但当前正文已不再引用」的图片文件。
+     * 只处理本次会话插入的（历史快照引用由 saveNote 的 GC 负责），调用方在撤销/放弃时调用。
+     */
+    fun cleanupUnusedInsertedImages(currentContent: String) {
+        if (insertedImages.isEmpty()) return
+        val orphans = orphanImages(insertedImages, currentContent)
+        if (orphans.isEmpty()) return
+        insertedImages -= orphans
+        viewModelScope.launch {
+            orphans.forEach { imageStore.physicalFile(it).delete() }
+        }
+    }
+
     /** 条目 48：当前笔记 id（未保存的新笔记返回 null）。 */
     fun currentNoteId(): Long? = _note.value?.id ?: draftId.value
 
@@ -291,6 +315,10 @@ class NoteEditViewModel(
     }
 
     companion object {
+        /** 条目 97：本次插入、但正文已不再引用的图片名（纯函数，便于单测）。 */
+        internal fun orphanImages(inserted: Set<String>, currentContent: String): Set<String> =
+            inserted - NoteContentParser.extractImageNames(currentContent).toSet()
+
         /** 条目 94：目标笔记已被别处删除时的保存失败文案。 */
         const val SAVE_TARGET_GONE = "笔记已不存在，无法保存"
 
@@ -370,7 +398,18 @@ fun NoteEditScreen(
     val draftId by vm.draftId.collectAsStateWithLifecycle()
 
     var title by rememberSaveable(noteId) { mutableStateOf("") }
-    var content by rememberSaveable(noteId, stateSaver = TextFieldValue.Saver) {
+    // 条目 100⑦：Bundle 只存键（noteId），正文放进程内缓存，超长正文不再进 saved instance state
+    val contentSaver = remember(noteId) {
+        Saver<TextFieldValue, Long>(
+            save = { value ->
+                val key = noteId ?: NEW_NOTE_CACHE_KEY
+                EditorTextCache.put(key, value)
+                key
+            },
+            restore = { key -> EditorTextCache.get(key) ?: TextFieldValue("") }
+        )
+    }
+    var content by rememberSaveable(noteId, stateSaver = contentSaver) {
         mutableStateOf(TextFieldValue(""))
     }
     var previewMode by rememberSaveable { mutableStateOf(false) }
@@ -415,7 +454,9 @@ fun NoteEditScreen(
 
     LaunchedEffect(note) {
         val n = note ?: return@LaunchedEffect
-        if (!initialized) {
+        // 条目 100⑦：进程被杀后缓存为空，正文由草稿回填；旋转/配置变更走缓存，不触发这里
+        val needsRefill = !initialized || (content.text.isEmpty() && n.content.isNotEmpty())
+        if (needsRefill) {
             initialized = true
             if (title.isEmpty() && content.text.isEmpty()) {
                 title = n.title
@@ -755,7 +796,13 @@ fun NoteEditScreen(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
-                        onClick = { undoController.undo(content)?.let { content = it } },
+                        onClick = {
+                            undoController.undo(content)?.let {
+                                content = it
+                                // 条目 97：撤销掉插图后，刚落盘的文件不该留在磁盘上
+                                vm.cleanupUnusedInsertedImages(it.text)
+                            }
+                        },
                         enabled = undoController.canUndo
                     ) {
                         Icon(
@@ -765,7 +812,12 @@ fun NoteEditScreen(
                         )
                     }
                     IconButton(
-                        onClick = { undoController.redo(content)?.let { content = it } },
+                        onClick = {
+                            undoController.redo(content)?.let {
+                                content = it
+                                vm.cleanupUnusedInsertedImages(it.text)
+                            }
+                        },
                         enabled = undoController.canRedo
                     ) {
                         Icon(
@@ -913,8 +965,13 @@ fun NoteEditScreen(
             text = { Text("当前内容尚未保存，要保存后再退出吗？") },
             confirmButton = {
                 Row {
-                    // 条目 95：先置抑制标志再退出，否则 ON_STOP 仍会静默把内容写进库
-                    TextButton(onClick = { discarded = true; onBack() }) { Text("不保存") }
+                    // 条目 95：先置抑制标志再退出，否则 ON_STOP 仍会静默把内容写进库；
+                    // 条目 97：放弃编辑时清理本次插入且未被正文引用的图片文件
+                    TextButton(onClick = {
+                        discarded = true
+                        vm.cleanupUnusedInsertedImages("")
+                        onBack()
+                    }) { Text("不保存") }
                     TextButton(
                         onClick = { showUnsavedDialog = false; saveAndExit() },
                         enabled = !isSaving && canSave

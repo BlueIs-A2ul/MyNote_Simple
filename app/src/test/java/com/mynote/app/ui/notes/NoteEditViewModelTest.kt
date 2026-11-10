@@ -167,6 +167,16 @@ class NoteEditViewModelTest {
         assertEquals("t", db.noteDao().getAll().single().title)
     }
 
+    /** 条目 97：只有「本次插入且正文不再引用」的图片才算孤儿。 */
+    @Test
+    fun orphanImagesOnlyCoversUnreferencedInsertions() {
+        val inserted = setOf("a.webp", "b.webp", "c.webp")
+        val content = "前文 ![](img/a.webp) 后文"
+
+        assertEquals(setOf("b.webp", "c.webp"), NoteEditViewModel.orphanImages(inserted, content))
+        assertEquals(emptySet<String>(), NoteEditViewModel.orphanImages(inserted, "![](img/a.webp)![](img/b.webp)![](img/c.webp)"))
+    }
+
     /** 条目 94：目标笔记已被别处彻底删除时，保存必须回调错误，而不是「什么都没写就退回列表」。 */
     @Test
     fun saveMissingTargetReportsError() = runTest(dispatcher) {

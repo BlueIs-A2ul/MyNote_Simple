@@ -38,6 +38,29 @@ class AiSettingsStoreTest {
         store = AiSettingsStore(context, FakeCipher())
     }
 
+    /** 条目 100：解密结果缓存后，重复读取不再走 cipher（Keystore 往返）。 */
+    @Test
+    fun apiKeyIsDecryptedOncePerProvider() {
+        val counting = object : ApiKeyCipher {
+            var decrypts = 0
+            override fun encrypt(plain: String): String = "enc:$plain"
+            override fun decrypt(stored: String): String? {
+                decrypts++
+                return stored.removePrefix("enc:")
+            }
+        }
+        val cached = AiSettingsStore(context, counting)
+        cached.setApiKey("sk-1")
+
+        assertEquals("sk-1", cached.apiKey())
+        assertEquals("sk-1", cached.apiKey())
+        assertEquals("重复读取不应再解密", 0, counting.decrypts)
+
+        // 清空后缓存必须失效
+        cached.setApiKey("")
+        assertNull(cached.apiKey())
+    }
+
     @Test
     fun apiKeyRoundTripsAndTrims() {
         assertFalse(store.hasApiKey())
