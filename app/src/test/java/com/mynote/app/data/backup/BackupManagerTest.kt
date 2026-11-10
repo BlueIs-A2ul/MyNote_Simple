@@ -80,6 +80,41 @@ class BackupManagerTest {
         return bos.toByteArray()
     }
 
+    /** 条目 80：备份里 MAX_VALUE 的时间戳必须被钳制，否则该笔记永远置顶且此后导入更新不动。 */
+    @Test
+    fun importClampsAbsurdTimestamps() = runTest {
+        val zip = buildZip(
+            "notes.json" to backupJson(
+                listOf(
+                    BackupManager.BackupNote(
+                        id = 1, title = "未来", content = "c",
+                        createdAt = Long.MAX_VALUE, updatedAt = Long.MAX_VALUE,
+                        categoryId = null, pinned = false, color = null
+                    )
+                )
+            )
+        )
+        managerWith(input = zip).importZip(backupUri)
+
+        val note = db.noteDao().getById(1)!!
+        assertTrue("更新者不应是 MAX_VALUE", note.updatedAt <= System.currentTimeMillis() + 86_400_000L)
+        assertTrue("更新者不应被压到 0", note.updatedAt > 0L)
+    }
+
+    /** 条目 80：img/.. 这类纯点条目名能通过字符白名单，必须单独拒绝（否则会写成目录名）。 */
+    @Test
+    fun importRejectsDotOnlyImageEntry() = runTest {
+        val zip = buildZip(
+            "notes.json" to backupJson(emptyList()),
+            "img/.." to ByteArray(1)
+        )
+        val failure = runCatching { managerWith(input = zip).importZip(backupUri) }
+        assertTrue(
+            "应判定为无效备份，实际=" + failure.exceptionOrNull(),
+            failure.exceptionOrNull() is BackupFormatException
+        )
+    }
+
     @Test
     fun backupDataJsonRoundTrips() {
         val data = BackupManager.BackupData(

@@ -167,6 +167,23 @@ class NoteEditViewModelTest {
         assertEquals("t", db.noteDao().getAll().single().title)
     }
 
+    /** 条目 94：目标笔记已被别处彻底删除时，保存必须回调错误，而不是「什么都没写就退回列表」。 */
+    @Test
+    fun saveMissingTargetReportsError() = runTest(dispatcher) {
+        val handle = SavedStateHandle()
+        val missingVm = NoteEditViewModel(repo, ImageStore(ApplicationProvider.getApplicationContext()), 999L, handle)
+        val error = CompletableDeferred<String>()
+        var saved = false
+        missingVm.save("t", "c", null, false, null, null, onError = { error.complete(it) }) {
+            saved = true
+        }
+
+        assertEquals(NoteEditViewModel.SAVE_TARGET_GONE, error.await())
+        assertFalse("不应回调成功", saved)
+        assertEquals(0, db.noteDao().getAll().size)
+        missingVm.viewModelScope.cancel()
+    }
+
     @Test
     fun saveDraftNewNonBlankInsertsAndExposesDraftId() = runTest(dispatcher) {
         vm.saveDraft("标题", "正文", null, false, null, null)

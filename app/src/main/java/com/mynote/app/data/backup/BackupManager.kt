@@ -50,6 +50,19 @@ class BackupManager(
 
         /** 暂存目录内保存「被备份同名覆盖的旧图」的子目录（条目 74，回滚时还原）。 */
         private const val STAGING_BACKUP_DIR = "backup"
+
+        /** 条目 80：notes.json 上限，避免恶意/损坏备份把整包 JSON 读进内存。 */
+        private const val MAX_NOTES_JSON_BYTES = 64L * 1024 * 1024
+
+        /** 条目 46/79：导出分页大小。 */
+        private const val BACKUP_PAGE_SIZE = 100
+
+        /** 条目 80：导入时时间戳的合理上界（当前时间 + 1 天），防止 MAX_VALUE 永远置顶。 */
+        private const val MAX_FUTURE_MS = 24L * 60 * 60 * 1000
+
+        /** 条目 80：条目名除了白名单，还要拒绝纯点名（单个点或双点）——正则会放行它们。 */
+        internal fun isValidImageName(name: String): Boolean =
+            IMAGE_NAME_REGEX.matches(name) && name.any { it != '.' }
     }
 
     @Serializable
@@ -103,31 +116,47 @@ class BackupManager(
     /** 导出全量备份为 zip（notes.json + img/），返回笔记数；回收站中的笔记不导出。 */
     suspend fun exportZip(uri: Uri): Int = withContext(Dispatchers.IO) {
         val db = requireNotNull(database) { "导出需要数据库实例" }
-        val notes = db.noteDao().getAll().filter { it.deletedAt == null }.map { it.toBackup() }
-        val categories = db.categoryDao().getAll().map { it.toBackup() }
-        val data = BackupData(notes, categories)
-        val jsonText = encode(data)
-
         // 条目 17：拿不到输出流说明所选文件不可写，必须抛错而非「假成功」
         val output = openOutput(uri) ?: error("无法写入所选文件")
+        val referenced = mutableSetOf<String>()
+        var count = 0
         output.use { out ->
             ZipOutputStream(out).use { zip ->
                 zip.putNextEntry(ZipEntry("notes.json"))
-                zip.write(jsonText.toByteArray(Charsets.UTF_8))
+                // 条目 46/79：分页读取、逐条写 JSON，避免把全库正文拼成一个大字符串再转 ByteArray
+                zip.write("{\"notes\":[".toByteArray(Charsets.UTF_8))
+                var offset = 0
+                var first = true
+                while (true) {
+                    val page = db.noteDao().getBackupPage(BACKUP_PAGE_SIZE, offset)
+                    if (page.isEmpty()) break
+                    for (entity in page) {
+                        val note = entity.toBackup()
+                        if (!first) zip.write(",".toByteArray(Charsets.UTF_8))
+                        first = false
+                        zip.write(json.encodeToString(note).toByteArray(Charsets.UTF_8))
+                        referenced += NoteContentParser.extractImageNames(note.content)
+                        count++
+                    }
+                    offset += page.size
+                }
+                zip.write("],\"categories\":".toByteArray(Charsets.UTF_8))
+                val categories = db.categoryDao().getAll().map { it.toBackup() }
+                zip.write(json.encodeToString(categories).toByteArray(Charsets.UTF_8))
+                zip.write("}".toByteArray(Charsets.UTF_8))
                 zip.closeEntry()
 
-                val refs = notes.flatMap { NoteContentParser.extractImageNames(it.content) }.toSet()
-                refs.forEach { name ->
+                referenced.forEach { name ->
                     val file = imageStore.physicalFile(name)
                     if (file.exists()) {
-                        zip.putNextEntry(ZipEntry("img/$name"))
+                        zip.putNextEntry(ZipEntry("img/" + name))
                         file.inputStream().use { it.copyTo(zip) }
                         zip.closeEntry()
                     }
                 }
             }
         }
-        notes.size
+        count
     }
 
     /**
@@ -156,11 +185,12 @@ class BackupManager(
                         when {
                             entry.isDirectory -> Unit
                             entry.name == "notes.json" ->
-                                jsonText = zip.readBytes().toString(Charsets.UTF_8)
+                                // 条目 80：带上限读取，避免损坏/恶意备份把整包 JSON 读进内存
+                                jsonText = readBounded(zip)
                             entry.name.startsWith("img/") -> {
                                 val name = entry.name.removePrefix("img/")
                                 // 先校验再落盘：非法条目不得触碰文件系统
-                                if (!IMAGE_NAME_REGEX.matches(name)) throw BackupFormatException(FORMAT_ERROR)
+                                if (!isValidImageName(name)) throw BackupFormatException(FORMAT_ERROR)
                                 // 条目 74：先落暂存目录，写库成功后才提升，避免失败/取消留下孤儿或截断同名旧图
                                 imageStore.writePending(name, zip)
                             }
@@ -213,7 +243,13 @@ class BackupManager(
                     }
                 }
                 val knownDbCategoryIds = categoryDao.getAll().map { it.id }.toSet()
-                data.notes.forEach { note ->
+                val maxTimestamp = System.currentTimeMillis() + MAX_FUTURE_MS
+                data.notes.forEach { raw ->
+                    // 条目 80：钳制时间戳，避免 MAX_VALUE 的笔记永远置顶且此后「导入更新不动」
+                    val note = raw.copy(
+                        createdAt = raw.createdAt.coerceIn(0L, maxTimestamp),
+                        updatedAt = raw.updatedAt.coerceIn(0L, maxTimestamp)
+                    )
                     // 备份分类 id 经重映射；映射不到且库中也不存在的野 id 置 null
                     val categoryId = note.categoryId?.let { cid ->
                         idRemap[cid] ?: cid.takeIf { it in knownDbCategoryIds }
@@ -240,6 +276,21 @@ class BackupManager(
             throw t
         }
         return BackupImportResult(inserted, updated, skipped, trashed)
+    }
+
+    /** 条目 80：带上限读取流，超限即判定为无效备份（而不是 OOM）。 */
+    private fun readBounded(input: InputStream): String {
+        val buffer = java.io.ByteArrayOutputStream()
+        val chunk = ByteArray(8 * 1024)
+        var total = 0L
+        while (true) {
+            val read = input.read(chunk)
+            if (read < 0) break
+            total += read
+            if (total > MAX_NOTES_JSON_BYTES) throw BackupFormatException(FORMAT_ERROR)
+            buffer.write(chunk, 0, read)
+        }
+        return buffer.toString(Charsets.UTF_8.name())
     }
 
     /** 提升记录：备份图片覆盖了同名旧图时，旧图先挪进暂存备份区，便于回滚还原。 */

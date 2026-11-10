@@ -42,9 +42,9 @@ class ImageStoreTest {
         assertFalse(dropThumb.exists())
     }
 
+    /** 条目 80：旧备份正文可能仍引用 thumb_* 文件，只要还有引用就不能删（否则永久裂图）。 */
     @Test
-    fun collectGarbageDeletesLegacyThumbOfReferencedImage() {
-        // 缩略图机制已移除：即使原图仍被引用，遗留的 thumb_* 文件也应一并清理
+    fun collectGarbageKeepsThumbnailStillReferenced() {
         val dir = store.dir()
         dir.mkdirs()
         val keep = File(dir, "keep.jpg")
@@ -52,10 +52,28 @@ class ImageStoreTest {
         keep.writeText("x")
         keepThumb.writeText("x")
 
+        store.collectGarbage(
+            setOf("keep.jpg", "thumb_keep.jpg"),
+            now = keep.lastModified() + ImageStore.GC_GRACE_MS + 1
+        )
+
+        assertTrue(keep.exists())
+        assertTrue(keepThumb.exists())
+    }
+
+    @Test
+    fun collectGarbageDeletesLegacyThumbWhenUnreferenced() {
+        val dir = store.dir()
+        dir.mkdirs()
+        val keep = File(dir, "keep.jpg")
+        val orphanThumb = File(dir, "thumb_keep.jpg")
+        keep.writeText("x")
+        orphanThumb.writeText("x")
+
         store.collectGarbage(setOf("keep.jpg"), now = keep.lastModified() + ImageStore.GC_GRACE_MS + 1)
 
         assertTrue(keep.exists())
-        assertFalse(keepThumb.exists())
+        assertFalse(orphanThumb.exists())
     }
 
     @Test

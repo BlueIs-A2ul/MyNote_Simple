@@ -93,8 +93,9 @@ class ImageStore(private val context: Context) {
             val name = file.name
             // 刚落盘但引用尚未提交（插图/导入中途）→ 宽限期内不回收
             if (now - file.lastModified() < GC_GRACE_MS) return@forEach
-            // thumb_* 一律删除：仅清理历史遗留，不再生成
-            if (name.startsWith("thumb_") || name !in referenced) {
+            // 条目 80：thumb_* 只清理「无引用」的历史遗留。
+            // 旧备份的正文里可能仍引用 thumb_ 文件，无条件删除会让这些笔记永久裂图。
+            if (name !in referenced) {
                 file.delete()
             }
         }

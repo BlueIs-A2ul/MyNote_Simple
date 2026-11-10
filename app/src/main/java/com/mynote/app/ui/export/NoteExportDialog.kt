@@ -37,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -92,7 +93,10 @@ fun NoteExportDialog(
     val exporting by vm.exporting.collectAsState()
     val scope = rememberCoroutineScope()
     val snackbarHost = remember { SnackbarHostState() }
-    var pendingFiles by remember { mutableStateOf<List<File>?>(null) }
+    // 条目 96：待写文件改存路径并进 saved state——否则旋转后 SAF 回调回来时 files 为空，
+    // 既不写文件也不报错（用户以为已保存）
+    var pendingPaths by rememberSaveable { mutableStateOf<ArrayList<String>?>(null) }
+    val pendingFiles: List<File>? = remember(pendingPaths) { pendingPaths?.map { File(it) } }
     var writing by remember { mutableStateOf(false) }
 
     fun showMessage(message: String) {
@@ -123,7 +127,7 @@ fun NoteExportDialog(
                 }
             }
         }
-        pendingFiles = null
+        pendingPaths = null
     }
 
     val chooseTree = rememberLauncherForActivityResult(
@@ -142,13 +146,13 @@ fun NoteExportDialog(
                 }
             }
         }
-        pendingFiles = null
+        pendingPaths = null
     }
 
     fun save() {
         vm.renderToCache(
             onReady = { files ->
-                pendingFiles = files
+                pendingPaths = ArrayList(files.map { it.absolutePath })
                 if (files.size == 1) {
                     createDocument.launch(vm.suggestedFileName())
                 } else {

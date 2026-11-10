@@ -174,6 +174,8 @@ class NoteEditViewModel(
         pinned: Boolean,
         color: Int?,
         noteDate: Long?,
+        // 条目 94：失败回调放在末尾参数之前，保持既有「尾随 lambda = onDone」的调用方式不变
+        onError: (String) -> Unit = {},
         onDone: (String?) -> Unit
     ) {
         // 只有「正式保存」在途时才拦截连点；退后台草稿写入在途不拦截——否则 onDone 永不回调，
@@ -185,6 +187,11 @@ class NoteEditViewModel(
                 // 先等草稿落库：新笔记的 draftId 由草稿写入设置，抢跑会重复插入一条
                 pendingDraft?.join()
                 val targetId = noteId?.takeIf { it != 0L } ?: _draftId.value
+                // 条目 94：目标行已不存在（别处彻底删除/到期清理）时不能假装保存成功
+                if (targetId != null && repository.getNote(targetId) == null) {
+                    onError(SAVE_TARGET_GONE)
+                    return@launch
+                }
                 val before = if (targetId != null) repository.countRevisions(targetId) else 0
                 val id = repository.saveNote(targetId, title, content, categoryId, pinned, color, noteDate)
                 val warning = if (targetId != null &&
@@ -196,6 +203,10 @@ class NoteEditViewModel(
                     null
                 }
                 onDone(warning)
+            } catch (t: Throwable) {
+                if (t is kotlinx.coroutines.CancellationException) throw t
+                // 条目 94：DB 失败要给「保存失败」而不是崩在 viewModelScope
+                onError(SAVE_FAILED)
             } finally {
                 saveJob = null
             }
@@ -250,6 +261,12 @@ class NoteEditViewModel(
     }
 
     companion object {
+        /** 条目 94：目标笔记已被别处删除时的保存失败文案。 */
+        const val SAVE_TARGET_GONE = "笔记已不存在，无法保存"
+
+        /** 条目 94：写库失败文案。 */
+        const val SAVE_FAILED = "保存失败，请重试"
+
         const val HISTORY_WARNING =
             "该笔记历史已 ${NoteRevisionDao.WARN_AT} 条，满 ${NoteRevisionDao.MAX_PER_NOTE} 条后最旧记录会自动清理"
 
@@ -323,17 +340,19 @@ fun NoteEditScreen(
     var selectedCategoryId by rememberSaveable(noteId) { mutableStateOf(initialCategoryId) }
     // 归属日期（本地零点毫秒），null = 未标记
     var noteDate by rememberSaveable(noteId) { mutableStateOf<Long?>(null) }
-    var menuOpen by remember { mutableStateOf(false) }
-    var showCategorySheet by remember { mutableStateOf(false) }
-    var showDatePicker by remember { mutableStateOf(false) }
-    var showAddCategoryDialog by remember { mutableStateOf(false) }
-    var showDeleteDialog by remember { mutableStateOf(false) }
-    var showExportDialog by remember { mutableStateOf(false) }
-    var showImageExport by remember { mutableStateOf(false) }
-    var showUnsavedDialog by remember { mutableStateOf(false) }
+    var menuOpen by rememberSaveable { mutableStateOf(false) }
+    var showCategorySheet by rememberSaveable { mutableStateOf(false) }
+    var showDatePicker by rememberSaveable { mutableStateOf(false) }
+    var showAddCategoryDialog by rememberSaveable { mutableStateOf(false) }
+    var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
+    var showExportDialog by rememberSaveable { mutableStateOf(false) }
+    var showImageExport by rememberSaveable { mutableStateOf(false) }
+    var showUnsavedDialog by rememberSaveable { mutableStateOf(false) }
     // 全屏图片预览：记录被点开的图片文件，非空即渲染 NoteImagePreviewDialog
     var previewFile by remember { mutableStateOf<File?>(null) }
     var isSaving by remember { mutableStateOf(false) }
+    // 条目 95：用户明确选「不保存」后，ON_STOP 的草稿兜底必须被抑制，否则仍会静默入库
+    var discarded by remember { mutableStateOf(false) }
     // 导出在途标志：禁用导出入口，防止重复提交
     var exporting by remember { mutableStateOf(false) }
     // 是否已从已保存笔记回填过字段：只回填一次，清空内容后旋转/重建不再被旧内容覆盖
@@ -432,12 +451,14 @@ fun NoteEditScreen(
     val context = LocalContext.current
 
     val isNewNote = (noteId == null || noteId == 0L) && draftId == null
+    // 条目 94：存量笔记在回填完成前不能当空文本保存，否则会用空正文覆盖旧内容
+    val loaded = isNewNote || note != null
     val dirty = hasUnsavedChanges(isNewNote, note, title, content.text, selectedCategoryId, pinned, noteDate)
-    val canSave = !(isNewNote && title.isBlank() && content.text.isBlank())
+    val canSave = loaded && !(isNewNote && title.isBlank() && content.text.isBlank())
 
     // 退后台静默保存草稿：标题/正文非空的新笔记会入库，空白新笔记不落库
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
-        if (dirty && !isSaving) {
+        if (dirty && !isSaving && !discarded) {
             vm.saveDraft(title, content.text, selectedCategoryId, pinned, note?.color, noteDate)
         }
     }
@@ -449,17 +470,25 @@ fun NoteEditScreen(
     val saveAndExit: () -> Unit = {
         if (!isSaving) {
             isSaving = true
-            vm.save(title, content.text, selectedCategoryId, pinned, note?.color, noteDate) { warning ->
-                isSaving = false
-                if (warning != null) {
-                    scope.launch {
-                        snackbarHostState.showSnackbar(warning)
+            vm.save(
+                title, content.text, selectedCategoryId, pinned, note?.color, noteDate,
+                onDone = { warning ->
+                    isSaving = false
+                    if (warning != null) {
+                        scope.launch {
+                            snackbarHostState.showSnackbar(warning)
+                            onBack()
+                        }
+                    } else {
                         onBack()
                     }
-                } else {
-                    onBack()
+                },
+                onError = { message ->
+                    // 条目 94：保存失败要留在编辑页并说明原因，不能静默退出
+                    isSaving = false
+                    scope.launch { snackbarHostState.showSnackbar(message) }
                 }
-            }
+            )
         }
     }
 
@@ -487,7 +516,10 @@ fun NoteEditScreen(
                         )
                     }
                     TextButton(onClick = saveAndExit, enabled = !isSaving && canSave) {
-                        Text("保存", style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            if (isSaving) "保存中…" else "保存",
+                            style = MaterialTheme.typography.labelLarge
+                        )
                     }
                     PaperOverflowMenu(
                         expanded = menuOpen,
@@ -550,6 +582,8 @@ fun NoteEditScreen(
                 BasicTextField(
                     value = title,
                     onValueChange = { title = it },
+                    // 条目 95：保存期间只读，避免「点保存后补敲的字」不属于本次保存
+                    readOnly = isSaving || !loaded,
                     modifier = Modifier
                         .weight(1f)
                         .focusRequester(titleFocusRequester),
@@ -569,7 +603,7 @@ fun NoteEditScreen(
                     decorationBox = { innerTextField ->
                         if (title.isEmpty()) {
                             Text(
-                                "标题",
+                                if (loaded) "标题" else "加载中…",
                                 style = MaterialTheme.typography.titleLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -623,6 +657,8 @@ fun NoteEditScreen(
                         undoController.record(content)
                         content = it
                     },
+                    // 条目 94/95：未回填完成或保存中都不接受输入
+                    readOnly = isSaving || !loaded,
                     modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp, vertical = 4.dp)
                         .focusRequester(contentFocusRequester),
                     textStyle = MaterialTheme.typography.bodyLarge.copy(
@@ -772,7 +808,7 @@ fun NoteEditScreen(
     }
 
     if (showAddCategoryDialog) {
-        var name by remember { mutableStateOf("") }
+        var name by rememberSaveable { mutableStateOf("") }
         PaperAlertDialog(
             onDismissRequest = { showAddCategoryDialog = false },
             title = "新建分类",
@@ -808,7 +844,8 @@ fun NoteEditScreen(
             text = { Text("当前内容尚未保存，要保存后再退出吗？") },
             confirmButton = {
                 Row {
-                    TextButton(onClick = onBack) { Text("不保存") }
+                    // 条目 95：先置抑制标志再退出，否则 ON_STOP 仍会静默把内容写进库
+                    TextButton(onClick = { discarded = true; onBack() }) { Text("不保存") }
                     TextButton(
                         onClick = { showUnsavedDialog = false; saveAndExit() },
                         enabled = !isSaving && canSave

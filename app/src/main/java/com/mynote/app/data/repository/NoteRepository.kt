@@ -242,17 +242,21 @@ class NoteRepository(
         categoryDao.update(category.copy(color = color))
     }
 
+    /** 条目 80：清空归属与删除分类必须同一事务，否则中途失败会留下悬空 categoryId。 */
     suspend fun deleteCategory(category: CategoryEntity) {
-        noteDao.clearCategory(category.id)
-        categoryDao.delete(category)
+        database.withTransaction {
+            noteDao.clearCategory(category.id)
+            categoryDao.delete(category)
+        }
     }
 
     private fun NoteEntity.toRevision(savedAt: Long): NoteRevisionEntity =
         NoteRevisionEntity(0, id, title, content, categoryId, pinned, color, savedAt)
 
     private suspend fun collectImageGarbage() = withContext(Dispatchers.IO) {
-        val referenced = noteDao.getAll()
-            .flatMap { NoteContentParser.extractImageNames(it.content) }
+        // 条目 79：只读含图片标记的正文，不再把全库正文载入内存
+        val referenced = noteDao.getContentsWithImageMarkup()
+            .flatMap { NoteContentParser.extractImageNames(it) }
             .toMutableSet()
         referenced += revisionDao.getContentsWithImageMarkup()
             .flatMap { NoteContentParser.extractImageNames(it) }
