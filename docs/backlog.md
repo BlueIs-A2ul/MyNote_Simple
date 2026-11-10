@@ -82,15 +82,15 @@
 | 81 | AI 服务商身份与聊天页保持一致 | P1 | M | 已建议（2026-09-15，待实现） | 批次G |
 | 82 | 看门狗超时与重发必须真正停流 | P1 | S | 已完成（2026-11-08） | 批次G |
 | 83 | 空回答按失败处理 + finish_reason + 重试入口 | P1 | S | 部分完成（2026-11-08：空回答按失败 + 横幅；finish_reason 透传未做） | 批次G |
-| 84 | 历史裁剪保持 user/assistant 配对 | P1 | S | 已建议（2026-09-15，待实现） | 批次G |
+| 84 | 历史裁剪保持 user/assistant 配对 | P1 | S | 已完成（2026-11-10） | 批次G |
 | 85 | 流式 Markdown 渲染节流（避免 O(n²)） | P1 | M | 已建议（2026-09-15，待实现） | 批次G |
 | 86 | 自定义地址明文 http 策略与错误文案 | P1 | S | 已建议（2026-09-15，待实现） | 批次G |
-| 87 | Markdown 链接 scheme 白名单 | P1 | S | 已建议（2026-09-15，待实现） | 批次G |
+| 87 | Markdown 链接 scheme 白名单 | P1 | S | 已完成（2026-11-10） | 批次G |
 | 88 | AI 体验小坑合集 | P2 | S/M | 已建议（2026-09-15，待实现） | 批次G |
 | 89 | 搜索 LIKE 转义 + 高亮词 trim + 深命中线索 | P1 | S | 部分完成（2026-11-08：LIKE 转义 + 高亮 trim；深命中线索未做） | 批次H |
-| 90 | 保留期文案与回收站口径统一 | P1 | S | 已建议（2026-09-15，待实现） | 批次H |
+| 90 | 保留期文案与回收站口径统一 | P1 | S | 已完成（2026-11-10） | 批次H |
 | 91 | 多选随搜索/数据收敛（不删看不见的笔记） | P1 | S | 已完成（2026-11-08） | 批次H |
-| 92 | 首帧加载态统一 + debounce 首帧不延迟 | P2 | S | 已建议（2026-09-15，待实现） | 批次H |
+| 92 | 首帧加载态统一 + debounce 首帧不延迟 | P2 | S | 已完成（2026-11-10） | 批次H |
 | 93 | 历史页与导航层级修正 | P2 | S/M | 已建议（2026-09-15，待实现） | 批次H |
 | 94 | 编辑页加载态与保存失败反馈 | P1 | S/M | 已建议（2026-09-15，待实现） | 批次I |
 | 95 | 「不保存」抑制标志 + 保存期间只读输入 | P1 | S | 已建议（2026-09-15，待实现） | 批次I |
@@ -494,7 +494,8 @@
 - 影响：服务商/网关忽略 `stream:true` 返回整段普通 JSON 时，有效回答被静默丢弃，界面显示「（没有内容）」；因 `status==done`，重试按钮不出现，用户只能重打字。设计文档要求的 `content_filter / insufficient_system_resource / aborted` 无内容按失败落库也未实现。
 - 建议：`Done` 且文本空白 → 走 Failed 分支（不落库 + 横幅「回答为空，请重试」）；`AiSession` 透传/使用 `finishReason`；补 `Done("")` 用例。价值：中 × S
 
-### 84. 历史裁剪保持 user/assistant 配对
+### 84. 历史裁剪保持 user/assistant 配对 ✅
+- **落地（2026-11-10）**：`trimHistory` 改为成对丢弃（mid 起点恒为奇数索引，保证交替），异常历史退化为「首条 + 最新一条」；预算相关的 3 个既有用例同步改为交替形态的 history。用例 `historyTrimKeepsUserAssistantPairsAligned`。
 - 现状：`AiApiMessageBuilder.trimHistory`（`:49-64`）用 `kept = [0] + subList(firstMiddle, size-1) + [last]`，`firstMiddle` 逐条 +1、不区分角色。
 - 影响：长会话超 60k 字符后，保留列表可能出现「凭空出现的回答」（其对应提问已被丢弃）或连续两条 user；模型容易回答被丢弃的那个问题。
 - 建议：按 user+assistant 成对丢弃（`firstMiddle` 每次 +2 或对齐到 user 边界），并补「保留列表 role 交替」断言。价值：中 × S
@@ -509,7 +510,8 @@
 - 影响：局域网自建（Ollama / LM Studio 等 `http://192.168.x.x:11434/v1`）永远只会得到「网络错误，请检查网络后重试」，用户没有任何线索；空地址同理（聊天页不校验地址非空）。
 - 建议：二选一 —— UI 只接受 https 并给出明确文案，或加作用域受限的明文放行配置；同时把 `UnknownServiceException` 映射成专有提示，并在聊天页前置校验地址非空。需真机确认（Robolectric 不复现明文策略）。价值：中 × S
 
-### 87. Markdown 链接 scheme 白名单
+### 87. Markdown 链接 scheme 白名单 ✅
+- **落地（2026-11-10）**：`MarkdownInline.isSafeLink` 只放行 http/https；`MarkdownContent` 用私有 `SafeUriHandler` 包住 `LocalUriHandler`（子级所有 Text 链接生效），非白名单 scheme 与系统打开异常都走回调而不是崩溃。用例 `onlyHttpLinksAreSafe`。
 - 现状：`MarkdownInline.kt:101-120` 用 `LinkAnnotation.Url(...)` 且不传 `linkInteractionListener`，点击交给 Compose 默认 `LocalUriHandler.openUri`（`Intent.ACTION_VIEW`，无 try/catch、无 scheme 过滤）。
 - 影响：回答里出现 `file://`、`javascript:`、`intent://` 或未知 scheme 时，用户一点可能抛 `ActivityNotFoundException`/`FileUriExposedException`（进程内崩溃）或直接跳到任意第三方 App。
 - 建议：传 `linkInteractionListener`，只放行 http/https，其余给 snackbar 提示；scheme 过滤抽成纯函数便于单测。价值：中 × S
@@ -526,7 +528,8 @@
 - 影响：搜 `_` / `%` 会命中几乎全部笔记（而高亮一处都找不到 → 「全命中却零高亮」），字面 `%` 永远搜不准；输入「会议 」（尾随空格，中文输入法常见）能搜到但不高亮；命中在正文 400 字之后时该行完全没有命中线索。
 - 建议：`LIKE ... ESCAPE '\'` + 绑定前转义 `\ % _`；高亮用 `query.trim()`；深命中改由 DAO 回传「命中位置超出投影」标记，行内给一句小字说明。价值：中 × S
 
-### 90. 保留期文案与回收站口径统一
+### 90. 保留期文案与回收站口径统一 ✅
+- **落地（2026-11-10）**：`TrashRetentionStore.deleteHint/batchDeleteHint/remainingDays` 三个纯函数统一口径，删除确认框改为参数化保留期；回收站恢复/彻底删除按「笔记是否真的存在」提示；`purging` 移到 launch 前置位；剩余天数上取整、≤1 天显示「剩余不足 1 天」；行内按钮改「彻底删除」、批量提示改「已移入回收站 N 条」。
 - 现状：两处破坏性确认框把保留期写死成「30 天」（`NoteEditScreen.kt:793` 单条删除、`NotesScreen.kt:511` 批量删除），而设置页与回收站用的是可配置的 `TrashRetentionStore`（`TrashScreen.kt:97,172`）；回收站恢复/彻底删除即使什么都没做也会提示「已恢复/已彻底删除」（`TrashViewModel.kt:42-54` 用 `getNote(id)?.let{}` 后无条件 `onDone()`），且 `_purging` 在 launch 内设置，双击可绕过；剩余天数向下取整、不足 1 天一律显示「即将自动清理」，而清理实际只发生在冷启动或打开回收站；术语上回收站里的「删除」实为永久删除，主页批量软删却提示「已删除 N 条」。
 - 建议：保留期文案参数化（抽纯函数，两处共用）；回收站按 `getNote != null` 决定文案；剩余天数上取整并改「剩余不足 1 天」；行按钮改「彻底删除」、批量提示改「已移入回收站 N 条」。可选：回收站支持搜索（`deletedAt IS NOT NULL` 变体），缓解误删后难找回。价值：中 × S
 
@@ -536,7 +539,8 @@
 - 影响：搜「a」→ 长按选中 A → 关键词改「b」（A 不在结果里、屏幕上没有任何选中标记）→ 顶栏仍显示「已选 1 项」→ 删除 → **A 被删掉，而它根本不在用户眼前**；选中项被他处删除后计数也会虚高。
 - 建议：`onQueryChange` 非空变更时 `exitSelection()`；`runBatch` 与可见集取交集；`notes` 更新时裁剪已消失的 id。价值：中高 × S
 
-### 92. 首帧加载态统一 + debounce 首帧不延迟
+### 92. 首帧加载态统一 + debounce 首帧不延迟 ✅
+- **落地（2026-11-10）**：`NotesViewModel.searchDebounceMillis` 对空查询返回 0（纯函数可单测）；`CategoriesViewModel.categories` / `TrashViewModel.notes` 改为 null 首值，页面显示加载占位而不是「暂无分类 / 回收站是空的」。
 - 现状：`query.debounce(200)` 连初始空串一起延迟（`NotesViewModel.kt:43`）→ 冷启动主页必然先闪 ≥200ms 的「加载中…」（Room 其实几毫秒就返回）；分类页与回收站则相反——用 `emptyList()` 作初值，进页面先闪「暂无分类 / 回收站是空的」（`CategoriesViewModel.kt:20-21`、`TrashViewModel.kt:24-26`），而主页明确用 `null` 表示加载中（`NotesViewModel.kt:40-53`）。
 - 建议：`debounce { if (it.isEmpty()) 0L else 200L }`；分类页/回收站改为 `null`/`loaded` 初值并复用现有加载占位。价值：中 × S
 
@@ -639,6 +643,7 @@
 | 2026-09-15 | **笔记日期与日历视图完成（v1.8.0，用户新增需求）**：笔记新增可选归属日期（`NoteEntity.noteDate` 存本地零点毫秒，Room v6 + `MIGRATION_5_6` + 索引）；编辑页底栏「日期」入口 + Material3 DatePickerDialog（可清除，UTC↔本地零点经 `CalendarDates` 互转）；主页 ⋮ → 日历页（月网格圆点 + 当天笔记列表，只读，「今天」与前后月切换，切月选中日回 1 号）；旧笔记迁移后无日期、不进日历；备份含该字段且兼容旧文件；历史恢复旧版保留当前日期。全量单测 547 全绿（本次新增 28 个）。 |
 | 2026-09-15 | **AI 回答 Markdown 渲染完成（v1.9.0，条目 61 升级）**：新增 `MarkdownParser`（标题/递归嵌套列表/引用/分隔线/表格/围栏代码块）、`MarkdownInline`（粗体/斜体/删除线/行内代码/可点链接/图片降级 alt/反斜杠转义）、`MarkdownPlainText`（插入正文与存笔记转纯文本，「复制」保留原文）、`MarkdownContent`（H1–H6、任务 ☐/☑、引用竖线、等宽列表格横向滚动，样式跟随主题）；流式回答逐帧实时渲染、完成后无跳变；移除 `CodeBlockParser`；零新增依赖、VM/数据库零改动。全量单测 547 全绿（本批净增 0：新增 `MarkdownPlainTextTest` 12 条、移除 `CodeBlockParserTest` 12 条；Markdown 特性累计新增 68 条、移除 12 条，其中 56 条已计入 v1.8.0 的 547 基线）。 |
 | 2026-11-08 | **批次 F/G/H 快修（条目 77、82、83、89、91）**：77 明文 Key 不再进 saved instance state；82 看门狗超时与重发真正断流（`session.stop()` / `streamer.cancel()`）；83 空回答按失败处理（不落库空 done，横幅给重试线索；`finish_reason` 透传留待后续）；89 搜索 `LIKE` 转义（反斜杠 / `%` / `_` 按字面量匹配）+ 高亮用 trim 词；91 改搜索词清多选 + 选中集随可见集裁剪。红灯 7 例 → 全量 667 单测全绿；`assembleDebug` 通过。设计/计划见 `docs/superpowers/specs|plans/2026-11-08-backlog-fgh-quick-fixes*`。 |
+| 2026-11-10 | **穷尽批次（一）**：条目 84（历史裁剪成对保留）、87（Markdown 链接白名单，防 `intent://`/`file://` 崩溃）、90（保留期文案与回收站口径统一）、92（首帧加载态 + 空查询不防抖）落地。全量单测 667 → 674 全绿，`assembleDebug` 通过。 |
 | 2026-09-15 | **AI 服务商可切换完成（v1.10.0，条目 69）**：`AiProvider` 枚举收敛一切服务商差异（DeepSeek / 硅基流动 / 自定义 OpenAI 兼容：地址、`thinking` 对象 / `enable_thinking` 布尔、余额接口与 schema、`?sub_type=chat` 模型过滤、默认模型、Key 提示文案）；`DeepSeekApiClient`→`AiApiClient`、`DeepSeekApiSession`→`AiApiSession`、`DeepSeekSseParser`→`AiSseParser`（协议层不变，端点驱动）；请求体改 `buildJsonObject` 组装，422 去参数重试仅对支持思考的服务商生效；错误详情兼容 `error.message` / `message` / 纯字符串三种形态，文案去 DeepSeek 化；设置页新增服务商 tab、自定义地址（http(s) 校验）与模型自由填写，深度思考/查询余额按能力显示；Key、模型、思考开关按 serviceId 命名空间隔离（DeepSeek 沿用旧 key 名兼容）；聊天页隐私弹窗用 `session.displayName`。全量单测 547 → 582 全绿。 |
 | 2026-09-15 | **AI 模型选择体验优化（v1.10.1，条目 70）**：连接成功文案模型数 > 5 时收敛为「共 N 个可用模型」；设置页模型数 > 8 改用可搜索 `ModelPickerDialog`（LazyColumn + 过滤 + 当前项对勾，≤ 8 仍用 tab）；聊天页顶栏副标题显示「服务商 · 模型」（`UiState.modelName` 进入会话时快照）。同批修正 AGENTS.md worktree 说明（signingConfig 配置期无条件读取签名文件，新 worktree 需从主树复制 `keystore.properties` 与 `app/mynote-release.keystore` 才能跑测试）。全量单测 582 → 584 全绿。 |
 | 2026-09-15 | **版本演进欠账清理·文档批（非发布批，不改版本号）**：build-guide 单测数 376 → 582、release 产物体积统一为约 2.0MB；backlog 条目状态回写（36 已完成、37/38 已作废、40 缩略图部分已撤销、46 部分完成），总览表补齐 51–70 行（此前状态需在表格与正文两处维护，正是上述矛盾的成因）；补记一次从未记录的回退——v1.6.1 整体移除缩略图机制（`ImageStore` 仅保留 `thumb_*` 遗留清理）；已发布特性的设计文档状态由「实现中/待实现」回写为「已实现（版本）」，两份网页驱动 AI 文档加「已被 API 方案替换」横幅。校正历史口径：v1.6.0 修订记录的 351 经逐提交核对应为 352。 |
