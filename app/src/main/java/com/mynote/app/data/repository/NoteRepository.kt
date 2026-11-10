@@ -61,6 +61,10 @@ class NoteRepository(
 
     fun observeCategories(): Flow<List<CategoryEntity>> = categoryDao.observeAll()
 
+    /** 条目 49：各分类的可见笔记数（分类页删除确认用）。 */
+    fun observeCategoryNoteCounts(): Flow<List<com.mynote.app.data.db.CategoryNoteCount>> =
+        noteDao.observeCategoryNoteCounts()
+
     fun observeRevisions(noteId: Long): Flow<List<NoteRevisionEntity>> = revisionDao.observeByNote(noteId)
 
     suspend fun getNote(id: Long): NoteEntity? = noteDao.getById(id)

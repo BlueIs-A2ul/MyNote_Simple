@@ -145,4 +145,8 @@ interface NoteDao {
 
     @Query("UPDATE notes SET categoryId = NULL WHERE categoryId = :categoryId")
     suspend fun clearCategory(categoryId: Long)
+
+    /** 条目 49：各分类下的可见笔记数（删除确认框展示影响面）。 */
+    @Query("SELECT categoryId AS categoryId, COUNT(*) AS count FROM notes WHERE deletedAt IS NULL AND categoryId IS NOT NULL GROUP BY categoryId")
+    fun observeCategoryNoteCounts(): Flow<List<CategoryNoteCount>>
 }

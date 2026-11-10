@@ -123,7 +123,7 @@ fun NoteHistoryScreen(
                 if (state.revisions.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
-                            "保存一次后开始记录",
+                            if (state.noteMissing) "笔记不存在或已被删除" else "保存一次后开始记录",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -234,14 +234,16 @@ private fun DetailContent(
         }
         HairlineDivider()
         if (detail.showFullText || detail.isFirst) {
-            Column(
-                Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp)
-            ) {
-                Text(
-                    detail.revision.content,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
+            // 条目 93：长文按行惰性布局，避免一次性测量整篇（与 diff 视图口径一致）
+            val lines = remember(detail.revision.content) { detail.revision.content.lines() }
+            LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp, vertical = 8.dp)) {
+                items(lines) { line ->
+                    Text(
+                        line,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
             }
         } else if (detail.loadingDiff) {
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {

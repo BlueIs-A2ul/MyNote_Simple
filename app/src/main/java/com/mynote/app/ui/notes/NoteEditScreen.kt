@@ -319,6 +319,8 @@ fun NoteEditScreen(
     aiResultType: String?,
     aiResultText: String?,
     onAiResultConsumed: () -> Unit,
+    restoreMessage: String? = null,
+    onRestoreMessageConsumed: () -> Unit = {},
     onOpenAi: (selStart: Int, selEnd: Int, noteTitle: String, noteContent: String) -> Unit,
     onOpenHistory: (Boolean) -> Unit,
     onBack: () -> Unit
@@ -410,6 +412,13 @@ fun NoteEditScreen(
 
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // 条目 93：历史页恢复成功后弹提示（先消费再展示，避免旋转重弹或中途离开永不消费）
+    LaunchedEffect(restoreMessage) {
+        val message = restoreMessage ?: return@LaunchedEffect
+        onRestoreMessageConsumed()
+        snackbarHostState.showSnackbar(message)
+    }
 
     val pickImage = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()

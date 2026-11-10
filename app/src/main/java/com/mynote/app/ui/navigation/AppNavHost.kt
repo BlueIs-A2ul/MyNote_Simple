@@ -80,6 +80,9 @@ fun AppNavHost(container: AppContainer) {
                 .getStateFlow<String?>(AiNavKeys.RESULT_TYPE, null).collectAsState()
             val resultText by backStack.savedStateHandle
                 .getStateFlow<String?>(AiNavKeys.RESULT_TEXT, null).collectAsState()
+            // 条目 93：历史恢复提示现在回传给自己（编辑器），而不是弹到主页
+            val restoreMessage by backStack.savedStateHandle
+                .getStateFlow<String?>(NavResults.RESTORE_MESSAGE, null).collectAsState()
             val retentionDays by container.trashRetentionStore.retentionDays.collectAsState()
             NoteEditScreen(
                 noteId = id,
@@ -94,6 +97,10 @@ fun AppNavHost(container: AppContainer) {
                 draftIdHandle = backStack.savedStateHandle,
                 aiResultType = resultType,
                 aiResultText = resultText,
+                restoreMessage = restoreMessage,
+                onRestoreMessageConsumed = {
+                    backStack.savedStateHandle.remove<String>(NavResults.RESTORE_MESSAGE)
+                },
                 onAiResultConsumed = {
                     backStack.savedStateHandle.remove<String>(AiNavKeys.RESULT_TYPE)
                     backStack.savedStateHandle.remove<String>(AiNavKeys.RESULT_TEXT)
@@ -151,10 +158,11 @@ fun AppNavHost(container: AppContainer) {
                 hadUnsavedDraft = hadUnsavedDraft,
                 repository = container.noteRepository,
                 onRestored = {
-                    // 恢复成功提示先写到 notes 条目（start destination 恒在），弹出后由 NotesScreen 弹 snackbar
-                    navController.getBackStackEntry("notes").savedStateHandle[NavResults.RESTORE_MESSAGE] =
-                        "已恢复历史版本"
-                    navController.popBackStack("notes", inclusive = false)
+                    // 条目 93：只弹一层（回到编辑器），不要把编辑器一起弹掉；
+                    // 提示写进上一层的 savedStateHandle，由该页消费
+                    navController.previousBackStackEntry?.savedStateHandle
+                        ?.set(NavResults.RESTORE_MESSAGE, "已恢复历史版本")
+                    navController.popBackStack()
                 },
                 onBack = { navController.popBackStack() }
             )

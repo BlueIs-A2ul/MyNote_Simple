@@ -11,6 +11,7 @@ import com.mynote.app.data.repository.NoteRepository
 import com.mynote.app.ui.theme.NoteColors
 import com.mynote.app.ui.theme.PaperPalette
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -20,6 +21,11 @@ class CategoriesViewModel(private val repository: NoteRepository) : ViewModel() 
     /** 分类列表；null 表示首帧加载中（条目 92），避免进页面先闪「暂无分类」。 */
     val categories: StateFlow<List<CategoryEntity>?> = repository.observeCategories()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** 条目 49：各分类的可见笔记数，删除确认框用来展示影响面。 */
+    val noteCounts: StateFlow<Map<Long, Int>> = repository.observeCategoryNoteCounts()
+        .map { list -> list.associate { it.categoryId to it.count } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     /** 新建分类：使用对话框选定的颜色创建（不再随机取色）。 */
     fun add(name: String, color: Int, onDone: () -> Unit) {

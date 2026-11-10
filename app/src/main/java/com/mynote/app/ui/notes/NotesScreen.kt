@@ -184,11 +184,12 @@ fun NotesScreen(
         if (searchActive) focusRequester.requestFocus()
     }
 
-    // 历史恢复成功后的提示：非空即弹 snackbar 并消费，避免旋转/重组重复弹出
+    // 历史恢复成功后的提示：条目 93 改为「先消费再展示」，
+    // 否则旋转会重复弹出，中途离开则这条提示永不消费
     LaunchedEffect(restoreMessage) {
         val message = restoreMessage ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(message)
         onRestoreMessageConsumed()
+        snackbarHostState.showSnackbar(message)
     }
 
     val tabs = remember(categories) {

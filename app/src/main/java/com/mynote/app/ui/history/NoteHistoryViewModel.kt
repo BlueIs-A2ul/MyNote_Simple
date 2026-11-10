@@ -44,6 +44,8 @@ class NoteHistoryViewModel(
         val count: Int = 0,
         val bannerText: String? = null,
         val detail: DetailState? = null,
+        /** 条目 93：笔记已被删除时，空态不能再说「保存一次后开始记录」。 */
+        val noteMissing: Boolean = false,
         val restoring: Boolean = false,
         val restoreSucceeded: Boolean = false,
         val message: String? = null
@@ -55,6 +57,9 @@ class NoteHistoryViewModel(
     private var diffJob: Job? = null
 
     init {
+        viewModelScope.launch {
+            _state.update { it.copy(noteMissing = repository.getNote(noteId) == null) }
+        }
         viewModelScope.launch {
             repository.observeRevisions(noteId).collectLatest { raw ->
                 _state.update { current ->

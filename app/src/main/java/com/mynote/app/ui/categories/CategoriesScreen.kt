@@ -62,6 +62,7 @@ import kotlinx.coroutines.launch
 fun CategoriesScreen(repository: NoteRepository, onBack: () -> Unit) {
     val vm: CategoriesViewModel = viewModel(factory = CategoriesViewModel.factory(repository))
     val categoriesState by vm.categories.collectAsState()
+    val noteCounts by vm.noteCounts.collectAsState()
     // 条目 92：null = 首帧加载中，避免进页面先闪「暂无分类」
     val categories = categoriesState.orEmpty()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -98,6 +99,7 @@ fun CategoriesScreen(repository: NoteRepository, onBack: () -> Unit) {
                 itemsIndexed(categories, key = { _, cat -> cat.id }) { index, cat ->
                     CategoryRow(
                         cat = cat,
+                        noteCount = noteCounts[cat.id] ?: 0,
                         snackbarHostState = snackbarHostState,
                         onRename = { newName, done -> vm.rename(cat, newName, done) },
                         onDelete = { vm.delete(cat) },
@@ -158,7 +160,11 @@ fun CategoriesScreen(repository: NoteRepository, onBack: () -> Unit) {
                 }
             },
             confirmButton = {
-                TextButton(onClick = { vm.add(name, selectedColor) { showAddDialog = false } }) {
+                TextButton(
+                    onClick = { vm.add(name, selectedColor) { showAddDialog = false } },
+                    // 条目 49：空名不可提交（以前点了没反应）
+                    enabled = name.isNotBlank()
+                ) {
                     Text("确定")
                 }
             },
@@ -172,6 +178,7 @@ fun CategoriesScreen(repository: NoteRepository, onBack: () -> Unit) {
 @Composable
 private fun CategoryRow(
     cat: CategoryEntity,
+    noteCount: Int,
     snackbarHostState: SnackbarHostState,
     onRename: (String, (Boolean) -> Unit) -> Unit,
     onDelete: () -> Unit,
@@ -263,7 +270,14 @@ private fun CategoryRow(
         PaperAlertDialog(
             onDismissRequest = { showDelete = false },
             title = "删除分类？",
-            text = { Text("该分类下的笔记将移入未分类。") },
+            text = {
+                // 条目 49：说清影响面（分类名 + 会移到未分类的笔记数）
+                Text(
+                    "删除分类「" + cat.name + "」后，" +
+                        (if (noteCount > 0) noteCount.toString() + " 条笔记会移到「未分类」，" else "") +
+                        "笔记本身不会被删除。"
+                )
+            },
             confirmButton = {
                 TextButton(onClick = { onDelete(); showDelete = false }) { Text("删除") }
             },
