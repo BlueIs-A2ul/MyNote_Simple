@@ -71,6 +71,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
@@ -149,6 +150,10 @@ class NoteEditViewModel(
 
     private val _note = MutableStateFlow<NoteEntity?>(null)
     val note: StateFlow<NoteEntity?> = _note
+
+    // 历史恢复后重新读到的数据行：界面据此覆盖本地旧编辑态（常规回填只跑一次，等不到这次变更）
+    private val _restoredNote = MutableStateFlow<NoteEntity?>(null)
+    val restoredNote: StateFlow<NoteEntity?> = _restoredNote
 
     // 新笔记被静默保存（草稿兜底）后的 id：后续保存/静默保存都以它为目标，避免重复插入。
     // 条目 73：同时落在 SavedStateHandle 里，进程被杀后重建的 VM 也能取回同一个目标 id。
@@ -300,6 +305,22 @@ class NoteEditViewModel(
     /** 条目 48：当前笔记 id（未保存的新笔记返回 null）。 */
     fun currentNoteId(): Long? = _note.value?.id ?: draftId.value
 
+    /**
+     * 历史页恢复成功后调用：重新读库，把恢复后的行交给界面回填。
+     * 不能复用 [observeNote] 的常规回填——那里有 initialized 一次性守卫，
+     * 从历史页返回时它已是 true，会用恢复前的旧内容继续编辑并在下次保存时覆盖恢复结果。
+     */
+    fun refreshAfterRestore() {
+        val targetId = noteId?.takeIf { it != 0L } ?: _draftId.value ?: return
+        viewModelScope.launch {
+            _restoredNote.value = repository.getNote(targetId)
+        }
+    }
+
+    fun consumeRestoredNote() {
+        _restoredNote.value = null
+    }
+
     fun delete(onDone: () -> Unit) {
         if (deleting) return
         val n = _note.value ?: return
@@ -382,8 +403,8 @@ fun NoteEditScreen(
     aiResultType: String?,
     aiResultText: String?,
     onAiResultConsumed: () -> Unit,
-    restoreMessage: String? = null,
-    onRestoreMessageConsumed: () -> Unit = {},
+    restoredAt: Long? = null,
+    onRestoreConsumed: () -> Unit = {},
     onNoteDeleted: (Long) -> Unit = {},
     onOpenAi: (selStart: Int, selEnd: Int, noteTitle: String, noteContent: String) -> Unit,
     onOpenHistory: (Boolean) -> Unit,
@@ -396,6 +417,7 @@ fun NoteEditScreen(
     val note by vm.note.collectAsStateWithLifecycle()
     val categories by vm.categories.collectAsStateWithLifecycle()
     val draftId by vm.draftId.collectAsStateWithLifecycle()
+    val restoredNote by vm.restoredNote.collectAsStateWithLifecycle()
 
     var title by rememberSaveable(noteId) { mutableStateOf("") }
     // 条目 100⑦：Bundle 只存键（noteId），正文放进程内缓存，超长正文不再进 saved instance state
@@ -506,11 +528,28 @@ fun NoteEditScreen(
         snackbarHostState.showSnackbar(message)
     }
 
-    // 条目 93：历史页恢复成功后弹提示（先消费再展示，避免旋转重弹或中途离开永不消费）
-    LaunchedEffect(restoreMessage) {
-        val message = restoreMessage ?: return@LaunchedEffect
-        onRestoreMessageConsumed()
-        snackbarHostState.showSnackbar(message)
+    // 条目 93：历史页恢复成功后弹提示（先消费再展示，避免旋转重弹或中途离开永不消费）；
+    // 同时重新读库回填——只弹提示不刷新的话，编辑页仍拿着恢复前的内容，
+    // 下次保存或退后台静默存草稿就会把刚恢复的版本又写回去。
+    LaunchedEffect(restoredAt) {
+        if (restoredAt == null) return@LaunchedEffect
+        onRestoreConsumed()
+        vm.refreshAfterRestore()
+        // 先消费会让 restoredAt 变 null、重启本 effect；提示放到独立作用域，避免随之被取消
+        scope.launch { snackbarHostState.showSnackbar("已恢复历史版本") }
+    }
+
+    // 用恢复后的数据行覆盖本地编辑态，并把撤销基线重置到恢复后的文本
+    LaunchedEffect(restoredNote) {
+        val restored = restoredNote ?: return@LaunchedEffect
+        title = restored.title
+        content = TextFieldValue(restored.content, selection = TextRange(restored.content.length))
+        selectedCategoryId = restored.categoryId
+        pinned = restored.pinned
+        noteDate = restored.noteDate
+        initialized = true
+        undoController.reset()
+        vm.consumeRestoredNote()
     }
 
     val pickImage = rememberLauncherForActivityResult(

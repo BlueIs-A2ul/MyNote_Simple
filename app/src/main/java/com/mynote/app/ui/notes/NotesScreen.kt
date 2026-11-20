@@ -84,8 +84,6 @@ fun NotesScreen(
     retentionDays: Int,
     deletedNoteId: Long? = null,
     onDeletedNoteConsumed: () -> Unit = {},
-    restoreMessage: String?,
-    onRestoreMessageConsumed: () -> Unit,
     onOpenNote: (Long) -> Unit,
     onNewNote: (Long?) -> Unit,
     onManageCategories: () -> Unit,
@@ -176,14 +174,6 @@ fun NotesScreen(
             duration = SnackbarDuration.Long
         )
         if (result == SnackbarResult.ActionPerformed) viewModel.restoreDeleted(id)
-    }
-
-    // 历史恢复成功后的提示：条目 93 改为「先消费再展示」，
-    // 否则旋转会重复弹出，中途离开则这条提示永不消费
-    LaunchedEffect(restoreMessage) {
-        val message = restoreMessage ?: return@LaunchedEffect
-        onRestoreMessageConsumed()
-        snackbarHostState.showSnackbar(message)
     }
 
     val tabs = remember(categories) {

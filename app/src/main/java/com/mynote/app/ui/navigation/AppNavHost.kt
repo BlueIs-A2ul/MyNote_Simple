@@ -32,7 +32,8 @@ object AiNavKeys {
 }
 
 object NavResults {
-    const val RESTORE_MESSAGE = "restore_message"
+    /** 历史恢复完成的时间戳：编辑页据此重新读库回填（恢复提示本身由编辑页文案固定）。 */
+    const val RESTORE_AT = "restore_at"
 
     /** 条目 48：编辑页删除笔记后回传给列表的目标 id（列表据此弹「撤销」）。 */
     const val DELETED_NOTE_ID = "deleted_note_id"
@@ -60,9 +61,6 @@ fun AppNavHost(
                     container.backupManager
                 )
             )
-            // 历史恢复成功后回传的提示：由历史页写入本条目的 savedStateHandle，此处读取
-            val restoreMessage by backStack.savedStateHandle
-                .getStateFlow<String?>(NavResults.RESTORE_MESSAGE, null).collectAsStateWithLifecycle()
             val retentionDays by container.trashRetentionStore.retentionDays.collectAsStateWithLifecycle()
             val deletedNoteId by backStack.savedStateHandle
                 .getStateFlow<Long?>(NavResults.DELETED_NOTE_ID, null).collectAsStateWithLifecycle()
@@ -73,10 +71,6 @@ fun AppNavHost(
                 deletedNoteId = deletedNoteId,
                 onDeletedNoteConsumed = {
                     backStack.savedStateHandle.remove<Long>(NavResults.DELETED_NOTE_ID)
-                },
-                restoreMessage = restoreMessage,
-                onRestoreMessageConsumed = {
-                    backStack.savedStateHandle.remove<String>(NavResults.RESTORE_MESSAGE)
                 },
                 onOpenNote = { id -> navController.navigate("edit/$id") { launchSingleTop = true } },
                 onNewNote = { catId ->
@@ -106,9 +100,9 @@ fun AppNavHost(
                 .getStateFlow<String?>(AiNavKeys.RESULT_TYPE, null).collectAsStateWithLifecycle()
             val resultText by backStack.savedStateHandle
                 .getStateFlow<String?>(AiNavKeys.RESULT_TEXT, null).collectAsStateWithLifecycle()
-            // 条目 93：历史恢复提示现在回传给自己（编辑器），而不是弹到主页
-            val restoreMessage by backStack.savedStateHandle
-                .getStateFlow<String?>(NavResults.RESTORE_MESSAGE, null).collectAsStateWithLifecycle()
+            // 条目 93 / 恢复回填：历史页把恢复完成时间写回本条目，编辑页据此重新读库
+            val restoredAt by backStack.savedStateHandle
+                .getStateFlow<Long?>(NavResults.RESTORE_AT, null).collectAsStateWithLifecycle()
             val retentionDays by container.trashRetentionStore.retentionDays.collectAsStateWithLifecycle()
             NoteEditScreen(
                 noteId = id,
@@ -123,9 +117,9 @@ fun AppNavHost(
                 draftIdHandle = backStack.savedStateHandle,
                 aiResultType = resultType,
                 aiResultText = resultText,
-                restoreMessage = restoreMessage,
-                onRestoreMessageConsumed = {
-                    backStack.savedStateHandle.remove<String>(NavResults.RESTORE_MESSAGE)
+                restoredAt = restoredAt,
+                onRestoreConsumed = {
+                    backStack.savedStateHandle.remove<Long>(NavResults.RESTORE_AT)
                 },
                 onAiResultConsumed = {
                     backStack.savedStateHandle.remove<String>(AiNavKeys.RESULT_TYPE)
@@ -192,9 +186,9 @@ fun AppNavHost(
                 repository = container.noteRepository,
                 onRestored = {
                     // 条目 93：只弹一层（回到编辑器），不要把编辑器一起弹掉；
-                    // 提示写进上一层的 savedStateHandle，由该页消费
+                    // 恢复完成时间写进上一层，编辑页据此重新读库覆盖本地旧编辑态
                     navController.previousBackStackEntry?.savedStateHandle
-                        ?.set(NavResults.RESTORE_MESSAGE, "已恢复历史版本")
+                        ?.set(NavResults.RESTORE_AT, System.nanoTime())
                     navController.popBackStack()
                 },
                 onBack = { navController.popBackStack() }

@@ -306,4 +306,27 @@ class NoteEditViewModelTest {
         assertEquals(1, db.noteDao().getAll().size)
         assertNotNull(db.noteDao().getById(id)?.deletedAt)
     }
+
+    /**
+     * 历史恢复回归：恢复成功后编辑页必须重新读库，把恢复后的内容交给界面覆盖本地旧编辑态。
+     * 之前只回传「已恢复」提示、不刷新本地状态，旧内容会在下次保存或退后台时把恢复结果写回去。
+     */
+    @Test
+    fun refreshAfterRestoreEmitsRestoredNoteFromDatabase() = runTest(dispatcher) {
+        val id = repo.saveNote(null, "t", "v1", null, false, null)
+        repo.saveNote(id, "t", "v2", null, false, null)
+        val oldest = db.noteRevisionDao().getByNote(id).last()
+        assertTrue(repo.restoreRevision(id, oldest.id))
+        assertEquals("v1", repo.getNote(id)?.content)
+
+        vm.viewModelScope.cancel()
+        vm = NoteEditViewModel(repo, ImageStore(ApplicationProvider.getApplicationContext()), noteId = id)
+
+        vm.refreshAfterRestore()
+
+        val restored = vm.restoredNote.first { it != null }!!
+        assertEquals("v1", restored.content)
+        vm.consumeRestoredNote()
+        assertNull(vm.restoredNote.value)
+    }
 }
