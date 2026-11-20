@@ -195,6 +195,10 @@ class AiApiClient(
             }
 
             val full = StringBuilder()
+            // 非流式兜底：部分服务商/网关忽略 stream:true，返回一整个 JSON 响应体（可能跨行）。
+            // 在见到首个 data: 行之前缓存原始行；若整段流没有任何 SSE 帧，再按整段 JSON 解析。
+            val rawBody = StringBuilder()
+            var sawDataLine = false
             var finishReason: String? = null
             var usage: AiUsage? = null
             var streamError: String? = null
@@ -202,6 +206,13 @@ class AiApiClient(
                 while (true) {
                     if (!currentCoroutineContext().isActive) throw CancellationException()
                     val line = reader.readLine() ?: break
+                    if (!sawDataLine) {
+                        if (AiSseParser.isDataLine(line)) {
+                            sawDataLine = true
+                        } else if (rawBody.length < MAX_RAW_BODY_CHARS) {
+                            rawBody.append(line).append('\n')
+                        }
+                    }
                     val frame = AiSseParser.parse(line) ?: continue
                     if (frame.error != null) {
                         streamError = frame.error
@@ -220,6 +231,22 @@ class AiApiClient(
                     // usage 取流中最后一次非空（可能出现在 choices 为空的末块上）
                     frame.usage?.let { usage = it }
                     if (frame.done) break
+                }
+            }
+            if (streamError == null && full.isEmpty() && !sawDataLine) {
+                val bodyFrame = AiSseParser.parseBody(rawBody.toString())
+                if (bodyFrame?.error != null) {
+                    streamError = bodyFrame.error
+                } else if (bodyFrame != null) {
+                    bodyFrame.reasoning?.takeIf { it.isNotEmpty() }?.let {
+                        emit(ApiStreamEvent.Reasoning(it))
+                    }
+                    bodyFrame.text?.takeIf { it.isNotEmpty() }?.let {
+                        full.append(it)
+                        emit(ApiStreamEvent.Chunk(it))
+                    }
+                    bodyFrame.finishReason?.let { finishReason = it }
+                    bodyFrame.usage?.let { usage = it }
                 }
             }
             if (streamError != null) {
@@ -505,6 +532,9 @@ class AiApiClient(
         const val PARSE_ERROR = "返回数据无法解析"
         const val BALANCE_UNSUPPORTED = "当前服务商不支持余额查询"
         const val DETAIL_MAX_CHARS = 200
+
+        /** 非流式响应体兜底缓存上限（1MB，远超正常回答长度）。 */
+        private const val MAX_RAW_BODY_CHARS = 1_048_576
         const val CONTEXT_OVERFLOW_MESSAGE = "对话内容超出该模型的上下文上限，请缩短笔记正文或新开对话"
     }
 }

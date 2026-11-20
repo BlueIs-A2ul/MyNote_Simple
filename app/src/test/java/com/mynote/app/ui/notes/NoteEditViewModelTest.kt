@@ -329,4 +329,27 @@ class NoteEditViewModelTest {
         vm.consumeRestoredNote()
         assertNull(vm.restoredNote.value)
     }
+
+    /** 深链/别处删除：编辑页要能区分「加载中」与「笔记已不存在」，不能永远停在加载态。 */
+    @Test
+    fun reportsMissingNoteWhenItIsDeletedElsewhere() = runTest(dispatcher) {
+        val id = repo.saveNote(null, "t", "c", null, false, null)
+        vm.viewModelScope.cancel()
+        vm = NoteEditViewModel(repo, ImageStore(ApplicationProvider.getApplicationContext()), noteId = id)
+        vm.note.first { it != null }
+        assertFalse(vm.noteMissing.value)
+
+        db.noteDao().delete(db.noteDao().getById(id)!!)
+
+        vm.noteMissing.first { it }
+        assertNull(vm.note.value)
+    }
+
+    @Test
+    fun reportsMissingForUnknownNoteId() = runTest(dispatcher) {
+        vm.viewModelScope.cancel()
+        vm = NoteEditViewModel(repo, ImageStore(ApplicationProvider.getApplicationContext()), noteId = 999L)
+
+        assertTrue(vm.noteMissing.first { it })
+    }
 }

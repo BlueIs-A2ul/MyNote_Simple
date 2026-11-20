@@ -30,30 +30,62 @@ object AiSseParser {
         val trimmed = line.trim()
         if (trimmed.isEmpty() || trimmed.startsWith(":")) return null
         if (!trimmed.startsWith(DATA_PREFIX)) return null
-        val payload = trimmed.removePrefix(DATA_PREFIX).trim()
+        return parsePayload(trimmed.removePrefix(DATA_PREFIX).trim())
+    }
+
+    /**
+     * 解析非流式响应体：部分服务商/网关忽略 stream:true，直接返回整段 Chat Completion JSON。
+     * 只接受以左花括号开头的 JSON；其它内容（空体 / HTML 错误页等）返回 null。
+     */
+    fun parseBody(body: String): Frame? {
+        val trimmed = body.trim()
+        if (!trimmed.startsWith("{")) return null
+        return parsePayload(trimmed)
+    }
+
+    /** 该行是否为 SSE 的 data: 行；客户端用它区分「流式响应」与「整段 JSON 响应体」。 */
+    fun isDataLine(line: String): Boolean = line.trim().startsWith(DATA_PREFIX)
+
+    private fun parsePayload(payload: String): Frame? {
         if (payload.isEmpty()) return null
         if (payload == DONE_PAYLOAD) return Frame(done = true)
-
         return try {
-            val root = json.parseToJsonElement(payload).jsonObject
-            root["error"]?.let { element ->
-                val message = element.jsonObject["message"]?.jsonPrimitive?.contentOrNull
-                return Frame(error = message ?: "服务返回错误")
-            }
-            // usage 可能挂在 choices 为空的末块上，先于 choices 解析，不能整帧丢弃
-            val usage = parseUsage(root)
-            val choice = root["choices"]?.jsonArray?.firstOrNull()?.jsonObject
-            val delta = choice?.get("delta")?.jsonObject
-            val text = delta?.get("content")?.jsonPrimitive?.contentOrNull
-            val reasoning = delta?.get("reasoning_content")?.jsonPrimitive?.contentOrNull
-            val finish = choice?.get("finish_reason")?.jsonPrimitive?.contentOrNull
-            if (text == null && reasoning == null && finish == null && usage == null) {
-                null
-            } else {
-                Frame(text = text, reasoning = reasoning, finishReason = finish, usage = usage)
-            }
+            parseRoot(json.parseToJsonElement(payload).jsonObject)
         } catch (_: Exception) {
             null
+        }
+    }
+
+    private fun parseRoot(root: JsonObject): Frame? {
+        root["error"]?.let { element ->
+            val message = runCatching {
+                element.jsonObject["message"]?.jsonPrimitive?.contentOrNull
+            }.getOrNull()
+            return Frame(error = message ?: "服务返回错误")
+        }
+        // usage 可能挂在 choices 为空的末块上，先于 choices 解析，不能整帧丢弃
+        val usage = parseUsage(root)
+        val choice = runCatching {
+            root["choices"]?.jsonArray?.firstOrNull()?.jsonObject
+        }.getOrNull()
+        val delta = runCatching { choice?.get("delta")?.jsonObject }.getOrNull()
+        // 非流式响应把正文放在 message 里；个别网关会用单条 SSE 包整段 JSON，一并兼容
+        val message = runCatching { choice?.get("message")?.jsonObject }.getOrNull()
+        val text = runCatching {
+            delta?.get("content")?.jsonPrimitive?.contentOrNull
+                ?: message?.get("content")?.jsonPrimitive?.contentOrNull
+        }.getOrNull()
+        val reasoning = runCatching {
+            delta?.get("reasoning_content")?.jsonPrimitive?.contentOrNull
+                ?: message?.get("reasoning_content")?.jsonPrimitive?.contentOrNull
+        }.getOrNull()
+        val finish = runCatching {
+            choice?.get("finish_reason")?.jsonPrimitive?.contentOrNull
+        }.getOrNull()
+        return if (text == null && reasoning == null && finish == null && usage == null) {
+            null
+        } else {
+            Frame(text = text, reasoning = reasoning, finishReason = finish, usage = usage)
         }
     }
 

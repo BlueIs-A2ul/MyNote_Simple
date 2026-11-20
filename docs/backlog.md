@@ -494,6 +494,7 @@
 
 ### 83. 空回答按失败处理 + finish_reason 规则 + 重试入口 ✅
 - **补充落地（2026-11-10）**：`AiEvent.Done` 增加 `finishReason`，`AiApiSession` 透传；空回答时按 `content_filter` / `insufficient_system_resource` 给出专用横幅（`blankAnswerReason`）。用例 `blankAnswerReasonUsesFinishReason`、`contentFilteredEmptyDoneShowsSpecificBanner`。
+- **补充落地（2026-11-20）**：非流式 JSON 兜底——200 响应里没有 `data:` 行时，按整段 Chat Completion JSON 解析 `choices[0].message`（content / reasoning_content / finish_reason / usage），单条 SSE 携带 `message` 的网关也能取到正文；不再把有效回答误判为「回答为空」。用例 `nonStreamingJsonBodyBecomesChunkAndFinished`、`nonStreamingJsonErrorBodyBecomesError`、`parsesNonStreamingCompletionBody` 等。
 - **落地（2026-11-08，部分）**：`Done` 全文与已收分片都为空 → 抽出的 `finishWithoutMessage()` 收尾（不落库、保留 user 消息、横幅「回答为空，请重试」）；分片非空时仍按 completed 落库。`finish_reason` 透传**未做**。用例 `emptyDoneIsTreatedAsFailureWithoutStoringMessage`、`emptyDoneKeepsStreamedText`。
 - 现状：HTTP 200 但读不到任何 `data:` 行时直接 `emit(Finished(""))`（`AiApiClient.kt:170-198`），`AiApiSession.kt:55` 转发 `Done("")` 并**丢弃 finishReason**，`AiChatViewModel.finalizeAssistant` 无判空（`:385-398`）→ 落库 `content=""`、`status=done`。
 - 影响：服务商/网关忽略 `stream:true` 返回整段普通 JSON 时，有效回答被静默丢弃，界面显示「（没有内容）」；因 `status==done`，重试按钮不出现，用户只能重打字。设计文档要求的 `content_filter / insufficient_system_resource / aborted` 无内容按失败落库也未实现。
@@ -563,6 +564,7 @@
 
 ### 94. 编辑页加载态与保存失败反馈 ✅
 - **落地（2026-11-10）**：`loaded = isNewNote || note != null`，未回填前标题/正文只读、保存禁用、标题占位显示「加载中…」；`NoteEditViewModel.save` 在目标行不存在时回调 `SAVE_TARGET_GONE`、异常回调 `SAVE_FAILED`，界面留在编辑页并 snackbar 提示。用例 `saveMissingTargetReportsError`。
+- **补充落地（2026-11-20）**：`NoteEditViewModel.noteMissing` 跟随 Room 结果更新，深链失效/别处彻底删除时标题与正文占位显示「笔记不存在或已被删除」，不再永远停在「加载中…」；用例 `reportsMissingNoteWhenItIsDeletedElsewhere`、`reportsMissingForUnknownNoteId`。
 - 现状：`canSave` 对存量笔记恒为 true（`NoteEditScreen.kt:404-405`），回填有「用户先敲字就不再回填」的守卫（`:322-336`），而 `saveNote` 目标行不存在时 `existing == null → return id` 静默成功（`NoteRepository.kt:91-93`）；`save()` 无 catch，DB 异常直接逃出 `viewModelScope`。
 - 影响：① 冷启动/迁移后用空编辑器敲了标题就保存 → 正文被空文本覆盖（可经历史快照找回）；② 笔记在别处被删除/彻底清理 → 点保存**什么都没写**却直接退回列表，用户以为存住了；③ 任何 DB 失败 → 崩溃而不是「保存失败」。
 - 建议：新增 `loaded = isNewNote || note != null`，未加载时正文只读并显示占位、保存禁用；`saveNote` 目标缺失时返回失败信号，UI 提示「笔记已不存在，无法保存」；`save/saveDraft/delete` 包 try/catch 并给文案。价值：中高 × S/M
@@ -668,6 +670,7 @@
 | 2026-11-10 | **穷尽批次（一）**：条目 84（历史裁剪成对保留）、87（Markdown 链接白名单，防 `intent://`/`file://` 崩溃）、90（保留期文案与回收站口径统一）、92（首帧加载态 + 空查询不防抖）落地。全量单测 667 → 674 全绿，`assembleDebug` 通过。 |
 | 2026-11-10 | **穷尽批次（二/三）**：条目 79/46（GC 投影 + 备份导出流式化）、80（导入与 GC 六项边界加固）、94/95/96（编辑页加载态、保存失败反馈、不保存抑制、保存期只读、旋转状态）。全量 674 → 678 全绿。 |
 | 2026-11-10 | **穷尽批次（十）**：条目 97 主体（预览长按删图、图片计数、半截标记用例）与 99 全量（输入框标签、多选语义、日历播报、预览关闭按钮、色点 48dp）。全量 692 单测全绿。 |
+| 2026-11-20 | **缺陷清扫与 v1.12.2**：① AI 非流式兜底——服务商/网关忽略 `stream:true`、返回整段 Chat Completion JSON 时按 `choices[0].message` 解析正文/思考/结束原因/用量（单条 SSE 包 `message` 亦可），不再误报「回答为空」；② 编辑页缺失笔记态——深链失效或笔记在别处被彻底删除时，标题/正文占位显示「笔记不存在或已被删除」，不再永远停在「加载中…」。新增 8 个用例（AiSseParser 4 / AiApiClient 2 / NoteEditViewModel 2），全量 706 单测全绿；lintDebug 0 error；assembleDebug 通过，版本升至 1.12.2。 |
 | 2026-11-20 | **历史恢复回归修复（条目 93 后续）**：恢复成功后编辑页改按 `NavResults.RESTORE_AT` 信号重新读库回填（标题/正文/分类/置顶/日期 + 重置撤销基线），修复“恢复后仍显示旧内容、下次保存或退后台静默草稿把恢复结果写回”的回归；移除 notes 路由从未写入的 `RESTORE_MESSAGE` 死通道。新增 `NoteEditViewModelTest.refreshAfterRestoreEmitsRestoredNoteFromDatabase`，全量单测 698 全绿。 |
 | 2026-11-10 | **穷尽批次（十一）· 收官**：条目 97 余项（撤销/放弃时清理孤儿图）、100 余项（Keystore 解密缓存 + 启动预热、正文移出 Bundle）。全量 697 单测全绿，backlog 可执行条目全部完成。 |
 | 2026-11-10 | **穷尽批次（九）**：条目 100 大部分（撤销栈字符预算、字数统计缓存、lifecycle-aware 收集、首帧 edge-to-edge、解码 OOM/取消）与 99 核心（输入框标签、多选语义）。 |

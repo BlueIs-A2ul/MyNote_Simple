@@ -151,6 +151,10 @@ class NoteEditViewModel(
     private val _note = MutableStateFlow<NoteEntity?>(null)
     val note: StateFlow<NoteEntity?> = _note
 
+    // 目标笔记在库中不存在（深链失效 / 别处彻底删除）：界面区分「加载中」与「已不存在」
+    private val _noteMissing = MutableStateFlow(false)
+    val noteMissing: StateFlow<Boolean> = _noteMissing
+
     // 历史恢复后重新读到的数据行：界面据此覆盖本地旧编辑态（常规回填只跑一次，等不到这次变更）
     private val _restoredNote = MutableStateFlow<NoteEntity?>(null)
     val restoredNote: StateFlow<NoteEntity?> = _restoredNote
@@ -180,7 +184,11 @@ class NoteEditViewModel(
 
     private fun observeNote(id: Long) {
         viewModelScope.launch {
-            repository.observeNote(id).collectLatest { _note.value = it }
+            repository.observeNote(id).collectLatest { note ->
+                _note.value = note
+                // Room 的首次结果即当前库状态：null 代表确实不存在，而不是还在加载
+                _noteMissing.value = note == null
+            }
         }
     }
 
@@ -415,6 +423,7 @@ fun NoteEditScreen(
         factory = NoteEditViewModel.factory(repository, imageStore, noteId, draftIdHandle, backupManager)
     )
     val note by vm.note.collectAsStateWithLifecycle()
+    val noteMissing by vm.noteMissing.collectAsStateWithLifecycle()
     val categories by vm.categories.collectAsStateWithLifecycle()
     val draftId by vm.draftId.collectAsStateWithLifecycle()
     val restoredNote by vm.restoredNote.collectAsStateWithLifecycle()
@@ -717,6 +726,15 @@ fun NoteEditScreen(
                 .fillMaxSize()
                 .imePadding()
         ) {
+            // 深链失效/别处彻底删除：即使正文里有未保存内容也要明确告知，而不是只把输入框变成只读
+            if (noteMissing && !isNewNote) {
+                Text(
+                    "笔记不存在或已被删除",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+            }
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -747,7 +765,11 @@ fun NoteEditScreen(
                     decorationBox = { innerTextField ->
                         if (title.isEmpty()) {
                             Text(
-                                if (loaded) "标题" else "加载中…",
+                                when {
+                                    loaded -> "标题"
+                                    noteMissing -> "笔记不存在或已被删除"
+                                    else -> "加载中…"
+                                },
                                 style = MaterialTheme.typography.titleLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -817,7 +839,11 @@ fun NoteEditScreen(
                     decorationBox = { innerTextField ->
                         if (content.text.isEmpty()) {
                             Text(
-                                "开始记录…",
+                                when {
+                                    !loaded && noteMissing -> "笔记不存在或已被删除"
+                                    !loaded -> "加载中…"
+                                    else -> "开始记录…"
+                                },
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

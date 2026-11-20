@@ -172,4 +172,41 @@ class AiSseParserTest {
 
         assertEquals(AiUsage(3, 1, 4, 0), frame?.usage)
     }
+
+    // ---------- 非流式 JSON 响应体（服务商/网关忽略 stream:true） ----------
+
+    @Test
+    fun parsesNonStreamingCompletionBody() {
+        val frame = AiSseParser.parseBody(
+            """{"choices":[{"index":0,"message":{"role":"assistant","content":"整段回答","reasoning_content":"想一想"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}"""
+        )
+
+        assertEquals("整段回答", frame?.text)
+        assertEquals("想一想", frame?.reasoning)
+        assertEquals("stop", frame?.finishReason)
+        assertEquals(AiUsage(10, 5, 15), frame?.usage)
+    }
+
+    @Test
+    fun parsesNonStreamingErrorBody() {
+        val frame = AiSseParser.parseBody("""{"error":{"message":"Invalid token"}}""")
+        assertEquals("Invalid token", frame?.error)
+    }
+
+    @Test
+    fun parseBodyIgnoresBlankAndNonJson() {
+        assertNull(AiSseParser.parseBody(""))
+        assertNull(AiSseParser.parseBody("   "))
+        assertNull(AiSseParser.parseBody("""data: {"choices":[]}"""))
+        assertNull(AiSseParser.parseBody("not-json"))
+    }
+
+    @Test
+    fun parsesMessageContentInsideSseFrame() {
+        val frame = AiSseParser.parse(
+            """data: {"choices":[{"message":{"content":"整段"},"finish_reason":"stop"}]}"""
+        )
+        assertEquals("整段", frame?.text)
+        assertEquals("stop", frame?.finishReason)
+    }
 }

@@ -896,6 +896,39 @@ class AiApiClientTest {
         assertEquals(BalanceState.Failed("网络错误，请检查网络后重试"), result)
     }
 
+    /** 条目 83 补：服务商/网关忽略 stream:true、直接返回整段 JSON 时不能丢回答。 */
+    @Test
+    fun nonStreamingJsonBodyBecomesChunkAndFinished() = runTest {
+        val body = """
+            {
+              "choices": [
+                {"index": 0, "message": {"role": "assistant", "content": "整段回答"}, "finish_reason": "stop"}
+              ],
+              "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+            }
+        """.trimIndent()
+        val events = client(FakeTransport(FakeConnection(body = body)))
+            .stream("key", "deepseek-flash", false, messages)
+            .toList()
+
+        assertEquals(
+            listOf(
+                ApiStreamEvent.Chunk("整段回答"),
+                ApiStreamEvent.Finished("整段回答", "stop", AiUsage(10, 5, 15))
+            ),
+            events
+        )
+    }
+
+    @Test
+    fun nonStreamingJsonErrorBodyBecomesError() = runTest {
+        val events = client(
+            FakeTransport(FakeConnection(body = """{"error":{"message":"Invalid token"}}"""))
+        ).stream("key", "deepseek-flash", false, messages).toList()
+
+        assertEquals(listOf(ApiStreamEvent.Error("Invalid token")), events)
+    }
+
     private fun sse(vararg lines: String): String = lines.joinToString("\n", postfix = "\n")
 
     private class FakeConnection(
