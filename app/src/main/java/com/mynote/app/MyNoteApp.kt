@@ -5,6 +5,7 @@ import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.memory.MemoryCache
 import com.mynote.app.data.ai.AiProvider
+import com.mynote.app.data.settings.TrashRetentionStore
 import com.mynote.app.di.AppContainer
 import kotlinx.coroutines.launch
 
@@ -18,6 +19,16 @@ class MyNoteApp : Application(), ImageLoaderFactory {
         // 新用户首次启动生成欢迎笔记；失败静默，不阻塞启动
         container.applicationScope.launch {
             runCatching { container.welcomeNoteSeeder.seedIfNeeded() }
+        }
+        // 回收站到期清理：应用启动时做一次（Activity 重建不再重复触发）
+        container.applicationScope.launch {
+            runCatching {
+                container.noteRepository.purgeExpiredDeletedNotes(
+                    ttlMs = TrashRetentionStore.ttlMs(
+                        container.trashRetentionStore.retentionDays.value
+                    )
+                )
+            }
         }
         // 条目 100：把各服务商 Key 的首次 Keystore 解密放到 IO 线程，
         // 之后界面上的「是否已配置」都是内存缓存命中，不在主线程做加解密

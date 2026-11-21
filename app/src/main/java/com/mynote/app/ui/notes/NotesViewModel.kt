@@ -21,6 +21,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -47,8 +48,11 @@ class NotesViewModel(
     private val _backupUi = MutableStateFlow(BackupUiState())
     val backupUi: StateFlow<BackupUiState> = _backupUi
 
-    val query = MutableStateFlow("")
-    val selectedFilter = MutableStateFlow<CategoryFilter>(CategoryFilter.All)
+    private val _query = MutableStateFlow("")
+    val query: StateFlow<String> = _query.asStateFlow()
+
+    private val _selectedFilter = MutableStateFlow<CategoryFilter>(CategoryFilter.All)
+    val selectedFilter: StateFlow<CategoryFilter> = _selectedFilter.asStateFlow()
 
     val sortMode: StateFlow<NoteSortMode> = sortStore.mode
 
@@ -61,8 +65,8 @@ class NotesViewModel(
         // 搜索输入防抖 200ms + 去重，避免每敲一个键重启一次 LIKE 全表扫描；
         // 空查询（含冷启动首帧）不延迟，否则主页会先闪 >=200ms 的「加载中…」
         combine(
-            query.debounce(::searchDebounceMillis).distinctUntilChanged(),
-            selectedFilter,
+            _query.debounce(::searchDebounceMillis).distinctUntilChanged(),
+            _selectedFilter,
             sortMode
         ) { q, filter, sort -> q to Pair(filter, sort) }
             .flatMapLatest { (q, filterSort) ->
@@ -80,7 +84,7 @@ class NotesViewModel(
 
     /** 新建笔记的预选分类：仅「某个分类」筛选下有值，其余为 null（未分类）。 */
     val newNoteCategoryId: Long?
-        get() = (selectedFilter.value as? CategoryFilter.Single)?.categoryId
+        get() = (_selectedFilter.value as? CategoryFilter.Single)?.categoryId
 
     fun exportBackup(uri: Uri) {
         if (_backupUi.value.exporting) return
@@ -126,17 +130,17 @@ class NotesViewModel(
     }
 
     fun onQueryChange(value: String) {
-        if (value == query.value) return
+        if (value == _query.value) return
         // 条目 91：查询词变化后可见集合随之变化，多选必须清零，
         // 否则「搜 a 选中 A → 改搜 b → 删除」会删掉用户根本看不见的 A
-        if (selectedIds.value.isNotEmpty()) exitSelection()
-        query.value = value
+        if (_selectedIds.value.isNotEmpty()) exitSelection()
+        _query.value = value
     }
 
     fun onFilterSelect(filter: CategoryFilter) {
         // 切换筛选时清空多选，避免选中集跨 tab 残留（含分类被删除后的自动回落）
         exitSelection()
-        selectedFilter.value = filter
+        _selectedFilter.value = filter
     }
 
     fun onSortSelect(mode: NoteSortMode) {
@@ -145,43 +149,46 @@ class NotesViewModel(
 
     // ---------- 多选批量操作 ----------
 
-    val selectionMode = MutableStateFlow(false)
-    val selectedIds = MutableStateFlow<Set<Long>>(emptySet())
+    private val _selectionMode = MutableStateFlow(false)
+    val selectionMode: StateFlow<Boolean> = _selectionMode.asStateFlow()
+
+    private val _selectedIds = MutableStateFlow<Set<Long>>(emptySet())
+    val selectedIds: StateFlow<Set<Long>> = _selectedIds.asStateFlow()
 
     /** 长按进入多选，并选中该行。 */
     fun enterSelection(noteId: Long) {
-        selectionMode.value = true
-        selectedIds.value = setOf(noteId)
+        _selectionMode.value = true
+        _selectedIds.value = setOf(noteId)
     }
 
     fun toggleSelect(noteId: Long) {
-        val next = selectedIds.value.let { if (noteId in it) it - noteId else it + noteId }
-        selectedIds.value = next
+        val next = _selectedIds.value.let { if (noteId in it) it - noteId else it + noteId }
+        _selectedIds.value = next
         // 取消最后一个选中项后自动退出多选，避免停留在「已选 0 项」的死状态
-        if (next.isEmpty()) selectionMode.value = false
+        if (next.isEmpty()) _selectionMode.value = false
     }
 
     /** 全选当前列表可见笔记；列表仍在加载或为空时不动作。 */
     fun selectAll() {
         val visible = notes.value
         if (visible.isNullOrEmpty()) return
-        selectedIds.value = visible.map { it.id }.toSet()
+        _selectedIds.value = visible.map { it.id }.toSet()
     }
 
     fun exitSelection() {
-        selectionMode.value = false
-        selectedIds.value = emptySet()
+        _selectionMode.value = false
+        _selectedIds.value = emptySet()
     }
 
     /** 条目 91：从选中集里剔除已不可见的笔记（被别处删除、移出当前筛选或搜索结果变化）。 */
     private fun pruneSelection(visible: List<NoteListItem>) {
-        val selected = selectedIds.value
+        val selected = _selectedIds.value
         if (selected.isEmpty()) return
         val visibleIds = visible.mapTo(HashSet()) { it.id }
         val kept = selected.filterTo(HashSet()) { it in visibleIds }
         if (kept.size == selected.size) return
-        selectedIds.value = kept
-        if (kept.isEmpty()) selectionMode.value = false
+        _selectedIds.value = kept
+        if (kept.isEmpty()) _selectionMode.value = false
     }
 
     fun batchDelete(onDone: (Int) -> Unit, onFailed: () -> Unit) =
@@ -202,7 +209,7 @@ class NotesViewModel(
         onFailed: () -> Unit,
         op: suspend (List<NoteEntity>) -> Unit
     ) {
-        val ids = selectedIds.value
+        val ids = _selectedIds.value
         if (ids.isEmpty()) return
         viewModelScope.launch {
             try {

@@ -85,6 +85,11 @@ androidComponents {
     }
 }
 
+ksp {
+    // 导出 Room schema，迁移改动可 review；文件提交在 app/schemas/
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.core.ktx)

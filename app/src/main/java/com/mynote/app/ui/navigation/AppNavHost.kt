@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -143,13 +144,15 @@ fun AppNavHost(
             val noteId = backStack.arguments?.getString("noteId")?.toLongOrNull()
                 ?: return@composable
             val prev = navController.previousBackStackEntry
+            // 会话只在进入本页时创建一次；重组不再重复 new（Provider 变化由 VM 内部重建）
+            val aiSession = remember(container) { container.aiSessionFactory() }
             AiChatScreen(
                 noteId = noteId,
                 aiRepository = container.aiChatRepository,
                 noteRepository = container.noteRepository,
                 settingsStore = container.aiSettingsStore,
                 externalScope = container.applicationScope,
-                session = container.aiSessionFactory(),
+                session = aiSession,
                 draftStore = container.aiDraftStore,
                 // 条目 81：设置页切服务商后，下一次发送会自动用新服务商重建会话
                 sessionFactory = { container.aiSessionFactory() },
