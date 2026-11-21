@@ -305,6 +305,7 @@ class AiChatViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        AiChatContextStore.remove(noteId)
         flushChunks()
         val snapshot = _state.value
         val sessionId = snapshot.currentSessionId
