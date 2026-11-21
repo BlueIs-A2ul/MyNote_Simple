@@ -6,11 +6,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
+import androidx.navigation.toRoute
 import com.mynote.app.di.AppContainer
 import com.mynote.app.ui.ai.AiChatContextStore
 import com.mynote.app.ui.ai.AiChatScreen
@@ -48,10 +47,10 @@ fun AppNavHost(
     LaunchedEffect(deepLinkNoteId) {
         val id = deepLinkNoteId ?: return@LaunchedEffect
         onDeepLinkConsumed()
-        navController.navigate("edit/" + id) { launchSingleTop = true }
+        navController.navigate(EditNoteRoute(noteId = id)) { launchSingleTop = true }
     }
-    NavHost(navController = navController, startDestination = "notes") {
-        composable("notes") { backStack ->
+    NavHost(navController = navController, startDestination = NotesRoute) {
+        composable<NotesRoute> { backStack ->
             val vm: NotesViewModel = viewModel(
                 factory = NotesViewModel.factory(
                     container.noteRepository,
@@ -70,30 +69,20 @@ fun AppNavHost(
                 onDeletedNoteConsumed = {
                     backStack.savedStateHandle.remove<Long>(NavResults.DELETED_NOTE_ID)
                 },
-                onOpenNote = { id -> navController.navigate("edit/$id") { launchSingleTop = true } },
+                onOpenNote = { id -> navController.navigate(EditNoteRoute(noteId = id)) { launchSingleTop = true } },
                 onNewNote = { catId ->
-                    navController.navigate("edit/new?categoryId=${catId ?: -1L}") { launchSingleTop = true }
+                    navController.navigate(EditNoteRoute(categoryId = catId ?: -1L)) { launchSingleTop = true }
                 },
-                onManageCategories = { navController.navigate("categories") },
-                onOpenTrash = { navController.navigate("trash") },
-                onOpenCalendar = { navController.navigate("calendar") },
-                onOpenSettings = { navController.navigate("settings") }
+                onManageCategories = { navController.navigate(CategoriesRoute) },
+                onOpenTrash = { navController.navigate(TrashRoute) },
+                onOpenCalendar = { navController.navigate(CalendarRoute) },
+                onOpenSettings = { navController.navigate(SettingsRoute) }
             )
         }
-        composable(
-            route = "edit/{noteId}?categoryId={categoryId}",
-            arguments = listOf(
-                navArgument("categoryId") {
-                    type = NavType.LongType
-                    defaultValue = -1L
-                }
-            )
-        ) { backStack ->
-            val idArg = backStack.arguments?.getString("noteId")
-            val id = idArg?.takeIf { it != "new" }?.toLongOrNull()
-            val initialCategoryId = backStack.arguments
-                ?.getLong("categoryId")
-                ?.takeIf { it >= 0L }
+        composable<EditNoteRoute> { backStack ->
+            val route = backStack.toRoute<EditNoteRoute>()
+            val id = route.noteId.takeIf { it != 0L }
+            val initialCategoryId = route.categoryId.takeIf { it >= 0L }
             val resultType by backStack.savedStateHandle
                 .getStateFlow<String?>(AiNavKeys.RESULT_TYPE, null).collectAsStateWithLifecycle()
             val resultText by backStack.savedStateHandle
@@ -127,22 +116,21 @@ fun AppNavHost(
                     // P1：正文只进进程内交接对象，不写 SavedStateHandle（超长笔记会撞 Binder 上限）
                     id?.let { noteId ->
                         AiChatContextStore.put(noteId, noteTitle, noteContent, selStart, selEnd)
-                        navController.navigate("ai_chat/$noteId")
+                        navController.navigate(AiChatRoute(noteId))
                     }
                 },
                 onNoteDeleted = { deletedId ->
                     AiChatContextStore.remove(deletedId)
                     // 条目 48：写回列表页（start destination 恒在栈上）
-                    navController.getBackStackEntry("notes")
+                    navController.getBackStackEntry<NotesRoute>()
                         .savedStateHandle[NavResults.DELETED_NOTE_ID] = deletedId
                 },
-                onOpenHistory = { dirty -> id?.let { navController.navigate("note_history/$it?dirty=$dirty") } },
+                onOpenHistory = { dirty -> id?.let { navController.navigate(NoteHistoryRoute(it, dirty)) } },
                 onBack = { navController.popBackStack() }
             )
         }
-        composable("ai_chat/{noteId}") { backStack ->
-            val noteId = backStack.arguments?.getString("noteId")?.toLongOrNull()
-                ?: return@composable
+        composable<AiChatRoute> { backStack ->
+            val noteId = backStack.toRoute<AiChatRoute>().noteId
             val prev = navController.previousBackStackEntry
             // 会话只在进入本页时创建一次；重组不再重复 new（Provider 变化由 VM 内部重建）
             val aiSession = remember(container) { container.aiSessionFactory() }
@@ -161,22 +149,15 @@ fun AppNavHost(
                     prev?.savedStateHandle?.set(AiNavKeys.RESULT_TEXT, text)
                     navController.popBackStack()
                 },
-                onOpenSettings = { navController.navigate("settings") },
+                onOpenSettings = { navController.navigate(SettingsRoute) },
                 onBack = { navController.popBackStack() }
             )
         }
-        composable(
-            route = "note_history/{noteId}?dirty={dirty}",
-            arguments = listOf(
-                navArgument("dirty") {
-                    type = NavType.BoolType
-                    defaultValue = false
-                }
-            )
-        ) { backStack ->
-            val noteId = backStack.arguments?.getString("noteId")?.toLongOrNull() ?: return@composable
+        composable<NoteHistoryRoute> { backStack ->
+            val route = backStack.toRoute<NoteHistoryRoute>()
+            val noteId = route.noteId
             // 编辑页带着未保存修改进入历史页时，恢复确认框需提示草稿将被丢弃
-            val hadUnsavedDraft = backStack.arguments?.getBoolean("dirty") == true
+            val hadUnsavedDraft = route.dirty
             NoteHistoryScreen(
                 noteId = noteId,
                 hadUnsavedDraft = hadUnsavedDraft,
@@ -191,30 +172,30 @@ fun AppNavHost(
                 onBack = { navController.popBackStack() }
             )
         }
-        composable("categories") {
+        composable<CategoriesRoute> {
             CategoriesScreen(
                 repository = container.noteRepository,
                 onBack = { navController.popBackStack() }
             )
         }
-        composable("trash") {
+        composable<TrashRoute> {
             TrashScreen(
                 repository = container.noteRepository,
                 retentionStore = container.trashRetentionStore,
                 onOpenNote = { id ->
-                    navController.navigate("edit/" + id) { launchSingleTop = true }
+                    navController.navigate(EditNoteRoute(noteId = id)) { launchSingleTop = true }
                 },
                 onBack = { navController.popBackStack() }
             )
         }
-        composable("calendar") {
+        composable<CalendarRoute> {
             CalendarScreen(
                 repository = container.noteRepository,
-                onOpenNote = { id -> navController.navigate("edit/$id") { launchSingleTop = true } },
+                onOpenNote = { id -> navController.navigate(EditNoteRoute(noteId = id)) { launchSingleTop = true } },
                 onBack = { navController.popBackStack() }
             )
         }
-        composable("settings") {
+        composable<SettingsRoute> {
             SettingsScreen(
                 themeStore = container.themeSettingsStore,
                 sortStore = container.noteSortStore,
@@ -222,11 +203,11 @@ fun AppNavHost(
                 repository = container.noteRepository,
                 aiSettingsStore = container.aiSettingsStore,
                 clientFactory = container.aiApiClientFactory,
-                onOpenPromptEditor = { navController.navigate("settings/prompt") },
+                onOpenPromptEditor = { navController.navigate(PromptRoute) },
                 onBack = { navController.popBackStack() }
             )
         }
-        composable("settings/prompt") {
+        composable<PromptRoute> {
             PromptEditScreen(
                 aiSettingsStore = container.aiSettingsStore,
                 onBack = { navController.popBackStack() }
