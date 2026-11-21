@@ -17,6 +17,7 @@ import com.mynote.app.data.repository.NoteRepository
 import com.mynote.app.data.settings.AiDraftStore
 import com.mynote.app.data.settings.AiSettingsStore
 import com.mynote.app.data.settings.aiDraftKey
+import com.mynote.app.ui.common.launchSafely
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -110,7 +111,8 @@ class AiChatViewModel(
      */
     private fun ensureSessionMatchesProvider() {
         val current = settingsStore.provider()
-        if (session.serviceId == current.serviceId) return
+        // 除服务商外还要比较实际地址：自定义服务商改 Base URL 后 serviceId 不变
+        if (session.matches(current.endpoint(settingsStore.customBaseUrl()))) return
         eventsJob?.cancel()
         session.stop()
         session = sessionFactory(current.serviceId)
@@ -274,7 +276,7 @@ class AiChatViewModel(
 
     fun deleteSession(sessionId: Long) {
         if (_state.value.sending && sessionId == _state.value.currentSessionId) return
-        viewModelScope.launch {
+        launchSafely(onError = { _state.update { it.copy(snackbar = "删除会话失败") } }) {
             // 条目 88：删会话时一并清掉该会话的输入草稿，否则 ai_drafts 会随删笔记无限累积
             draftStore.set(aiDraftKey(noteId, sessionId), "")
             aiRepository.deleteSession(sessionId)
@@ -291,7 +293,7 @@ class AiChatViewModel(
 
     fun saveAsNote(text: String) {
         if (text.isBlank()) return
-        viewModelScope.launch {
+        launchSafely(onError = { _state.update { it.copy(snackbar = "保存失败，请重试") } }) {
             noteRepository.saveNote(null, titleFor(text), text, null, false, null)
             _state.update { it.copy(snackbar = "已存为新笔记") }
         }
@@ -311,12 +313,18 @@ class AiChatViewModel(
             val status = if (text.isBlank()) AiMessageEntity.STATUS_FAILED
             else AiMessageEntity.STATUS_INTERRUPTED
             externalScope.launch {
-                val now = System.currentTimeMillis()
-                aiRepository.appendMessage(
-                    sessionId, AiMessageEntity.ROLE_ASSISTANT, text,
-                    status, now
-                )
-                aiRepository.touch(sessionId, now)
+                try {
+                    val now = System.currentTimeMillis()
+                    aiRepository.appendMessage(
+                        sessionId, AiMessageEntity.ROLE_ASSISTANT, text,
+                        status, now
+                    )
+                    aiRepository.touch(sessionId, now)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    // VM 已销毁，尽力落库失败不影响进程
+                }
             }
         }
         session.release()
@@ -503,9 +511,15 @@ class AiChatViewModel(
         _state.update { it.copy(sending = false, streamingText = "", reasoningText = "") }
         val sessionId = snapshot.currentSessionId ?: return
         externalScope.launch {
-            val now = System.currentTimeMillis()
-            aiRepository.appendMessage(sessionId, AiMessageEntity.ROLE_ASSISTANT, text, status, now)
-            aiRepository.touch(sessionId, now)
+            try {
+                val now = System.currentTimeMillis()
+                aiRepository.appendMessage(sessionId, AiMessageEntity.ROLE_ASSISTANT, text, status, now)
+                aiRepository.touch(sessionId, now)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // VM 已销毁，没有界面可提示；下一轮会按历史重建
+            }
         }
     }
 

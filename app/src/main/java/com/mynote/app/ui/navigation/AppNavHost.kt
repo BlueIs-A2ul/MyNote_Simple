@@ -11,6 +11,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.mynote.app.di.AppContainer
+import com.mynote.app.ui.ai.AiChatContextStore
 import com.mynote.app.ui.ai.AiChatScreen
 import com.mynote.app.ui.calendar.CalendarScreen
 import com.mynote.app.ui.categories.CategoriesScreen
@@ -23,10 +24,6 @@ import com.mynote.app.ui.settings.SettingsScreen
 import com.mynote.app.ui.trash.TrashScreen
 
 object AiNavKeys {
-    const val SEL_START = "ai_sel_start"
-    const val SEL_END = "ai_sel_end"
-    const val NOTE_TITLE = "ai_note_title"
-    const val NOTE_CONTENT = "ai_note_content"
     const val RESULT_TYPE = "ai_result_type"
     const val RESULT_TEXT = "ai_result_text"
 }
@@ -126,13 +123,14 @@ fun AppNavHost(
                     backStack.savedStateHandle.remove<String>(AiNavKeys.RESULT_TEXT)
                 },
                 onOpenAi = { selStart, selEnd, noteTitle, noteContent ->
-                    backStack.savedStateHandle[AiNavKeys.SEL_START] = selStart
-                    backStack.savedStateHandle[AiNavKeys.SEL_END] = selEnd
-                    backStack.savedStateHandle[AiNavKeys.NOTE_TITLE] = noteTitle
-                    backStack.savedStateHandle[AiNavKeys.NOTE_CONTENT] = noteContent
-                    navController.navigate("ai_chat/$id")
+                    // P1：正文只进进程内交接对象，不写 SavedStateHandle（超长笔记会撞 Binder 上限）
+                    id?.let { noteId ->
+                        AiChatContextStore.put(noteId, noteTitle, noteContent, selStart, selEnd)
+                        navController.navigate("ai_chat/$noteId")
+                    }
                 },
                 onNoteDeleted = { deletedId ->
+                    AiChatContextStore.remove(deletedId)
                     // 条目 48：写回列表页（start destination 恒在栈上）
                     navController.getBackStackEntry("notes")
                         .savedStateHandle[NavResults.DELETED_NOTE_ID] = deletedId
@@ -144,13 +142,9 @@ fun AppNavHost(
         composable("ai_chat/{noteId}") { backStack ->
             val noteId = backStack.arguments?.getString("noteId")?.toLongOrNull()
                 ?: return@composable
-            val prev = navController.previousBackStackEntry?.savedStateHandle
+            val prev = navController.previousBackStackEntry
             AiChatScreen(
                 noteId = noteId,
-                noteTitle = prev?.get<String>(AiNavKeys.NOTE_TITLE).orEmpty(),
-                noteContent = prev?.get<String>(AiNavKeys.NOTE_CONTENT).orEmpty(),
-                hasSelection = (prev?.get<Int>(AiNavKeys.SEL_END) ?: 0) >
-                    (prev?.get<Int>(AiNavKeys.SEL_START) ?: 0),
                 aiRepository = container.aiChatRepository,
                 noteRepository = container.noteRepository,
                 settingsStore = container.aiSettingsStore,
@@ -160,8 +154,8 @@ fun AppNavHost(
                 // 条目 81：设置页切服务商后，下一次发送会自动用新服务商重建会话
                 sessionFactory = { container.aiSessionFactory() },
                 onApplyResult = { type, text ->
-                    prev?.set(AiNavKeys.RESULT_TYPE, type)
-                    prev?.set(AiNavKeys.RESULT_TEXT, text)
+                    prev?.savedStateHandle?.set(AiNavKeys.RESULT_TYPE, type)
+                    prev?.savedStateHandle?.set(AiNavKeys.RESULT_TEXT, text)
                     navController.popBackStack()
                 },
                 onOpenSettings = { navController.navigate("settings") },

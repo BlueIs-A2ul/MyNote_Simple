@@ -78,9 +78,6 @@ import kotlinx.coroutines.launch
 @Composable
 fun AiChatScreen(
     noteId: Long,
-    noteTitle: String,
-    noteContent: String,
-    hasSelection: Boolean,
     aiRepository: AiChatRepository,
     noteRepository: NoteRepository,
     settingsStore: AiSettingsStore,
@@ -92,10 +89,53 @@ fun AiChatScreen(
     onOpenSettings: () -> Unit,
     onBack: () -> Unit
 ) {
+    // 编辑页只把正文留在进程内交接对象里；Bundle 只带 noteId，避免超长笔记写 state。
+    // 进程重建后交接为空，回退到仓库（退后台 ON_STOP 已落草稿）。
+    var context by remember(noteId) { mutableStateOf(AiChatContextStore.get(noteId)) }
+    LaunchedEffect(noteId) {
+        if (context == null) {
+            val note = try {
+                noteRepository.getNote(noteId)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+            context = AiChatContextStore.Context(
+                title = note?.title.orEmpty(),
+                content = note?.content.orEmpty(),
+                selectionStart = 0,
+                selectionEnd = 0
+            )
+        }
+    }
+    val current = context
+    if (current == null) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("AI 助手") },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        }
+                    }
+                )
+            }
+        ) { padding ->
+            Box(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("加载中…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        return
+    }
     val vm: AiChatViewModel = viewModel(
         key = "ai_chat_$noteId",
         factory = AiChatViewModel.factory(
-            noteId, noteTitle, noteContent, aiRepository, noteRepository,
+            noteId, current.title, current.content, aiRepository, noteRepository,
             settingsStore, externalScope, session, draftStore = draftStore,
             sessionFactory = sessionFactory
         )
@@ -225,7 +265,7 @@ fun AiChatScreen(
         ) { padding ->
             ChatLayer(
                 state = state,
-                hasSelection = hasSelection,
+                hasSelection = current.hasSelection,
                 onDraftChange = vm::updateDraft,
                 onSend = { vm.send(state.draft) },
                 onRetry = { vm.retry() },

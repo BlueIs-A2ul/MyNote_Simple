@@ -1,6 +1,6 @@
 package com.mynote.app.data.ai
 
-import com.mynote.app.ui.notes.NoteContentParser
+import com.mynote.app.util.NoteContentParser
 
 object AiPromptBuilder {
 

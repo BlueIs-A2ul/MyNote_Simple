@@ -7,7 +7,7 @@ import com.mynote.app.data.db.AppDatabase
 import com.mynote.app.data.db.CategoryEntity
 import com.mynote.app.data.db.NoteEntity
 import com.mynote.app.data.image.ImageStore
-import com.mynote.app.ui.notes.NoteContentParser
+import com.mynote.app.util.NoteContentParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable

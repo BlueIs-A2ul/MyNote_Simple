@@ -27,9 +27,15 @@ class AiApiSession(
     override val displayName: String = endpoint.displayName
     override val contextTokens: Int = endpoint.contextTokens
 
+    private val endpointBaseUrl: String = endpoint.baseUrl
+
+    override fun matches(endpoint: AiEndpoint): Boolean =
+        serviceId == endpoint.serviceId && endpointBaseUrl == endpoint.baseUrl
+
     private val _events = MutableSharedFlow<AiEvent>(
         extraBufferCapacity = 64,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
+        // 分片是增量文本，DROP_OLDEST 会静默丢字；生产者在 IO 线程，背压可接受
+        onBufferOverflow = BufferOverflow.SUSPEND
     )
     override val events: SharedFlow<AiEvent> = _events
 

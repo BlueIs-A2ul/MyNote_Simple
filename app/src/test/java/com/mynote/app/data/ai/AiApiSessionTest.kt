@@ -7,9 +7,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -241,5 +244,51 @@ class AiApiSessionTest {
 
         assertEquals(1_000_000, deepSeek.contextTokens)
         assertEquals(32_000, custom.contextTokens)
+    }
+
+    /** 自定义服务商只改 Base URL 时 serviceId 不变，matches 必须把地址也算进去。 */
+    @Test
+    fun matchesComparesBaseUrl() = runTest {
+        val endpoint = AiProvider.CUSTOM.endpoint("https://a.example/v1")
+        val session = AiApiSession(
+            FakeStreamer(), endpoint, { "key" }, { "m" }, { false }, backgroundScope
+        )
+
+        assertTrue(session.matches(endpoint))
+        assertFalse(session.matches(AiProvider.CUSTOM.endpoint("https://b.example/v1")))
+        assertFalse(session.matches(AiProvider.DEEPSEEK.endpoint()))
+    }
+
+    /** 回归：SharedFlow 用 DROP_OLDEST 时快流会静默丢字，改为 SUSPEND 后必须完整。 */
+    @Test
+    fun fastStreamDoesNotDropChunks() = runTest(UnconfinedTestDispatcher()) {
+        val streamer = FakeStreamer()
+        val session = AiApiSession(
+            streamer, AiProvider.CUSTOM.endpoint("https://a.example/v1"),
+            { "key" }, { "m" }, { false }, backgroundScope
+        )
+        val chunks = mutableListOf<String>()
+        var done = false
+        backgroundScope.launch {
+            session.events.collect { event ->
+                when (event) {
+                    is AiEvent.Chunk -> chunks += event.text
+                    is AiEvent.Done -> done = true
+                    else -> Unit
+                }
+            }
+        }
+        runCurrent()
+
+        streamer.result = flow {
+            repeat(200) { emit(ApiStreamEvent.Chunk(it.toString())) }
+            emit(ApiStreamEvent.Finished("", "stop", null))
+        }
+        session.send(messages())
+        advanceUntilIdle()
+
+        assertTrue(done)
+        assertEquals(200, chunks.size)
+        assertEquals((0 until 200).map { it.toString() }, chunks)
     }
 }

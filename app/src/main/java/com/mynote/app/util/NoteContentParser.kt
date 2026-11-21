@@ -1,4 +1,4 @@
-package com.mynote.app.ui.notes
+package com.mynote.app.util
 
 object NoteContentParser {
 

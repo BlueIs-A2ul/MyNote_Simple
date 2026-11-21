@@ -43,7 +43,7 @@ import com.mynote.app.ui.components.HairlineDivider
 import com.mynote.app.ui.components.OPERATION_FAILED
 import com.mynote.app.ui.components.PaperAlertDialog
 import com.mynote.app.ui.components.PaperTopBar
-import com.mynote.app.ui.notes.NoteContentParser
+import com.mynote.app.util.NoteContentParser
 import com.mynote.app.util.TimeFormat
 import kotlinx.coroutines.launch
 

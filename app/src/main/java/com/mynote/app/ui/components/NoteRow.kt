@@ -38,7 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.mynote.app.data.db.NoteListItem
-import com.mynote.app.ui.notes.NoteContentParser
+import com.mynote.app.util.NoteContentParser
 import com.mynote.app.util.TimeFormat
 
 /** 纸感列表行：行首 3dp 分类色条 + 衬线标题 + 摘要 + 相对日期；可选显示分类名与搜索高亮。 */

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.mynote.app.data.ai.AiChatMessage
+import com.mynote.app.data.ai.AiEndpoint
 import com.mynote.app.data.ai.AiChatRepository
 import com.mynote.app.data.ai.AiEvent
 import com.mynote.app.data.ai.AiSession
@@ -85,7 +86,8 @@ class AiChatViewModelTest {
         store: AiSettingsStore = settings,
         draftStore: FakeAiDraftStore = FakeAiDraftStore(),
         watchdogTimeoutMs: Long = 0L,
-        sessionFactory: ((String) -> AiSession)? = null
+        sessionFactory: ((String) -> AiSession)? = null,
+        session: AiSession = fake
     ): AiChatViewModel {        val vm = AiChatViewModel(
             noteId = noteId,
             noteTitle = title,
@@ -94,7 +96,7 @@ class AiChatViewModelTest {
             noteRepository = noteRepo,
             settingsStore = store,
             externalScope = CoroutineScope(dispatcher),
-            session = fake,
+            session = session,
             draftStore = draftStore,
             watchdogTimeoutMs = watchdogTimeoutMs,
             sessionFactory = sessionFactory ?: { fake }
@@ -837,6 +839,46 @@ class AiChatViewModelTest {
         assertEquals("旧服务商不应再收到请求", 1, fake.sent.size)
     }
 
+    /** P2：自定义服务商只改 Base URL 时 serviceId 不变，也必须重建会话。 */
+    @Test
+    fun customBaseUrlChangeRebuildsSessionBeforeNextSend() = runTest(dispatcher) {
+        val noteId = noteRepo.saveNote(null, "标题", "正文", null, false, null)
+        val store = AiSettingsStore(context, FakeCipher())
+        store.setProvider(AiProvider.CUSTOM)
+        store.acceptPrivacy(AiProvider.CUSTOM.serviceId)
+        store.setApiKey("sk-custom")
+        store.setCustomBaseUrl("https://a.example/v1")
+        store.setModel("custom-model")
+        val first = FakeAiSession(
+            serviceId = AiProvider.CUSTOM.serviceId,
+            displayName = AiProvider.CUSTOM.displayName,
+            matcher = { it.baseUrl == "https://a.example/v1" }
+        )
+        val second = FakeAiSession(
+            serviceId = AiProvider.CUSTOM.serviceId,
+            displayName = AiProvider.CUSTOM.displayName
+        )
+        val vm = createVm(
+            noteId,
+            store = store,
+            session = first,
+            sessionFactory = { second }
+        )
+
+        vm.send("第一问")
+        vm.state.first { it.sending }
+        first.emit(AiEvent.Done("答"))
+        vm.state.first { !it.sending }
+        assertEquals(1, first.sent.size)
+
+        store.setCustomBaseUrl("https://b.example/v1")
+        vm.send("第二问")
+        vm.state.first { it.sending }
+
+        assertEquals("新地址应使用新会话", 1, second.sent.size)
+        assertEquals("旧地址会话不应再收到请求", 1, first.sent.size)
+    }
+
     /** 条目 88：自定义服务商没有默认模型时，发送前就拦住，避免 "model": "" 被 400。 */
     @Test
     fun blankModelBlocksSendWithHint() = runTest(dispatcher) {
@@ -971,7 +1013,8 @@ class AiChatViewModelTest {
 
     private class FakeAiSession(
         override val serviceId: String = AiProvider.DEEPSEEK.serviceId,
-        override val displayName: String = AiProvider.DEEPSEEK.displayName
+        override val displayName: String = AiProvider.DEEPSEEK.displayName,
+        private val matcher: ((AiEndpoint) -> Boolean)? = null
     ) : AiSession {
         override var contextTokens: Int = 0
 
@@ -981,6 +1024,9 @@ class AiChatViewModelTest {
         val sent = mutableListOf<List<AiChatMessage>>()
         var stopCount = 0
         var throwOnSend = false
+
+        override fun matches(endpoint: AiEndpoint): Boolean =
+            matcher?.invoke(endpoint) ?: super.matches(endpoint)
 
         override fun send(messages: List<AiChatMessage>) {
             if (throwOnSend) throw IllegalStateException("模拟发送异常")

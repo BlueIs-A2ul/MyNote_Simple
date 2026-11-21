@@ -37,6 +37,12 @@ interface AiSession {
 
     val events: SharedFlow<AiEvent>
 
+    /**
+     * 当前会话是否仍匹配给定端点。默认只比较服务商身份；具体实现可把实际地址也算进去
+     * （自定义服务商改 Base URL 后必须重建客户端，否则仍请求旧地址）。
+     */
+    fun matches(endpoint: AiEndpoint): Boolean = serviceId == endpoint.serviceId
+
     fun send(messages: List<AiChatMessage>)
     fun stop()
     fun release()

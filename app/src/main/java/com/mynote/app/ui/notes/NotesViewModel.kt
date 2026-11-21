@@ -14,6 +14,7 @@ import com.mynote.app.data.db.NoteListItem
 import com.mynote.app.data.db.NoteSortMode
 import com.mynote.app.data.repository.NoteRepository
 import com.mynote.app.data.settings.NoteSortStore
+import com.mynote.app.ui.common.launchSafely
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.CancellationException
@@ -115,7 +116,7 @@ class NotesViewModel(
 
     /** 条目 48：删除后的「撤销」——把刚移入回收站的笔记恢复回来。 */
     fun restoreDeleted(noteId: Long) {
-        viewModelScope.launch {
+        launchSafely {
             repository.getNote(noteId)?.let { repository.restoreNote(it) }
         }
     }

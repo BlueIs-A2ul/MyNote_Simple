@@ -3,6 +3,7 @@ package com.mynote.app.data.settings
 import android.content.Context
 import com.mynote.app.data.ai.AiPromptBuilder
 import com.mynote.app.data.ai.AiProvider
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * AI 助手设置：服务商 + API Key（密文）+ 模型（含动态列表）+ 深度思考 + 隐私确认。
@@ -54,7 +55,7 @@ class AiSettingsStore(
      * 条目 100：解密结果按服务商缓存——Keystore 往返较慢，界面反复读「是否已配置」时不希望每次都走它。
      * 首次读通行由 [MyNoteApp] 启动时在 IO 线程预热，主线程后续都是缓存命中。
      */
-    private val keyCache = mutableMapOf<String, String>()
+    private val keyCache = ConcurrentHashMap<String, String>()
 
     /** 明文 Key；解密失败返回 null 并清除损坏记录（如换机恢复导致 KeyStore 密钥失效）。 */
     fun apiKey(provider: AiProvider = provider()): String? {

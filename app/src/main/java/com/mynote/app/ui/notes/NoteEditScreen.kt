@@ -94,13 +94,15 @@ import com.mynote.app.data.export.NoteImageRenderer
 import com.mynote.app.data.image.ImageStore
 import com.mynote.app.data.repository.NoteRepository
 import com.mynote.app.data.settings.TrashRetentionStore
+import com.mynote.app.ui.common.launchSafely
 import com.mynote.app.ui.components.CategoryDot
 import com.mynote.app.ui.components.HairlineDivider
 import com.mynote.app.ui.components.PaperAlertDialog
 import com.mynote.app.ui.components.PaperOverflowMenu
 import com.mynote.app.ui.components.PaperTopBar
 import com.mynote.app.ui.export.NoteExportDialog
-import com.mynote.app.ui.notes.NoteContentParser.ContentBlock
+import com.mynote.app.util.NoteContentParser
+import com.mynote.app.util.NoteContentParser.ContentBlock
 import com.mynote.app.ui.theme.NoteColors
 import com.mynote.app.ui.theme.PaperPalette
 import com.mynote.app.util.CalendarDates
@@ -196,7 +198,7 @@ class NoteEditViewModel(
     private val insertedImages = mutableSetOf<String>()
 
     fun insertImage(uri: Uri, onInserted: (markup: String) -> Unit, onFailed: () -> Unit) {
-        viewModelScope.launch {
+        launchSafely(onError = { onFailed() }) {
             val target = imageStore.newImageFile("webp")
             if (imageStore.importAndCompress(uri, target)) {
                 insertedImages += target.name
@@ -209,7 +211,7 @@ class NoteEditViewModel(
 
     fun addCategory(name: String, onCreated: (Long) -> Unit) {
         if (name.isBlank()) return
-        viewModelScope.launch {
+        launchSafely {
             val id = repository.addCategory(name.trim(), NoteColors.random().toArgb())
             onCreated(id)
         }
@@ -277,7 +279,7 @@ class NoteEditViewModel(
     ) {
         // 正式保存在途时无需再写草稿；草稿自身重复触发也直接忽略
         if (saveJob?.isActive == true || draftJob?.isActive == true) return
-        draftJob = viewModelScope.launch {
+        draftJob = launchSafely {
             try {
                 val targetId = noteId?.takeIf { it != 0L } ?: _draftId.value
                 when {
@@ -305,7 +307,7 @@ class NoteEditViewModel(
         val orphans = orphanImages(insertedImages, currentContent)
         if (orphans.isEmpty()) return
         insertedImages -= orphans
-        viewModelScope.launch {
+        launchSafely {
             orphans.forEach { imageStore.physicalFile(it).delete() }
         }
     }
@@ -320,20 +322,18 @@ class NoteEditViewModel(
      */
     fun refreshAfterRestore() {
         val targetId = noteId?.takeIf { it != 0L } ?: _draftId.value ?: return
-        viewModelScope.launch {
-            _restoredNote.value = repository.getNote(targetId)
-        }
+        launchSafely { _restoredNote.value = repository.getNote(targetId) }
     }
 
     fun consumeRestoredNote() {
         _restoredNote.value = null
     }
 
-    fun delete(onDone: () -> Unit) {
+    fun delete(onError: () -> Unit = {}, onDone: () -> Unit) {
         if (deleting) return
         val n = _note.value ?: return
         deleting = true
-        viewModelScope.launch {
+        launchSafely(onError = { onError() }) {
             try {
                 repository.deleteNote(n)
                 onDone()
@@ -1081,11 +1081,16 @@ fun NoteEditScreen(
             confirmButton = {
                 TextButton(onClick = {
                     val deletedId = vm.currentNoteId()
-                    vm.delete {
-                        // 条目 48：把 id 回传给列表页，由它弹「已移入回收站 / 撤销」
-                        deletedId?.let(onNoteDeleted)
-                        onBack()
-                    }
+                    vm.delete(
+                        onDone = {
+                            // 条目 48：把 id 回传给列表页，由它弹「已移入回收站 / 撤销」
+                            deletedId?.let(onNoteDeleted)
+                            onBack()
+                        },
+                        onError = {
+                            scope.launch { snackbarHostState.showSnackbar("删除失败，请重试") }
+                        }
+                    )
                 }) { Text("删除") }
             },
             dismissButton = {
