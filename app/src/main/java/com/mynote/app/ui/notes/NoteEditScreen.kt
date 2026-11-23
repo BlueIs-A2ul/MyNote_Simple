@@ -194,6 +194,11 @@ fun NoteEditScreen(
     // 是否已从已保存笔记回填过字段：只回填一次，清空内容后旋转/重建不再被旧内容覆盖
     var initialized by rememberSaveable(noteId) { mutableStateOf(false) }
 
+    // 条目 100⑦：正文缓存是否命中。未命中通常说明进程被杀后重建（或缓存被淘汰），Bundle 里只有键，
+    // 正文已回到空串；此时标题却能从 Bundle 恢复，不能再用“标题为空”当作回填条件。
+    val bodyCacheKey = noteId ?: NEW_NOTE_CACHE_KEY
+    val bodyCacheHit = remember(noteId) { EditorTextCache.get(bodyCacheKey) != null }
+
     // 正文焦点（插图后恢复用）与撤销/重做栈；标题焦点（新建笔记自动聚焦用）
     val contentFocusRequester = remember { FocusRequester() }
     val titleFocusRequester = remember { FocusRequester() }
@@ -208,19 +213,31 @@ fun NoteEditScreen(
 
     LaunchedEffect(note) {
         val n = note ?: return@LaunchedEffect
-        // 条目 100⑦：进程被杀后缓存为空，正文由草稿回填；旋转/配置变更走缓存，不触发这里
-        val needsRefill = !initialized || (content.text.isEmpty() && n.content.isNotEmpty())
-        if (needsRefill) {
-            initialized = true
-            if (title.isEmpty() && content.text.isEmpty()) {
+        val action = decideEditorRestore(
+            initialized = initialized,
+            title = title,
+            content = content.text,
+            noteContent = n.content,
+            bodyCacheHit = bodyCacheHit
+        )
+        // 首次拿到数据行后，无论是否回填都要标记已初始化，避免后续 note 变更反复覆盖用户输入。
+        if (!initialized) initialized = true
+        when (action) {
+            EditorRestoreAction.FILL_ALL -> {
                 title = n.title
                 content = TextFieldValue(n.content)
                 selectedCategoryId = n.categoryId
                 pinned = n.pinned
                 noteDate = n.noteDate
+                // 回填后的内容作为撤销基线，不回退到空文本
+                undoController.reset()
             }
-            // 回填后的内容作为撤销基线，不回退到空文本
-            undoController.reset()
+            EditorRestoreAction.FILL_BODY -> {
+                // 进程重建：标题已恢复，只补丢掉的正文，光标放到末尾方便继续写。
+                content = TextFieldValue(n.content, selection = TextRange(n.content.length))
+                undoController.reset()
+            }
+            EditorRestoreAction.NONE -> Unit
         }
     }
 
