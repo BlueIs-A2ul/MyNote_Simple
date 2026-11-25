@@ -43,9 +43,10 @@
    计数器用 `mutableIntStateOf`；`dirty` 改为 `derivedStateOf`，只在返回/保存/历史入口的 lambda 里读取，退出组合期；
    预览模式的 `NoteContentParser.parse` 加 `remember(content.text)`。
 
+5. **设置页分块组合**（`ui/settings/SettingsScreen.kt`）：`Column + verticalScroll` 改 `LazyColumn` + 4 个 `item`（外观+主题 / 通用 / AI / 版本尾注）：首帧只组合可视区、AI 分区滚到才组合；保留期确认框移到列表外，避免随条目滚出视口被销毁。
+
 ## 4. 不做的事（本轮）
 
-- 设置页 `verticalScroll` 改 `LazyColumn`：属结构性重排，需要逐段视觉核对，另立条目。
 - AI 流式渲染改纯文本 + 滚动节流：涉及行为变化，需人工观察长回答，另立条目。
 - `TextFieldState` 重构（让重组只发生在输入框内部）：改动面大，需与 `NoteUndoController` 一起做。
 - baseline profile / profileinstaller：新增构建插件与依赖，需先拍板"零新增三方依赖"的口径。
@@ -53,7 +54,7 @@
 ## 5. 影响面与风险
 
 - 改动文件：`ui/navigation/AppNavHost.kt`、`ui/components/NoteRow.kt`、`ui/notes/NotesScreen.kt`、
-  `ui/calendar/CalendarScreen.kt`、`ui/notes/NoteEditScreen.kt`。
+  `ui/calendar/CalendarScreen.kt`、`ui/notes/NoteEditScreen.kt`、`ui/settings/SettingsScreen.kt`。
 - 均为等价重构 + 动画参数，不改数据/业务语义；无 Room、无权限、无新依赖。
 - 风险点：`NoteRow` 色条位置需与旧实现像素级一致（左 16dp、上下 12dp、宽 3dp、圆角 1.5dp）；
   转场时长过短会显得生硬，180/120ms 为折中值，可按真机观感微调。

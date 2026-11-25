@@ -1,7 +1,7 @@
 # 界面流畅度整改实施计划
 
 对应设计：`docs/superpowers/specs/2026-11-25-ui-smoothness-design.md`
-分支：`ui-smoothness-1125`（worktree `.worktrees/ui-smoothness-1125`）
+分支：`ui-smoothness-1125`（导航/列表/编辑页）、`settings-lazy-1125`（设置页），各用独立 worktree
 
 ## 步骤
 
@@ -25,11 +25,16 @@
    - `dirty` 改 `remember(note, isNewNote) { derivedStateOf { ... } }`，仅在 lambda 中读取。
    - 预览模式块解析加 `remember(content.text)`。
 
-5. **编译校验**
+5. **设置页分块组合**（`ui/settings/SettingsScreen.kt`）
+   - `Column + verticalScroll` 改 `LazyColumn`，按「外观+主题 / 通用 / AI / 版本尾注」分 4 个 `item`。
+   - 保留期确认框移出列表（放进 item 会随条目滚出视口一起销毁）。
+   - 去掉 `rememberScrollState` / `verticalScroll` / `items` 三个不再使用的 import。
+
+6. **编译校验**
    - `.\.gradlew :app:compileDebugKotlin`。
    - 按用户要求本轮不跑单测；合入 master 前补跑 `testDebugUnitTest`。
 
-6. **提交**
+7. **提交**
    - 单个提交：`refactor: 收紧导航转场与列表/编辑页重组开销（性能）`。
 
 ## 修订记录
@@ -38,3 +43,4 @@
   设置页 LazyColumn、AI 流式渲染、TextFieldState 重构、baseline profile 记为后续条目。
 - 2026-11-25（第二次）：master 已合入 1.13.0 分类抽屉（c58538b），分支 rebase 到该提交；
   NotesScreen 的色表缓存按抽屉版重新落位（抽屉替换了原来的顶部 tab 行），其余四个文件原样沿用。
+- 2026-11-25（第三次）：补充设置页分块组合（`settings-lazy-1125`）。原计划列为「不做」，但改动是等价重排（内容顺序、间距、组件不变），只把「一次性组合」改为「按块组合」，故纳入本批。
