@@ -1,5 +1,7 @@
 package com.mynote.app.ui.notes
 
+import com.mynote.app.data.db.CategoryEntity
+
 /**
  * 主页分类筛选条件。
  *
@@ -16,4 +18,18 @@ sealed interface CategoryFilter {
 
     /** 某个具体分类。 */
     data class Single(val categoryId: Long) : CategoryFilter
+}
+
+/** 分类抽屉条目文案（「全部」「未分类」、分类名）。分类已不存在时兜底「未知分类」。 */
+fun CategoryFilter.menuLabel(categories: List<CategoryEntity>): String = when (this) {
+    CategoryFilter.All -> "全部"
+    CategoryFilter.Uncategorized -> "未分类"
+    is CategoryFilter.Single -> categories.firstOrNull { it.id == categoryId }?.name ?: "未知分类"
+}
+
+/** 顶栏副标题文案：比抽屉条目更完整，避免单独的「全部」被误读成开关。 */
+fun CategoryFilter.summaryLabel(categories: List<CategoryEntity>): String = when (this) {
+    CategoryFilter.All -> "全部笔记"
+    CategoryFilter.Uncategorized -> "未分类"
+    is CategoryFilter.Single -> categories.firstOrNull { it.id == categoryId }?.name ?: "未知分类"
 }

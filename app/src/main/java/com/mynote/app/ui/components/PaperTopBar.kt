@@ -2,6 +2,7 @@ package com.mynote.app.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -22,11 +23,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
-/** 纸感顶栏：56dp 高，20sp 衬线标题，无阴影。 */
+/**
+ * 纸感顶栏：56dp 高，20sp 衬线标题，无阴影。
+ *
+ * [subtitle] 供主页展示当前分类；[titleTrailing] 紧贴标题右侧，用于主页的「展开分类」chevron。
+ * 两者默认 null，既有调用点无需改动。
+ */
 @Composable
 fun PaperTopBar(
     title: String? = null,
+    subtitle: String? = null,
     onBack: (() -> Unit)? = null,
+    titleTrailing: (@Composable () -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {}
 ) {
     Row(
@@ -44,16 +52,36 @@ fun PaperTopBar(
             }
         }
         if (title != null) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            Row(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = if (onBack != null) 4.dp else 8.dp)
-            )
+                    .padding(start = if (onBack != null) 4.dp else 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // fill = false：标题有多宽占多宽，chevron 紧跟文字，而不是被推到行尾
+                Column(Modifier.weight(1f, fill = false)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (subtitle != null) {
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                if (titleTrailing != null) {
+                    Spacer(Modifier.width(2.dp))
+                    titleTrailing()
+                }
+            }
         } else {
             Spacer(Modifier.weight(1f))
         }
