@@ -19,17 +19,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -68,7 +69,6 @@ import androidx.compose.ui.unit.dp
 import com.mynote.app.data.backup.BackupFormatException
 import com.mynote.app.data.backup.BackupManager
 
-import com.mynote.app.data.db.NoteSortMode
 import com.mynote.app.data.settings.TrashRetentionStore
 import com.mynote.app.ui.components.CategoryDot
 import com.mynote.app.ui.components.EmptyState
@@ -76,8 +76,11 @@ import com.mynote.app.ui.components.HairlineDivider
 import com.mynote.app.ui.components.NoteRow
 import com.mynote.app.ui.components.OPERATION_FAILED
 import com.mynote.app.ui.components.PaperAlertDialog
-import com.mynote.app.ui.components.PaperOverflowMenu
+import com.mynote.app.ui.components.PaperActionPanel
 import com.mynote.app.ui.components.PaperTopBar
+import com.mynote.app.ui.components.PaperPanelChoice
+import com.mynote.app.ui.components.PaperPanelGroup
+import com.mynote.app.ui.components.PaperPanelItem
 import com.mynote.app.ui.theme.PaperPalette
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -204,297 +207,306 @@ fun NotesScreen(
         }
     }
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        // 多选态不提供侧滑，避免与列表长按/选择手势冲突
-        gesturesEnabled = !selectionMode,
-        drawerContent = {
-            ModalDrawerSheet(
-                drawerState = drawerState,
-                modifier = Modifier.width(300.dp),
-                drawerShape = RoundedCornerShape(topEnd = 8.dp, bottomEnd = 8.dp),
-                drawerContainerColor = MaterialTheme.colorScheme.surface
-            ) {
-                CategoryDrawerContent(
-                    categories = categories,
-                    selected = selectedFilter,
-                    onSelect = { filter ->
-                        // 搜索是全库检索，先退出搜索再应用分类，否则选了分类也看不到效果
-                        if (searchActive) closeSearch()
-                        viewModel.onFilterSelect(filter)
-                        scope.launch { drawerState.close() }
-                    },
-                    onManageCategories = {
-                        scope.launch { drawerState.close() }
-                        onManageCategories()
-                    },
-                    onClose = { scope.launch { drawerState.close() } }
-                )
-            }
-        }
-    ) {
-        Scaffold(
-            containerColor = MaterialTheme.colorScheme.background,
-            snackbarHost = { SnackbarHost(snackbarHostState) },
-            topBar = {
-                PaperTopBar(
-                    title = if (selectionMode) "已选 ${selectedIds.size} 项" else "备忘录",
-                    subtitle = when {
-                        selectionMode -> null
-                        searchActive -> "全库搜索"
-                        else -> selectedFilter.summaryLabel(categories)
-                    },
-                    onBack = if (selectionMode) ({ viewModel.exitSelection() }) else null,
-                    // 展开 / 收起分类抽屉：chevron 紧贴「备忘录」，展开后旋转 180°
-                    titleTrailing = if (selectionMode) null else {
-                        {
-                            val open = drawerState.targetValue == DrawerValue.Open
-                            val rotation by animateFloatAsState(
-                                targetValue = if (open) 180f else 0f,
-                                label = "categoryChevron"
-                            )
-                            IconButton(
-                                onClick = {
-                                    if (searchActive) keyboard?.hide()
-                                    scope.launch {
-                                        if (drawerState.isOpen) drawerState.close() else drawerState.open()
-                                    }
-                                },
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.KeyboardArrowDown,
-                                    contentDescription = if (open) "收起分类" else "展开分类",
-                                    modifier = Modifier.size(20.dp).rotate(rotation),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    },
-                    actions = {
-                        if (selectionMode) {
-                            PaperOverflowMenu(
-                                expanded = menuOpen,
-                                onExpandedChange = { menuOpen = it }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("全选") },
-                                    enabled = !notes.isNullOrEmpty(),
-                                    onClick = { menuOpen = false; viewModel.selectAll() }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("置顶") },
-                                    enabled = selectedIds.isNotEmpty(),
-                                    onClick = {
-                                        menuOpen = false
-                                        viewModel.batchSetPinned(true, onDone = { n ->
-                                            scope.launch { snackbarHostState.showSnackbar("已置顶 $n 条") }
-                                        }, onFailed = { scope.launch { snackbarHostState.showSnackbar(OPERATION_FAILED) } })
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("取消置顶") },
-                                    enabled = selectedIds.isNotEmpty(),
-                                    onClick = {
-                                        menuOpen = false
-                                        viewModel.batchSetPinned(false, onDone = { n ->
-                                            scope.launch { snackbarHostState.showSnackbar("已取消置顶 $n 条") }
-                                        }, onFailed = { scope.launch { snackbarHostState.showSnackbar(OPERATION_FAILED) } })
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("移动到分类") },
-                                    enabled = selectedIds.isNotEmpty(),
-                                    onClick = { menuOpen = false; showBatchCategorySheet = true }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("删除", color = MaterialTheme.colorScheme.error) },
-                                    enabled = selectedIds.isNotEmpty(),
-                                    onClick = { menuOpen = false; showBatchDeleteDialog = true }
-                                )
-                            }
-                        } else {
-                            IconButton(onClick = { viewModel.exitSelection(); searchActive = true }) {
-                                Icon(Icons.Default.Search, contentDescription = "搜索")
-                            }
-                            PaperOverflowMenu(
-                                expanded = menuOpen,
-                                onExpandedChange = { menuOpen = it }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("分类管理") },
-                                    onClick = { menuOpen = false; onManageCategories() }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("回收站") },
-                                    onClick = { menuOpen = false; onOpenTrash() }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("日历") },
-                                    onClick = { menuOpen = false; onOpenCalendar() }
-                                )
-                                // 排序对所有视图生效（#11 口径；#16 的禁用说明已作废）
-                                DropdownMenuItem(
-                                    text = { Text(if (sortMode == NoteSortMode.UPDATED_DESC) "✓ 排序：最近更新" else "排序：最近更新") },
-                                    onClick = { menuOpen = false; viewModel.onSortSelect(NoteSortMode.UPDATED_DESC) }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(if (sortMode == NoteSortMode.CREATED_DESC) "✓ 排序：最新创建" else "排序：最新创建") },
-                                    onClick = { menuOpen = false; viewModel.onSortSelect(NoteSortMode.CREATED_DESC) }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(if (sortMode == NoteSortMode.TITLE_ASC) "✓ 排序：按标题" else "排序：按标题") },
-                                    onClick = { menuOpen = false; viewModel.onSortSelect(NoteSortMode.TITLE_ASC) }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("导出备份") },
-                                    enabled = !exporting,
-                                    onClick = { menuOpen = false; exportLauncher.launch("mynote-backup.zip") }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("导入备份") },
-                                    onClick = { menuOpen = false; importLauncher.launch(arrayOf("application/zip")) }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("设置") },
-                                    onClick = { menuOpen = false; onOpenSettings() }
-                                )
-                            }
-                        }
-                    }
-                )
-            },
-            floatingActionButton = {
-                if (!selectionMode) {
-                    SmallFloatingActionButton(
-                        onClick = { onNewNote(viewModel.newNoteCategoryId) },
-                        shape = MaterialTheme.shapes.large,
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = "新建笔记", modifier = Modifier.size(20.dp))
-                    }
+    Box(Modifier.fillMaxSize()) {
+        ModalNavigationDrawer(
+            drawerState = drawerState,
+            // 多选态不提供侧滑，避免与列表长按/选择手势冲突
+            gesturesEnabled = !selectionMode,
+            drawerContent = {
+                ModalDrawerSheet(
+                    drawerState = drawerState,
+                    modifier = Modifier.width(300.dp),
+                    drawerShape = RoundedCornerShape(topEnd = 8.dp, bottomEnd = 8.dp),
+                    drawerContainerColor = MaterialTheme.colorScheme.surface
+                ) {
+                    CategoryDrawerContent(
+                        categories = categories,
+                        selected = selectedFilter,
+                        onSelect = { filter ->
+                            // 搜索是全库检索，先退出搜索再应用分类，否则选了分类也看不到效果
+                            if (searchActive) closeSearch()
+                            viewModel.onFilterSelect(filter)
+                            scope.launch { drawerState.close() }
+                        },
+                        onManageCategories = {
+                            scope.launch { drawerState.close() }
+                            onManageCategories()
+                        },
+                        onClose = { scope.launch { drawerState.close() } }
+                    )
                 }
             }
-        ) { padding ->
-            Column(
-                Modifier
-                    .padding(padding)
-                    .fillMaxSize()
-                    .imePadding()
-            ) {
-                if (searchActive) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Default.Search,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        BasicTextField(
-                            value = query,
-                            onValueChange = viewModel::onQueryChange,
-                            modifier = Modifier.weight(1f).focusRequester(focusRequester),
-                            singleLine = true,
-                            textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                color = MaterialTheme.colorScheme.onBackground
-                            ),
-                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                            decorationBox = { innerTextField ->
-                                if (query.isEmpty()) {
-                                    Text(
-                                        "搜索笔记…",
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+        ) {
+            Scaffold(
+                containerColor = MaterialTheme.colorScheme.background,
+                snackbarHost = { SnackbarHost(snackbarHostState) },
+                topBar = {
+                    PaperTopBar(
+                        title = if (selectionMode) "已选 ${selectedIds.size} 项" else "备忘录",
+                        subtitle = when {
+                            selectionMode -> null
+                            searchActive -> "全库搜索"
+                            else -> selectedFilter.summaryLabel(categories)
+                        },
+                        onBack = if (selectionMode) ({ viewModel.exitSelection() }) else null,
+                        // 展开 / 收起分类抽屉：chevron 紧贴「备忘录」，展开后旋转 180°
+                        titleTrailing = if (selectionMode) null else {
+                            {
+                                val open = drawerState.targetValue == DrawerValue.Open
+                                val rotation by animateFloatAsState(
+                                    targetValue = if (open) 180f else 0f,
+                                    label = "categoryChevron"
+                                )
+                                IconButton(
+                                    onClick = {
+                                        if (searchActive) keyboard?.hide()
+                                        scope.launch {
+                                            if (drawerState.isOpen) drawerState.close() else drawerState.open()
+                                        }
+                                    },
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.KeyboardArrowDown,
+                                        contentDescription = if (open) "收起分类" else "展开分类",
+                                        modifier = Modifier.size(20.dp).rotate(rotation),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
-                                innerTextField()
                             }
-                        )
-                        IconButton(onClick = { closeSearch() }) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "关闭搜索",
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                    HairlineDivider()
-                }
-
-                if (notes == null) {
-                    // 冷启动首帧：Room 结果未到，先显示轻量加载占位，避免「还没有笔记」闪屏乃至误点新建
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator(Modifier.size(32.dp), strokeWidth = 3.dp)
-                            Spacer(Modifier.height(12.dp))
-                            Text(
-                                "加载中…",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                } else {
-                    val displayNotes = notes ?: emptyList()
-                    if (displayNotes.isEmpty()) {
-                        val searching = query.isNotBlank()
-                        val emptyText = when {
-                            searching -> "没有匹配的笔记"
-                            selectedFilter is CategoryFilter.Uncategorized -> "没有未分类的笔记"
-                            selectedFilter is CategoryFilter.Single -> "这个分类还没有笔记"
-                            else -> "还没有笔记"
-                        }
-                        EmptyState(
-                            icon = Icons.Outlined.Description,
-                            text = emptyText,
-                            actionLabel = if (searching) null else "写第一条",
-                            onAction = if (searching) null else ({ onNewNote(viewModel.newNoteCategoryId) })
-                        )
-                    } else {
-                        // 分类 id → 实体映射缓存，避免每行 O(n) 线性查找（行数多时重复执行）
-                        val categoriesById = remember(categories) { categories.associateBy { it.id } }
-                        LazyColumn(Modifier.fillMaxSize()) {
-                            itemsIndexed(displayNotes, key = { _, item -> item.id }) { index, item ->
-                                val prevPinned = if (index > 0) displayNotes[index - 1].pinned else false
-                                if (item.pinned && !prevPinned) {
-                                    NotesSectionHeader("置顶")
-                                } else if (!item.pinned && prevPinned) {
-                                    NotesSectionHeader("其他")
+                        },
+                        actions = {
+                            if (!selectionMode) {
+                                IconButton(onClick = { viewModel.exitSelection(); searchActive = true }) {
+                                    Icon(Icons.Default.Search, contentDescription = "搜索")
                                 }
-                                NoteRow(
-                                    item = item,
-                                    categoryColor = item.categoryId?.let { categoryColorById[it] },
-                                    onClick = {
-                                        if (selectionMode) viewModel.toggleSelect(item.id) else onOpenNote(item.id)
-                                    },
-                                    onLongClick = { viewModel.enterSelection(item.id) },
-                                    now = now,
-                                    // 全部 tab 或搜索态显示分类名：搜索是全库检索，行内分类归属非常规信息
-                                    categoryName = if (selectedFilter is CategoryFilter.All || query.isNotBlank()) {
-                                        categoriesById[item.categoryId]?.name
-                                    } else {
-                                        null
-                                    },
-                                    // 搜索态给标题/摘要加关键词高亮（与仓库层同口径：去掉首尾空白，
-                                    // 否则中文输入法常见的尾随空格会出现「能搜到却不高亮」）
-                                    highlightQuery = query.trim().takeIf { it.isNotBlank() },
-                                    // 多选高亮
-                                    selected = item.id in selectedIds,
-                                    modifier = Modifier.animateItem()
+                            }
+                            // 「更多」触发自绘纸片面板，菜单内容在 Scaffold 之后组装
+                            IconButton(onClick = { menuOpen = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "更多")
+                            }
+                        }
+                    )
+                },
+                floatingActionButton = {
+                    if (!selectionMode) {
+                        SmallFloatingActionButton(
+                            onClick = { onNewNote(viewModel.newNoteCategoryId) },
+                            shape = MaterialTheme.shapes.large,
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "新建笔记", modifier = Modifier.size(20.dp))
+                        }
+                    }
+                }
+            ) { padding ->
+                Column(
+                    Modifier
+                        .padding(padding)
+                        .fillMaxSize()
+                        .imePadding()
+                ) {
+                    if (searchActive) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Search,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            BasicTextField(
+                                value = query,
+                                onValueChange = viewModel::onQueryChange,
+                                modifier = Modifier.weight(1f).focusRequester(focusRequester),
+                                singleLine = true,
+                                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                    color = MaterialTheme.colorScheme.onBackground
+                                ),
+                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                decorationBox = { innerTextField ->
+                                    if (query.isEmpty()) {
+                                        Text(
+                                            "搜索笔记…",
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                            )
+                            IconButton(onClick = { closeSearch() }) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "关闭搜索",
+                                    modifier = Modifier.size(18.dp)
                                 )
-                                if (index < displayNotes.lastIndex) HairlineDivider()
+                            }
+                        }
+                        HairlineDivider()
+                    }
+
+                    if (notes == null) {
+                        // 冷启动首帧：Room 结果未到，先显示轻量加载占位，避免「还没有笔记」闪屏乃至误点新建
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator(Modifier.size(32.dp), strokeWidth = 3.dp)
+                                Spacer(Modifier.height(12.dp))
+                                Text(
+                                    "加载中…",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    } else {
+                        val displayNotes = notes ?: emptyList()
+                        if (displayNotes.isEmpty()) {
+                            val searching = query.isNotBlank()
+                            val emptyText = when {
+                                searching -> "没有匹配的笔记"
+                                selectedFilter is CategoryFilter.Uncategorized -> "没有未分类的笔记"
+                                selectedFilter is CategoryFilter.Single -> "这个分类还没有笔记"
+                                else -> "还没有笔记"
+                            }
+                            EmptyState(
+                                icon = Icons.Outlined.Description,
+                                text = emptyText,
+                                actionLabel = if (searching) null else "写第一条",
+                                onAction = if (searching) null else ({ onNewNote(viewModel.newNoteCategoryId) })
+                            )
+                        } else {
+                            // 分类 id → 实体映射缓存，避免每行 O(n) 线性查找（行数多时重复执行）
+                            val categoriesById = remember(categories) { categories.associateBy { it.id } }
+                            LazyColumn(Modifier.fillMaxSize()) {
+                                itemsIndexed(displayNotes, key = { _, item -> item.id }) { index, item ->
+                                    val prevPinned = if (index > 0) displayNotes[index - 1].pinned else false
+                                    if (item.pinned && !prevPinned) {
+                                        NotesSectionHeader("置顶")
+                                    } else if (!item.pinned && prevPinned) {
+                                        NotesSectionHeader("其他")
+                                    }
+                                    NoteRow(
+                                        item = item,
+                                        categoryColor = item.categoryId?.let { categoryColorById[it] },
+                                        onClick = {
+                                            if (selectionMode) viewModel.toggleSelect(item.id) else onOpenNote(item.id)
+                                        },
+                                        onLongClick = { viewModel.enterSelection(item.id) },
+                                        now = now,
+                                        // 全部 tab 或搜索态显示分类名：搜索是全库检索，行内分类归属非常规信息
+                                        categoryName = if (selectedFilter is CategoryFilter.All || query.isNotBlank()) {
+                                            categoriesById[item.categoryId]?.name
+                                        } else {
+                                            null
+                                        },
+                                        // 搜索态给标题/摘要加关键词高亮（与仓库层同口径：去掉首尾空白，
+                                        // 否则中文输入法常见的尾随空格会出现「能搜到却不高亮」）
+                                        highlightQuery = query.trim().takeIf { it.isNotBlank() },
+                                        // 多选高亮
+                                        selected = item.id in selectedIds,
+                                        modifier = Modifier.animateItem()
+                                    )
+                                    if (index < displayNotes.lastIndex) HairlineDivider()
+                                }
                             }
                         }
                     }
                 }
             }
-        }
 
+        }
+        // 纸片面板：正常态分「浏览 / 整理 / 数据」，多选态分「选择 / 操作」
+        PaperActionPanel(
+            expanded = menuOpen,
+            onDismissRequest = { menuOpen = false }
+        ) {
+            if (selectionMode) {
+                PaperPanelGroup("选择") {
+                    PaperPanelItem(
+                        text = "全选",
+                        enabled = !notes.isNullOrEmpty()
+                    ) {
+                        menuOpen = false
+                        viewModel.selectAll()
+                    }
+                }
+                PaperPanelGroup("操作") {
+                    PaperPanelItem(
+                        text = "置顶",
+                        enabled = selectedIds.isNotEmpty()
+                    ) {
+                        menuOpen = false
+                        viewModel.batchSetPinned(true, onDone = { n ->
+                            scope.launch { snackbarHostState.showSnackbar("已置顶 $n 条") }
+                        }, onFailed = { scope.launch { snackbarHostState.showSnackbar(OPERATION_FAILED) } })
+                    }
+                    PaperPanelItem(
+                        text = "取消置顶",
+                        enabled = selectedIds.isNotEmpty()
+                    ) {
+                        menuOpen = false
+                        viewModel.batchSetPinned(false, onDone = { n ->
+                            scope.launch { snackbarHostState.showSnackbar("已取消置顶 $n 条") }
+                        }, onFailed = { scope.launch { snackbarHostState.showSnackbar(OPERATION_FAILED) } })
+                    }
+                    PaperPanelItem(
+                        text = "移动到分类",
+                        enabled = selectedIds.isNotEmpty()
+                    ) {
+                        menuOpen = false
+                        showBatchCategorySheet = true
+                    }
+                    PaperPanelItem(
+                        text = "删除",
+                        enabled = selectedIds.isNotEmpty(),
+                        destructive = true
+                    ) {
+                        menuOpen = false
+                        showBatchDeleteDialog = true
+                    }
+                }
+            } else {
+                PaperPanelGroup("浏览") {
+                    PaperPanelItem("日历") { menuOpen = false; onOpenCalendar() }
+                    PaperPanelItem("回收站") { menuOpen = false; onOpenTrash() }
+                }
+                PaperPanelGroup("整理") {
+                    Column(Modifier.selectableGroup()) {
+                        noteSortOptions(sortMode).forEach { option ->
+                            PaperPanelChoice(
+                                text = option.label,
+                                selected = option.selected
+                            ) {
+                                menuOpen = false
+                                viewModel.onSortSelect(option.mode)
+                            }
+                        }
+                    }
+                }
+                PaperPanelGroup("数据") {
+                    PaperPanelItem(
+                        text = "导出备份",
+                        enabled = !exporting
+                    ) {
+                        menuOpen = false
+                        exportLauncher.launch("mynote-backup.zip")
+                    }
+                    PaperPanelItem("导入备份") {
+                        menuOpen = false
+                        importLauncher.launch(arrayOf("application/zip"))
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                HairlineDivider()
+                Spacer(Modifier.height(6.dp))
+                PaperPanelItem("设置") { menuOpen = false; onOpenSettings() }
+            }
+        }
     }
     pendingImportUri?.let { uri ->
         PaperAlertDialog(

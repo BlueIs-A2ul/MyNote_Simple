@@ -73,6 +73,7 @@ import com.mynote.app.data.settings.TrashRetentionStore
 import com.mynote.app.ui.components.HairlineDivider
 import com.mynote.app.ui.components.PaperTopBar
 import com.mynote.app.ui.components.TextTabRow
+import com.mynote.app.ui.notes.sortLabel
 import com.mynote.app.ui.theme.ThemePresets
 import kotlinx.coroutines.launch
 
@@ -253,7 +254,7 @@ fun SettingsScreen(
                     tabs = NoteSortMode.entries.toList(),
                     selected = defaultSort,
                     onSelect = { vm.setDefaultSort(it) },
-                    label = { sortModeLabel(it) }
+                    label = { it.sortLabel() }
                 )
                 Text(
                     "列表默认排序（主页 ⋮ 菜单可临时切换）",
@@ -366,11 +367,5 @@ private fun darkModeLabel(mode: DarkMode): String = when (mode) {
     DarkMode.SYSTEM -> "跟随系统"
     DarkMode.LIGHT -> "浅色"
     DarkMode.DARK -> "深色"
-}
-
-private fun sortModeLabel(mode: NoteSortMode): String = when (mode) {
-    NoteSortMode.UPDATED_DESC -> "最近更新"
-    NoteSortMode.CREATED_DESC -> "最新创建"
-    NoteSortMode.TITLE_ASC -> "按标题"
 }
 
