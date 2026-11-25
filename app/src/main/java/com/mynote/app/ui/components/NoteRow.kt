@@ -4,18 +4,13 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material3.Icon
@@ -25,7 +20,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -71,10 +69,26 @@ fun NoteRow(
     val highlightedSummary = remember(summary, query, highlightBackground) {
         if (query != null) buildHighlighted(summary, query, highlightBackground) else AnnotatedString(summary)
     }
+    // 相对时间要构造 3 个 Calendar（含一次 clone），只在数据或每分钟 tick 变化时重算，
+    // 不要在多选切换、列表重发等无关重组里重复执行。
+    val relativeDate = remember(item.updatedAt, now) { TimeFormat.relativeDate(item.updatedAt, now) }
     Row(
         modifier = modifier
             .fillMaxWidth()
             .background(if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
+            // 性能：分类色条改用 drawBehind 画。原实现用 height(IntrinsicSize.Min) + fillMaxHeight，
+            // 会让每行每次布局都多做一轮固有尺寸测量（Row/Column/两个 Text 各测 min/max）。
+            .drawBehind {
+                val bar = categoryColor ?: return@drawBehind
+                val barWidth = 3.dp.toPx()
+                val verticalInset = 12.dp.toPx()
+                drawRoundRect(
+                    color = bar,
+                    topLeft = Offset(16.dp.toPx(), verticalInset),
+                    size = Size(barWidth, (size.height - verticalInset * 2).coerceAtLeast(0f)),
+                    cornerRadius = CornerRadius(barWidth / 2f)
+                )
+            }
             // 条目 99：多选态要让读屏能感知，而不是只靠底色
             .semantics {
                 this.selected = selected
@@ -87,18 +101,11 @@ fun NoteRow(
                     Modifier.clickable(onClick = onClick)
                 }
             )
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-            .height(IntrinsicSize.Min),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.Top
     ) {
-        Box(
-            Modifier
-                .width(3.dp)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(1.5.dp))
-                .background(categoryColor ?: Color.Transparent)
-        )
-        Spacer(Modifier.width(10.dp))
+        // 保持原「3dp 色条 + 10dp 间距」的视觉缩进：色条由 drawBehind 画，这里只留内容起点
+        Spacer(Modifier.width(13.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (item.pinned) {
@@ -141,7 +148,7 @@ fun NoteRow(
         Spacer(Modifier.width(12.dp))
         Column(horizontalAlignment = Alignment.End) {
             Text(
-                text = TimeFormat.relativeDate(item.updatedAt, now),
+                text = relativeDate,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

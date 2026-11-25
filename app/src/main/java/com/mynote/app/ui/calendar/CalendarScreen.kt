@@ -82,6 +82,10 @@ fun CalendarScreen(
     val today = remember(now) { CalendarDates.dayStart(now) }
     val grid = remember(year, month) { CalendarDates.monthGrid(year, month) }
     val categoriesById = remember(categories) { categories.associateBy { it.id } }
+    // 与主页同口径：nearest() 只随分类变化算一次，行内只做一次 map 查找
+    val categoryColorById = remember(categories) {
+        categories.associate { it.id to PaperPalette.nearest(it.color) }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -139,8 +143,7 @@ fun CalendarScreen(
                     items(notes, key = { it.id }) { item ->
                         NoteRow(
                             item = item,
-                            categoryColor = categoriesById[item.categoryId]
-                                ?.let { PaperPalette.nearest(it.color) },
+                            categoryColor = item.categoryId?.let { categoryColorById[it] },
                             onClick = { onOpenNote(item.id) },
                             now = now,
                             categoryName = categoriesById[item.categoryId]?.name

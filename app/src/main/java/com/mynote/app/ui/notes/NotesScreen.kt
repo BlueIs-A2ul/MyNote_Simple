@@ -185,6 +185,12 @@ fun NotesScreen(
         if (result == SnackbarResult.ActionPerformed) viewModel.restoreDeleted(id)
     }
 
+    // 分类 id → 纸感色缓存：PaperPalette.nearest() 含 HSV 转换 + 6 次色相距离，
+    // 只在分类变化时算一次，列表行与批量分类弹层共用，避免每行每次重组重复计算。
+    val categoryColorById = remember(categories) {
+        categories.associate { it.id to PaperPalette.nearest(it.color) }
+    }
+
     // 分类列表首次非空后才校验：categories 初始为 emptyList()，等 Room 首次真实数据到了再判定
     // 「所选分类已删除」，命中则自动回落「全部」，避免列表恒空且抽屉高亮错位。
     var categoriesLoaded by remember { mutableStateOf(false) }
@@ -462,8 +468,7 @@ fun NotesScreen(
                                 }
                                 NoteRow(
                                     item = item,
-                                    categoryColor = categoriesById[item.categoryId]
-                                        ?.let { PaperPalette.nearest(it.color) },
+                                    categoryColor = item.categoryId?.let { categoryColorById[it] },
                                     onClick = {
                                         if (selectionMode) viewModel.toggleSelect(item.id) else onOpenNote(item.id)
                                     },
@@ -532,7 +537,7 @@ fun NotesScreen(
                 categories.forEach { cat ->
                     BatchCategorySheetRow(
                         label = cat.name,
-                        color = PaperPalette.nearest(cat.color),
+                        color = categoryColorById[cat.id],
                         onClick = {
                             showBatchCategorySheet = false
                             viewModel.batchSetCategory(cat.id, onDone = { n ->

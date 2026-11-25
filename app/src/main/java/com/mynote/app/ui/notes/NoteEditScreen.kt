@@ -53,6 +53,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -109,6 +110,7 @@ import com.mynote.app.util.CalendarDates
 import com.mynote.app.util.FileNameSanitizer
 import com.mynote.app.util.TimeFormat
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -118,6 +120,13 @@ import java.io.File
 
 /** 条目 100⑦：尚未入库的新笔记在 [EditorTextCache] 里的键。 */
 private const val NEW_NOTE_CACHE_KEY = -1L
+
+/**
+ * 性能：字数/图数统计的防抖窗口。
+ * 计算要跑两次全文正则（plainText 是 Regex.replace，会整串复制），逐键算会让长笔记输入发涩；
+ * 连续输入时 LaunchedEffect 不断被取消，效果就是「停下来再算」。
+ */
+private const val COUNTER_DEBOUNCE_MS = 150L
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -334,17 +343,32 @@ fun NoteEditScreen(
         snackbarHostState.showSnackbar(message)
     }
 
-    // 条目 100：字数只在正文变化时重算，避免每次重组都跑一遍正则
-    val wordCount by remember { derivedStateOf { NoteContentParser.plainText(content.text).length } }
+    // 条目 100：字数只在正文变化时重算，避免每次重组都跑一遍正则。
+    // 性能：改为防抖计算，连续输入期间不再逐键对全文做两次正则扫描。
+    var wordCount by remember { mutableIntStateOf(0) }
     // 条目 97：图片数量随时可见，删图后立即变化
-    val imageCount by remember { derivedStateOf { NoteContentParser.extractImageNames(content.text).size } }
+    var imageCount by remember { mutableIntStateOf(0) }
+    // 首帧（打开已有笔记）立刻算一次，避免先闪一下「字数 0 · 图 0」；之后才走防抖
+    var countersPrimed by remember { mutableStateOf(false) }
+    LaunchedEffect(content.text) {
+        if (countersPrimed && content.text.isNotEmpty()) delay(COUNTER_DEBOUNCE_MS)
+        wordCount = NoteContentParser.plainText(content.text).length
+        imageCount = NoteContentParser.extractImageNames(content.text).size
+        countersPrimed = true
+    }
 
     val context = LocalContext.current
 
     val isNewNote = (noteId == null || noteId == 0L) && draftId == null
     // 条目 94：存量笔记在回填完成前不能当空文本保存，否则会用空正文覆盖旧内容
     val loaded = isNewNote || note != null
-    val dirty = hasUnsavedChanges(isNewNote, note, title, content.text, selectedCategoryId, pinned, noteDate)
+    // 性能：dirty 只在返回/保存/历史入口的 lambda 里读取，用 derivedStateOf 把全文比较移出组合期，
+    // 避免每次按键都因它把整屏（Scaffold/顶栏/底部栏）带进重组。
+    val dirty by remember(note, isNewNote) {
+        derivedStateOf {
+            hasUnsavedChanges(isNewNote, note, title, content.text, selectedCategoryId, pinned, noteDate)
+        }
+    }
     val canSave = loaded && !(isNewNote && title.isBlank() && content.text.isBlank())
 
     // 退后台静默保存草稿：标题/正文非空的新笔记会入库，空白新笔记不落库
@@ -527,11 +551,13 @@ fun NoteEditScreen(
             }
 
             if (previewMode) {
+                // 预览块解析按正文缓存：否则预览态下任何无关重组都会重跑一次全文解析
+                val previewBlocks = remember(content.text) { NoteContentParser.parse(content.text) }
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(NoteContentParser.parse(content.text)) { block ->
+                    items(previewBlocks) { block ->
                         when (block) {
                             is ContentBlock.Text -> Text(
                                 block.text,

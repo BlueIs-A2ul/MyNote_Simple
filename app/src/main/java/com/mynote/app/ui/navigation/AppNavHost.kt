@@ -1,5 +1,11 @@
 package com.mynote.app.ui.navigation
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -22,6 +28,16 @@ import com.mynote.app.ui.notes.NotesViewModel
 import com.mynote.app.ui.settings.PromptEditScreen
 import com.mynote.app.ui.settings.SettingsScreen
 import com.mynote.app.ui.trash.TrashScreen
+
+/**
+ * 页面转场时长（毫秒）。
+ *
+ * Navigation 在未指定 transition 时默认是 700ms 全屏淡入淡出：一次跳转要双屏交叉绘制约 42 帧，
+ * 体感就是「点了半拍才响应」。这里换成短促的淡入 + 轻微横向位移，只改观感，不改导航语义。
+ */
+private const val NAV_ENTER_MS = 180
+private const val NAV_EXIT_MS = 120
+private const val NAV_POP_ENTER_MS = 140
 
 object AiNavKeys {
     const val RESULT_TYPE = "ai_result_type"
@@ -49,7 +65,19 @@ fun AppNavHost(
         onDeepLinkConsumed()
         navController.navigate(EditNoteRoute(noteId = id)) { launchSingleTop = true }
     }
-    NavHost(navController = navController, startDestination = NotesRoute) {
+    NavHost(
+        navController = navController,
+        startDestination = NotesRoute,
+        enterTransition = {
+            fadeIn(tween(NAV_ENTER_MS, easing = FastOutSlowInEasing)) +
+                slideInHorizontally(tween(NAV_ENTER_MS, easing = FastOutSlowInEasing)) { it / 24 }
+        },
+        exitTransition = { fadeOut(tween(NAV_EXIT_MS)) },
+        popEnterTransition = { fadeIn(tween(NAV_POP_ENTER_MS)) },
+        popExitTransition = {
+            fadeOut(tween(NAV_EXIT_MS)) + slideOutHorizontally(tween(NAV_EXIT_MS)) { it / 24 }
+        }
+    ) {
         composable<NotesRoute> { backStack ->
             val vm: NotesViewModel = viewModel(
                 factory = NotesViewModel.factory(
