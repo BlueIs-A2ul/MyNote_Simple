@@ -186,8 +186,12 @@ private fun DayCell(
     val dayLabel = day?.let {
         CalendarDates.dayOfMonth(it).toString() + " 号" + if (hasNotes) "，有笔记" else ""
     } ?: "无日期"
+    // 条目 99：点按区域是整个 48dp 单元格，36dp 内圆只负责视觉；空白格不可点（仍读屏报「无日期」）
     Box(
-        modifier = modifier.height(44.dp).semantics { contentDescription = dayLabel },
+        modifier = modifier
+            .height(48.dp)
+            .semantics { contentDescription = dayLabel }
+            .clickable(enabled = day != null, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         if (day == null) return@Box
@@ -202,8 +206,7 @@ private fun DayCell(
                     } else {
                         Modifier
                     }
-                )
-                .clickable(onClick = onClick),
+                ),
             contentAlignment = Alignment.Center
         ) {
             Text(

@@ -4,7 +4,6 @@ import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -192,29 +191,17 @@ fun SettingsScreen(
                 )
                 val selectedColorIndex =
                     settings.themeColorIndex.takeIf { it in ThemePresets.all.indices } ?: 0
-                Row(
-                    modifier = Modifier.fillMaxWidth().selectableGroup(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
+                // 条目 99：色点视觉仍是 28dp，但每个色板的触达区铺满整格（≥48dp 高）。
+                // 用 weight 均分宽度，320dp 屏上 8 个色板也不会溢出。
+                Row(modifier = Modifier.fillMaxWidth().selectableGroup()) {
                     ThemePresets.all.forEachIndexed { index, preset ->
                         val selected = index == selectedColorIndex
                         val dynamicOn = settings.dynamicColor
                         Box(
                             modifier = Modifier
-                                .size(28.dp)
-                                // 动态取色开启时色板降透明，表明实际生效的是系统壁纸取色
-                                .background(
-                                    preset.light.primary.copy(alpha = if (dynamicOn) 0.4f else 1f),
-                                    CircleShape
-                                )
-                                .border(
-                                    width = if (selected && !dynamicOn) 1.5.dp else 1.dp,
-                                    color = if (selected && !dynamicOn) MaterialTheme.colorScheme.onBackground
-                                    else MaterialTheme.colorScheme.outlineVariant,
-                                    shape = CircleShape
-                                )
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
                                 .semantics { contentDescription = preset.label }
-                                .clip(CircleShape)
                                 .selectable(
                                     selected = selected,
                                     onClick = {
@@ -227,8 +214,26 @@ fun SettingsScreen(
                                         vm.setThemeColorIndex(index)
                                     },
                                     role = Role.RadioButton
-                                )
-                        )
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    // 动态取色开启时色板降透明，表明实际生效的是系统壁纸取色
+                                    .background(
+                                        preset.light.primary.copy(alpha = if (dynamicOn) 0.4f else 1f),
+                                        CircleShape
+                                    )
+                                    .border(
+                                        width = if (selected && !dynamicOn) 1.5.dp else 1.dp,
+                                        color = if (selected && !dynamicOn) MaterialTheme.colorScheme.onBackground
+                                        else MaterialTheme.colorScheme.outlineVariant,
+                                        shape = CircleShape
+                                    )
+                                    .clip(CircleShape)
+                            )
+                        }
                     }
                 }
                 if (settings.dynamicColor) {

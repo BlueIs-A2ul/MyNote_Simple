@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -34,10 +35,13 @@ fun <T> TextTabRow(
         items(tabs) { tab ->
             val isSelected = tab == selected
             Column(
+                // 条目 99：触达区不随字号缩水，至少 48dp；文字 + 下划线整体垂直居中
                 modifier = Modifier
+                    .heightIn(min = 48.dp)
                     .clickable { onSelect(tab) }
-                    .padding(vertical = 6.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .padding(vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
                 Text(
                     text = label(tab),

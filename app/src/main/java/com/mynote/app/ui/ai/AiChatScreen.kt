@@ -4,6 +4,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,14 +19,12 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
@@ -42,7 +42,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -70,6 +69,8 @@ import com.mynote.app.data.db.AiSessionEntity
 import com.mynote.app.data.repository.NoteRepository
 import com.mynote.app.data.settings.AiDraftStore
 import com.mynote.app.data.settings.AiSettingsStore
+import com.mynote.app.ui.components.PaperAlertDialog
+import com.mynote.app.ui.components.PaperTopBar
 import com.mynote.app.util.TimeFormat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -112,16 +113,7 @@ fun AiChatScreen(
     val current = context
     if (current == null) {
         Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text("AI 助手") },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                        }
-                    }
-                )
-            }
+            topBar = { PaperTopBar(title = "AI 助手", onBack = onBack) }
         ) { padding ->
             Box(
                 modifier = Modifier.fillMaxSize().padding(padding),
@@ -155,9 +147,10 @@ fun AiChatScreen(
     }
 
     if (!state.privacyAccepted) {
-        AlertDialog(
+        // 隐私确认不可取消：没有 dismissButton，返回键/点外部也不放行
+        PaperAlertDialog(
             onDismissRequest = {},
-            title = { Text("发送到 ${state.providerName}") },
+            title = "发送到 ${state.providerName}",
             text = {
                 Text("AI 助手会把你输入的内容与笔记正文，通过你填写的 API Key 发送给${state.providerName}接口处理，费用由你的账号承担。请遵守服务条款，避免发送敏感信息。")
             },
@@ -168,9 +161,9 @@ fun AiChatScreen(
     }
 
     pendingDelete?.let { target ->
-        AlertDialog(
+        PaperAlertDialog(
             onDismissRequest = { pendingDelete = null },
-            title = { Text("删除会话") },
+            title = "删除会话",
             text = { Text("删除后「${target.title}」及其全部消息记录都会一并删除，且无法恢复。") },
             confirmButton = {
                 TextButton(
@@ -224,34 +217,15 @@ fun AiChatScreen(
         Scaffold(
             snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text(
-                                state.sessions.firstOrNull { it.id == state.currentSessionId }?.title
-                                    ?: "AI 助手",
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            val subtitle = listOf(state.providerName, state.modelName)
-                                .filter { it.isNotBlank() }
-                                .joinToString(" · ")
-                            if (subtitle.isNotEmpty()) {
-                                Text(
-                                    subtitle,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                        }
-                    },
+                // 纸感顶栏：衬线标题 + 服务商/模型副标题，与其余页面一致（自带 statusBarsPadding 与 56dp 最小高度）
+                PaperTopBar(
+                    title = state.sessions.firstOrNull { it.id == state.currentSessionId }?.title
+                        ?: "AI 助手",
+                    subtitle = listOf(state.providerName, state.modelName)
+                        .filter { it.isNotBlank() }
+                        .joinToString(" · ")
+                        .ifEmpty { null },
+                    onBack = onBack,
                     actions = {
                         IconButton(onClick = { scope.launch { drawerState.open() } }) {
                             Icon(Icons.Default.Menu, contentDescription = "会话列表")
@@ -452,6 +426,7 @@ private fun ChatLayer(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MessageBubble(
     message: AiMessageEntity,
@@ -509,7 +484,8 @@ private fun MessageBubble(
             val plainContent = remember(message.content) {
                 MarkdownPlainText.convert(message.content)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            // FlowRow：1.3 倍字体下按钮换行，而不是被 Row 挤压裁切
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 // 条目 88：空回答（纯空白/只有格式符）禁用落地按钮，避免插入空串
                 TextButton(onClick = { onInsert(plainContent) }, enabled = plainContent.isNotBlank()) {
                     Text("插入正文", style = MaterialTheme.typography.labelMedium)

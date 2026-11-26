@@ -5,6 +5,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
@@ -44,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -59,7 +63,7 @@ import com.mynote.app.ui.theme.NoteColors
 import com.mynote.app.ui.theme.PaperPalette
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun CategoriesScreen(repository: NoteRepository, onBack: () -> Unit) {
     val vm: CategoriesViewModel = viewModel(factory = CategoriesViewModel.factory(repository))
@@ -98,6 +102,15 @@ fun CategoriesScreen(repository: NoteRepository, onBack: () -> Unit) {
             )
         } else {
             LazyColumn(Modifier.padding(padding).fillMaxSize()) {
+                // 可发现性提示：行内色点与名称各自可点，光看界面猜不到
+                item(key = "hint") {
+                    Text(
+                        "点按色点可循环换色，点按名称可重命名",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                }
                 itemsIndexed(categories, key = { _, cat -> cat.id }) { index, cat ->
                     CategoryRow(
                         cat = cat,
@@ -135,28 +148,41 @@ fun CategoriesScreen(repository: NoteRepository, onBack: () -> Unit) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        NoteColors.forEach { color ->
+                    // 条目 99：每个色板 48dp 触达区包住 28dp 圆点，触屏与读屏都够用。
+                    // 用 FlowRow：对话框内容宽度有限，6 × 48dp 在窄屏上会换行而不是被裁掉。
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        NoteColors.forEachIndexed { index, color ->
                             val argb = color.toArgb()
                             val selected = argb == selectedColor
                             Box(
                                 modifier = Modifier
-                                    .size(28.dp)
-                                    .clip(CircleShape)
-                                    .background(color)
-                                    .then(
-                                        if (selected) {
-                                            Modifier.border(
-                                                2.dp,
-                                                MaterialTheme.colorScheme.onSurface,
-                                                CircleShape
-                                            )
-                                        } else {
-                                            Modifier
-                                        }
-                                    )
-                                    .clickable { selectedColor = argb }
-                            )
+                                    .size(48.dp)
+                                    .semantics { contentDescription = "颜色 " + (index + 1) }
+                                    .selectable(
+                                        selected = selected,
+                                        role = Role.RadioButton,
+                                        onClick = { selectedColor = argb }
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .clip(CircleShape)
+                                        .background(color)
+                                        .then(
+                                            if (selected) {
+                                                Modifier.border(
+                                                    2.dp,
+                                                    MaterialTheme.colorScheme.onSurface,
+                                                    CircleShape
+                                                )
+                                            } else {
+                                                Modifier
+                                            }
+                                        )
+                                )
+                            }
                         }
                     }
                 }
