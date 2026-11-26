@@ -40,6 +40,21 @@ class CategoryDrawerTest {
         assertEquals(life.color, entries[3].colorArgb)
     }
 
+    /** 批次 K（条目 120）：抽屉行尾显示该分类下的可见笔记数，固定项不显示。 */
+    @Test
+    fun `category rows carry visible note counts`() {
+        val entries = categoryDrawerEntries(
+            categories,
+            CategoryFilter.All,
+            mapOf(1L to 3, 2L to 0)
+        )
+
+        assertNull(entries[0].count)
+        assertNull(entries[1].count)
+        assertEquals(3, entries[2].count ?: -1)
+        assertEquals(0, entries[3].count ?: -1)
+    }
+
     @Test
     fun `deleted category label falls back to unknown`() {
         val deleted = CategoryFilter.Single(99)

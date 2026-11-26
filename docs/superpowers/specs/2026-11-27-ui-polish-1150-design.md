@@ -50,6 +50,7 @@ v1.14.1 之后，backlog 里 102 条可执行项已基本清空，抽屉侧边�
 | D4 | 从笔记返回时搜索键盘被自动顶起 | 仅「主动点搜索图标」时请求焦点 |
 | D5 | 分享无 `ActivityNotFoundException` 兜底 | try/catch + snackbar「没有可分享的应用」 |
 | D6 | 未开启预测性返回（Android 13+ 无返回手势预览） | manifest `enableOnBackInvokedCallback="true"`（需真机确认抽屉 / 面板场景） |
+| D7 | 分类抽屉只显示分类名，看不出各分类有多少条笔记 | 行尾显示可见笔记数（复用 `observeCategoryNoteCounts`，与分类管理页同一口径） |
 
 ## 技术要点
 
@@ -59,7 +60,7 @@ v1.14.1 之后，backlog 里 102 条可执行项已基本清空，抽屉侧边�
 
 ## 涉及文件
 
-- 主页：`ui/notes/NotesScreen.kt`、`ui/notes/NotesViewModel.kt`、`ui/components/PaperActionPanel.kt`、`ui/components/NoteRow.kt`
+- 主页：`ui/notes/NotesScreen.kt`、`ui/notes/NotesViewModel.kt`、`ui/notes/CategoryDrawer.kt`、`ui/components/PaperActionPanel.kt`、`ui/components/NoteRow.kt`
 - 编辑页：`ui/notes/NoteEditScreen.kt`、`ui/notes/NoteEditViewModel.kt`
 - 全局 chrome：`ui/components/PaperTopBar.kt`、`ui/components/TextTabRow.kt`、`ui/settings/SettingsScreen.kt`、`ui/categories/CategoriesScreen.kt`、`ui/calendar/CalendarScreen.kt`、`ui/ai/AiChatScreen.kt`
 - 导航与平台：`ui/navigation/AppNavHost.kt`、`AndroidManifest.xml`

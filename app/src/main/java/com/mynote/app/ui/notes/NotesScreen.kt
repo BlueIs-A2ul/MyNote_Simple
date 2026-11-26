@@ -114,6 +114,8 @@ fun NotesScreen(
 ) {
     val notes by viewModel.notes.collectAsStateWithLifecycle()
     val categories by viewModel.categories.collectAsStateWithLifecycle()
+    // 抽屉行尾的分类笔记数（与分类管理页同一投影）
+    val categoryCounts by viewModel.categoryCounts.collectAsStateWithLifecycle()
     val query by viewModel.query.collectAsStateWithLifecycle()
     val selectedFilter by viewModel.selectedFilter.collectAsStateWithLifecycle()
     val sortMode by viewModel.sortMode.collectAsStateWithLifecycle()
@@ -257,7 +259,8 @@ fun NotesScreen(
                             scope.launch { drawerState.close() }
                             onManageCategories()
                         },
-                        onClose = { scope.launch { drawerState.close() } }
+                        onClose = { scope.launch { drawerState.close() } },
+                        counts = categoryCounts
                     )
                 }
             }

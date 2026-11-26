@@ -45,19 +45,23 @@ internal data class CategoryDrawerEntry(
     val label: String,
     /** 分类色（ARGB）；「全部」「未分类」没有色点，为 null。 */
     val colorArgb: Int?,
+    /** 该分类下的可见笔记数；「全部」「未分类」不显示（null）。 */
+    val count: Int?,
     val selected: Boolean
 )
 
 /** 「全部」「未分类」固定置顶，其后按仓库返回顺序列出各分类。 */
 internal fun categoryDrawerEntries(
     categories: List<CategoryEntity>,
-    selected: CategoryFilter
+    selected: CategoryFilter,
+    counts: Map<Long, Int> = emptyMap()
 ): List<CategoryDrawerEntry> = buildList {
     add(
         CategoryDrawerEntry(
             filter = CategoryFilter.All,
             label = CategoryFilter.All.menuLabel(categories),
             colorArgb = null,
+            count = null,
             selected = selected == CategoryFilter.All
         )
     )
@@ -66,6 +70,7 @@ internal fun categoryDrawerEntries(
             filter = CategoryFilter.Uncategorized,
             label = CategoryFilter.Uncategorized.menuLabel(categories),
             colorArgb = null,
+            count = null,
             selected = selected == CategoryFilter.Uncategorized
         )
     )
@@ -76,6 +81,8 @@ internal fun categoryDrawerEntries(
                 filter = filter,
                 label = category.name,
                 colorArgb = category.color,
+                // 没有查询结果的分类显示 0 而不是空白：与分类管理页同一口径
+                count = counts[category.id] ?: 0,
                 selected = selected == filter
             )
         )
@@ -96,9 +103,11 @@ internal fun CategoryDrawerContent(
     onSelect: (CategoryFilter) -> Unit,
     onManageCategories: () -> Unit,
     onClose: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** 分类 id → 可见笔记数：行尾小字，按分类浏览时不必再进去数。 */
+    counts: Map<Long, Int> = emptyMap()
 ) {
-    val entries = remember(categories, selected) { categoryDrawerEntries(categories, selected) }
+    val entries = remember(categories, selected, counts) { categoryDrawerEntries(categories, selected, counts) }
     Column(modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
@@ -233,6 +242,15 @@ private fun CategoryDrawerRow(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
+        // 行尾计数：分类下有多少条可见笔记（「全部 / 未分类」不显示）
+        entry.count?.let { count ->
+            Text(
+                text = count.toString(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(end = 8.dp)
+            )
+        }
         if (selected) {
             Icon(
                 Icons.Default.Check,

@@ -101,7 +101,7 @@
 | 100 | 撤销栈封顶 + 字数统计缓存 + 平台加固合集 | P2 | S/M | 已完成（2026-11-10） | 批次J |
 | 101 | 启动图标改自适应图标（「记」字标 + Indigo→Teal 渐变 + 单色层） | P1 | S | 已完成（2026-10-29，v1.11.0） | — |
 | 102 | AI 助手自定义 system 提示词（内置默认 + 可完全覆盖） | P1 | S/M | 已完成（2026-10-30，v1.12.0） | — |
-| 103–119 | UI 体验修复批（17 项：FAB 遮挡 / 工具栏裁切 / 提示阻塞退出 / 面板 IME / 多选语义 / 纸感一致性 / 触控区 / 批量撤销 等） | P1–P2 | M | 已完成（2026-11-27，v1.15.0） | 批次K（4 分支并行） |
+| 103–120 | UI 体验修复批（17 项：FAB 遮挡 / 工具栏裁切 / 提示阻塞退出 / 面板 IME / 多选语义 / 纸感一致性 / 触控区 / 批量撤销 等） | P1–P2 | M | 已完成（2026-11-27，v1.15.0） | 批次K（4 分支并行） |
 
 ---
 
@@ -672,6 +672,10 @@
 ### 118. 备份文件名恒为 `mynote-backup.zip`（P3）
 - 修复：`backupFileName(now)` 输出 `mynote-backup-YYYY-MM-DD.zip`（本地时区）。
 
+### 120. 分类抽屉没有笔记数（P3）
+- 现状：抽屉只显示分类名，按分类浏览时看不出各分类的体量；分类管理页早有 `observeCategoryNoteCounts` 投影。
+- 修复：`NotesViewModel.categoryCounts`（同一投影 → `Map<Long, Int>`）+ `CategoryDrawerEntry.count`，行尾显示 labelSmall 计数（「全部 / 未分类」不显示）；未命中显示 0，与分类管理页同口径。
+
 ### 119. 次要交互修复（P3）
 - 从笔记返回时搜索键盘被自动顶起 → 仅「主动点搜索图标」时请求焦点；
 - 分享 `startActivity` 无异常兜底 → try/catch +「没有可分享的应用」；
@@ -761,5 +765,5 @@
 | 2026-10-30 | **AI 助手自定义 system 提示词（v1.12.0，条目 102）**：预设提示词此前是编译期常量（`AiPromptBuilder.SYSTEM_PROMPT`，设计上还标注「文案冻结」），用户认为质量低也无从修改。按用户拍板的「方案 B：内置默认 + 可完全覆盖」实现：设置页 AI 段新增「系统提示词」入口（显示「内置默认」或自定义首行摘要）→ 独立编辑页（多行输入逐字保存、计数上限 2000 且达上限拒绝多余输入、恢复默认二次确认、常显内置默认原文）；`AiSettingsStore` 新增 `customSystemPrompt/setCustomSystemPrompt`（key `system_prompt`，**全局不分服务商**）；`AiPromptBuilder` 新增 `MAX_SYSTEM_PROMPT_CHARS` 与 `resolveSystemPrompt`（空白回退、超长截断）；`AiApiMessageBuilder.build` 以**默认参数** `systemPrompt` 接入（既有 25 处调用与用例零改动），`AiChatViewModel` 两处发送显式传入，每次读取 store ⇒ 改完对下一次提问立即生效。明确不动：笔记包装（`【笔记正文】/【要求】`）、正文截断预算、默认文案本身、历史消息。全量单测 646 → 658 全绿。设计见 `docs/superpowers/specs/2026-10-30-ai-custom-prompt-design.md`。 |
 | 2026-11-21 | **架构评审批次（非发布批，版本保持 1.12.2）**：P1/P2/P3 逐项落地——① NoteContentParser 移到 util/，data 层不再反向依赖 UI；② AI 导航只传 noteId，正文改进程内 LRU 交接（上限 3 篇，进程重建回退仓库），不再写 SavedStateHandle；③ 新增 launchSafely，草稿/删除/存笔记/删会话等写操作不再因未捕获 DB 异常崩溃；④ 自定义服务商改 Base URL 后按 serviceId+地址重建会话；Key 缓存改 ConcurrentHashMap；⑤ AI 事件流改 SUSPEND 背压，快流不再静默丢分片；⑥ NoteDao 列表投影收敛为单一常量；⑦ 抽出 ImageGarbageCollector/TrashService，NoteRepository 缩回笔记聚合；⑧ NoteEditViewModel 独立成文件（Screen 减约 270 行），NotesViewModel 只暴露只读 StateFlow；⑨ 到期回收站清理移到 Application 启动，AI 会话按导航条目 remember；⑩ 开启 Room schema 导出并提交 app/schemas/6.json；⑪ 导航迁移到 Navigation 2.8 type-safe routes。新增 7 个用例（SafeLaunch 2 / ContextStore 2 / AiApiSession 2 / AiChatViewModel 1），全量 713 单测全绿。按需暂缓：分页/FTS（先测真实数据量）、Compose UI 自动化测试（零新增依赖约束下先保留纯状态单测）、AiChatViewModel 进一步拆分、备份是否包含 AI 会话待产品决策。 |
 | 2026-11-23 | **v1.12.3 编辑页进程重建正文回填修复**：修复 v1.12.1 正文移出 Bundle 后的回归——带标题的笔记退后台期间进程/Activity 被回收，重建时 `title`、`initialized` 从 Bundle 恢复、正文缓存已清空，旧回填条件要求标题与正文同时为空，导致正文空白而库中仍是旧文。新增 `EditorRestorePolicy` 区分首次加载、缓存丢失（只补正文）与用户主动清空（不回填），编辑页接入 `bodyCacheHit`；标题不再阻塞正文回填。新增 6 个策略用例，全量 713 → 719 单测全绿；版本升至 1.12.3。 |
-| 2026-11-27 | **批次 K 完成（v1.15.0，条目 103–119）**：UI 体验修复 17 项，四分支（home / editor / chrome / core）并行实现后 rebase + `merge --ff-only` 线性合入。交互：FAB 遮挡列表末尾、编辑页工具栏改可横向滚动、保存触达历史 40 条警告不再阻塞 4 秒退出（改经 `NavResults.EDITOR_MESSAGE` 回列表页展示）、搜索键盘展开时纸片面板加 `imePadding`、`isSaving` 改 saveable 且 VM 早退回调「正在保存」。一致性：多选语义仅多选态、面板就地动作去掉「›」、顶栏 `heightIn(min = 56.dp)`、AI 聊天页换 `PaperTopBar`/`PaperAlertDialog`、气泡操作按钮改 `FlowRow`。无障碍：主题色/分类色/文字 tab/日历格触控区补到 48dp、长按多选加触感、分类页补换色提示。入口：搜索计数与「清空搜索」、批量删除可撤销（`batchDelete` 回传 id + `restoreDeleted(List)`）、备份文件名带日期、返回不再自动弹键盘、分享异常兜底、开启预测性返回。新增 3 个用例（批量撤销 1 / 备份文件名 2），全量 740 → 743 全绿，`assembleRelease` 通过。设计见 `docs/superpowers/specs/2026-11-27-ui-polish-1150-design.md`。 |
+| 2026-11-27 | **批次 K 完成（v1.15.0，条目 103–119）**：UI 体验修复 17 项，四分支（home / editor / chrome / core）并行实现后 rebase + `merge --ff-only` 线性合入。交互：FAB 遮挡列表末尾、编辑页工具栏改可横向滚动、保存触达历史 40 条警告不再阻塞 4 秒退出（改经 `NavResults.EDITOR_MESSAGE` 回列表页展示）、搜索键盘展开时纸片面板加 `imePadding`、`isSaving` 改 saveable 且 VM 早退回调「正在保存」。一致性：多选语义仅多选态、面板就地动作去掉「›」、顶栏 `heightIn(min = 56.dp)`、AI 聊天页换 `PaperTopBar`/`PaperAlertDialog`、气泡操作按钮改 `FlowRow`。无障碍：主题色/分类色/文字 tab/日历格触控区补到 48dp、长按多选加触感、分类页补换色提示。入口：搜索计数与「清空搜索」、批量删除可撤销（`batchDelete` 回传 id + `restoreDeleted(List)`）、备份文件名带日期、返回不再自动弹键盘、分享异常兜底、开启预测性返回。另补条目 120（分类抽屉行尾显示各分类可见笔记数，复用 observeCategoryNoteCounts 投影）。新增 4 个用例（批量撤销 1 / 备份文件名 2 / 抽屉计数 1），全量 740 → 744 全绿，`assembleRelease` 通过。设计见 `docs/superpowers/specs/2026-11-27-ui-polish-1150-design.md`。 |
 | 2026-11-26 | **v1.14.1 主页分类筛选记忆**：主页左上角抽屉选的筛选（全部 / 未分类 / 具体分类）原先只存在 ViewModel 内存里，退出应用重进必然回「全部」；现改为 SharedPreferences 持久化（`note_filter_settings` / `note_filter`，token `all` / `uncategorized` / `category:<id>`），`NotesViewModel` 构造即恢复、每次切换落盘。脏值、非法/非正 id 解码一律回落「全部」（token 字面量由单测锁死，改格式等于让老用户丢记忆）。记住的分类已被删除时，由 ViewModel 启动时一次性查询静默回落并覆写存储——不放在界面里，是因为界面那段校验以「分类列表非空」判加载完成，分类被删到一个不剩时会永远漏判。新增 13 个用例（编解码 6 / 存储 3 / VM 4），全量 727 → 740 全绿。 |

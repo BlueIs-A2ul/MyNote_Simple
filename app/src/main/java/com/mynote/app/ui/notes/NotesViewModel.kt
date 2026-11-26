@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -63,6 +64,12 @@ class NotesViewModel(
     val categories: StateFlow<List<CategoryEntity>> =
         repository.observeCategories()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** 分类 id → 可见笔记数：分类抽屉行尾计数（与分类管理页共用同一投影）。 */
+    val categoryCounts: StateFlow<Map<Long, Int>> =
+        repository.observeCategoryNoteCounts()
+            .map { counts -> counts.associate { it.categoryId to it.count } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     /** 笔记列表；null 表示首帧加载中（Room 首个真实结果到达前），避免冷启动闪「还没有笔记」空态。 */
     val notes: StateFlow<List<NoteListItem>?> =
