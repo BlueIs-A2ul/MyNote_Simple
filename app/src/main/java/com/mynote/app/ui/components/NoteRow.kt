@@ -50,6 +50,8 @@ fun NoteRow(
     categoryName: String? = null,
     highlightQuery: String? = null,
     selected: Boolean = false,
+    // 仅多选态把整行声明为可选中的复选框；普通浏览态读到「复选框」是误导
+    selectionMode: Boolean = false,
     onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -90,10 +92,16 @@ fun NoteRow(
                 )
             }
             // 条目 99：多选态要让读屏能感知，而不是只靠底色
-            .semantics {
-                this.selected = selected
-                role = Role.Checkbox
-            }
+            .then(
+                if (selectionMode) {
+                    Modifier.semantics {
+                        this.selected = selected
+                        role = Role.Checkbox
+                    }
+                } else {
+                    Modifier
+                }
+            )
             .then(
                 if (onLongClick != null) {
                     Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)

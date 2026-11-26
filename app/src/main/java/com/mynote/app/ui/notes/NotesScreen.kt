@@ -8,6 +8,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,6 +23,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -64,7 +67,10 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.mynote.app.data.backup.BackupFormatException
 import com.mynote.app.data.backup.BackupManager
@@ -84,6 +90,9 @@ import com.mynote.app.ui.components.PaperPanelItem
 import com.mynote.app.ui.theme.PaperPalette
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -98,7 +107,10 @@ fun NotesScreen(
     onManageCategories: () -> Unit,
     onOpenTrash: () -> Unit,
     onOpenCalendar: () -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    // 条目 102：编辑页返回后的提示入口（默认实现保证现有调用点零改动）
+    editorMessage: String? = null,
+    onEditorMessageConsumed: () -> Unit = {}
 ) {
     val notes by viewModel.notes.collectAsStateWithLifecycle()
     val categories by viewModel.categories.collectAsStateWithLifecycle()
@@ -126,6 +138,9 @@ fun NotesScreen(
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
+    val haptic = LocalHapticFeedback.current
+    // 只有用户主动点搜索图标时才抢焦点；compose 重建（如从编辑页返回）不该弹键盘
+    var searchFocusRequested by remember { mutableStateOf(false) }
 
     // 关闭搜索：清空关键词 + 收起搜索栏 + 隐藏键盘（X 按钮与系统返回键共用）
     fun closeSearch() {
@@ -172,8 +187,11 @@ fun NotesScreen(
         snackbarHostState.showSnackbar(message)
     }
 
-    LaunchedEffect(searchActive) {
-        if (searchActive) focusRequester.requestFocus()
+    LaunchedEffect(searchActive, searchFocusRequested) {
+        if (searchActive && searchFocusRequested) {
+            searchFocusRequested = false
+            focusRequester.requestFocus()
+        }
     }
 
     // 条目 48：编辑页删除后给「已移入回收站 + 撤销」，先消费再展示
@@ -186,6 +204,13 @@ fun NotesScreen(
             duration = SnackbarDuration.Long
         )
         if (result == SnackbarResult.ActionPerformed) viewModel.restoreDeleted(id)
+    }
+
+    // 编辑页提示（如保存结果）回传到列表页：同样先消费再展示，旋转不重弹
+    LaunchedEffect(editorMessage) {
+        val message = editorMessage ?: return@LaunchedEffect
+        onEditorMessageConsumed()
+        snackbarHostState.showSnackbar(message)
     }
 
     // 分类 id → 纸感色缓存：PaperPalette.nearest() 含 HSV 转换 + 6 次色相距离，
@@ -245,7 +270,8 @@ fun NotesScreen(
                         title = if (selectionMode) "已选 ${selectedIds.size} 项" else "备忘录",
                         subtitle = when {
                             selectionMode -> null
-                            searchActive -> "全库搜索"
+                            // 结果未到（notes 为 null）或为空时保持纯「全库搜索」，避免闪「0 条」
+                            searchActive -> if (notes.isNullOrEmpty()) "全库搜索" else "全库搜索 · ${notes?.size ?: 0} 条"
                             else -> selectedFilter.summaryLabel(categories)
                         },
                         onBack = if (selectionMode) ({ viewModel.exitSelection() }) else null,
@@ -277,12 +303,20 @@ fun NotesScreen(
                         },
                         actions = {
                             if (!selectionMode) {
-                                IconButton(onClick = { viewModel.exitSelection(); searchActive = true }) {
+                                IconButton(onClick = {
+                                    viewModel.exitSelection()
+                                    searchFocusRequested = true
+                                    searchActive = true
+                                }) {
                                     Icon(Icons.Default.Search, contentDescription = "搜索")
                                 }
                             }
                             // 「更多」触发自绘纸片面板，菜单内容在 Scaffold 之后组装
-                            IconButton(onClick = { menuOpen = true }) {
+                            IconButton(onClick = {
+                                // 搜索态下键盘常驻，先收起再弹面板（与分类抽屉入口同款处理）
+                                keyboard?.hide()
+                                menuOpen = true
+                            }) {
                                 Icon(Icons.Default.MoreVert, contentDescription = "更多")
                             }
                         }
@@ -324,6 +358,9 @@ fun NotesScreen(
                                 onValueChange = viewModel::onQueryChange,
                                 modifier = Modifier.weight(1f).focusRequester(focusRequester),
                                 singleLine = true,
+                                // 键盘右下角给「搜索」，按下即收起键盘（检索本身已由防抖触发）
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
                                 textStyle = MaterialTheme.typography.bodyLarge.copy(
                                     color = MaterialTheme.colorScheme.onBackground
                                 ),
@@ -376,13 +413,17 @@ fun NotesScreen(
                             EmptyState(
                                 icon = Icons.Outlined.Description,
                                 text = emptyText,
-                                actionLabel = if (searching) null else "写第一条",
-                                onAction = if (searching) null else ({ onNewNote(viewModel.newNoteCategoryId) })
+                                actionLabel = if (searching) "清空搜索" else "写第一条",
+                                onAction = if (searching) ({ closeSearch() }) else ({ onNewNote(viewModel.newNoteCategoryId) })
                             )
                         } else {
                             // 分类 id → 实体映射缓存，避免每行 O(n) 线性查找（行数多时重复执行）
                             val categoriesById = remember(categories) { categories.associateBy { it.id } }
-                            LazyColumn(Modifier.fillMaxSize()) {
+                            // FAB 悬浮在列表之上且不在 Scaffold padding 里，底部留白避免压住最后一条
+                            LazyColumn(
+                                Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(bottom = 72.dp)
+                            ) {
                                 itemsIndexed(displayNotes, key = { _, item -> item.id }) { index, item ->
                                     val prevPinned = if (index > 0) displayNotes[index - 1].pinned else false
                                     if (item.pinned && !prevPinned) {
@@ -396,7 +437,10 @@ fun NotesScreen(
                                         onClick = {
                                             if (selectionMode) viewModel.toggleSelect(item.id) else onOpenNote(item.id)
                                         },
-                                        onLongClick = { viewModel.enterSelection(item.id) },
+                                        onLongClick = {
+                                            viewModel.enterSelection(item.id)
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        },
                                         now = now,
                                         // 全部 tab 或搜索态显示分类名：搜索是全库检索，行内分类归属非常规信息
                                         categoryName = if (selectedFilter is CategoryFilter.All || query.isNotBlank()) {
@@ -407,8 +451,9 @@ fun NotesScreen(
                                         // 搜索态给标题/摘要加关键词高亮（与仓库层同口径：去掉首尾空白，
                                         // 否则中文输入法常见的尾随空格会出现「能搜到却不高亮」）
                                         highlightQuery = query.trim().takeIf { it.isNotBlank() },
-                                        // 多选高亮
+                                        // 多选高亮与读屏语义只在多选态生效
                                         selected = item.id in selectedIds,
+                                        selectionMode = selectionMode,
                                         modifier = Modifier.animateItem()
                                     )
                                     if (index < displayNotes.lastIndex) HairlineDivider()
@@ -429,7 +474,8 @@ fun NotesScreen(
                 PaperPanelGroup("选择") {
                     PaperPanelItem(
                         text = "全选",
-                        enabled = !notes.isNullOrEmpty()
+                        enabled = !notes.isNullOrEmpty(),
+                        showChevron = false
                     ) {
                         menuOpen = false
                         viewModel.selectAll()
@@ -438,7 +484,8 @@ fun NotesScreen(
                 PaperPanelGroup("操作") {
                     PaperPanelItem(
                         text = "置顶",
-                        enabled = selectedIds.isNotEmpty()
+                        enabled = selectedIds.isNotEmpty(),
+                        showChevron = false
                     ) {
                         menuOpen = false
                         viewModel.batchSetPinned(true, onDone = { n ->
@@ -447,7 +494,8 @@ fun NotesScreen(
                     }
                     PaperPanelItem(
                         text = "取消置顶",
-                        enabled = selectedIds.isNotEmpty()
+                        enabled = selectedIds.isNotEmpty(),
+                        showChevron = false
                     ) {
                         menuOpen = false
                         viewModel.batchSetPinned(false, onDone = { n ->
@@ -456,7 +504,8 @@ fun NotesScreen(
                     }
                     PaperPanelItem(
                         text = "移动到分类",
-                        enabled = selectedIds.isNotEmpty()
+                        enabled = selectedIds.isNotEmpty(),
+                        showChevron = false
                     ) {
                         menuOpen = false
                         showBatchCategorySheet = true
@@ -464,7 +513,8 @@ fun NotesScreen(
                     PaperPanelItem(
                         text = "删除",
                         enabled = selectedIds.isNotEmpty(),
-                        destructive = true
+                        destructive = true,
+                        showChevron = false
                     ) {
                         menuOpen = false
                         showBatchDeleteDialog = true
@@ -491,12 +541,13 @@ fun NotesScreen(
                 PaperPanelGroup("数据") {
                     PaperPanelItem(
                         text = "导出备份",
-                        enabled = !exporting
+                        enabled = !exporting,
+                        showChevron = false
                     ) {
                         menuOpen = false
-                        exportLauncher.launch("mynote-backup.zip")
+                        exportLauncher.launch(backupFileName(System.currentTimeMillis()))
                     }
-                    PaperPanelItem("导入备份") {
+                    PaperPanelItem("导入备份", showChevron = false) {
                         menuOpen = false
                         importLauncher.launch(arrayOf("application/zip"))
                     }
@@ -572,8 +623,18 @@ fun NotesScreen(
                     enabled = selectedIds.isNotEmpty(),
                     onClick = {
                         showBatchDeleteDialog = false
-                        viewModel.batchDelete(onDone = { n ->
-                            scope.launch { snackbarHostState.showSnackbar("已移入回收站 $n 条") }
+                        viewModel.batchDelete(onDone = { ids ->
+                            scope.launch {
+                                val result = snackbarHostState.showSnackbar(
+                                    message = "已移入回收站 ${ids.size} 条",
+                                    actionLabel = "撤销",
+                                    duration = SnackbarDuration.Long
+                                )
+                                if (result == SnackbarResult.ActionPerformed) {
+                                    viewModel.restoreDeleted(ids)
+                                    snackbarHostState.showSnackbar("已恢复 ${ids.size} 条")
+                                }
+                            }
                         }, onFailed = { scope.launch { snackbarHostState.showSnackbar(OPERATION_FAILED) } })
                     }
                 ) { Text("删除") }
@@ -584,6 +645,10 @@ fun NotesScreen(
         )
     }
 }
+
+/** 备份文件名：带本地日期（如 mynote-backup-2026-11-26.zip），多次备份不会互相覆盖。 */
+private fun backupFileName(now: Long): String =
+    "mynote-backup-" + SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(now)) + ".zip"
 
 /** 列表分组标题（置顶 / 其他）。 */
 @Composable

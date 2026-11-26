@@ -145,6 +145,15 @@ class NotesViewModel(
         }
     }
 
+    /** 批量删除后的「撤销」：逐条恢复刚移入回收站的笔记（已被彻底删除的跳过）。 */
+    fun restoreDeleted(noteIds: List<Long>) {
+        launchSafely {
+            noteIds.forEach { id ->
+                repository.getNote(id)?.let { repository.restoreNote(it) }
+            }
+        }
+    }
+
     fun consumeBackupMessage() {
         _backupUi.update { it.copy(message = null) }
     }
@@ -213,8 +222,26 @@ class NotesViewModel(
         if (kept.isEmpty()) _selectionMode.value = false
     }
 
-    fun batchDelete(onDone: (Int) -> Unit, onFailed: () -> Unit) =
-        runBatch(onDone, onFailed) { repository.deleteNotes(it) }
+    /**
+     * 批量删除：回调被删笔记的 id 列表，供列表页给出「撤销」。
+     * 不复用 [runBatch]（它的完成回调只有条数），但保持同样的失败语义：
+     * 失败时保留选中态便于重试，取消照常向上抛。
+     */
+    fun batchDelete(onDone: (List<Long>) -> Unit, onFailed: () -> Unit) {
+        val ids = _selectedIds.value
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            try {
+                val notes = repository.getNotesByIds(ids.toList())
+                repository.deleteNotes(notes)
+                exitSelection()
+                onDone(notes.map { it.id })
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                onFailed()
+            }
+        }
+    }
 
     fun batchSetCategory(categoryId: Long?, onDone: (Int) -> Unit, onFailed: () -> Unit) =
         runBatch(onDone, onFailed) { repository.moveNotesToCategory(it, categoryId) }

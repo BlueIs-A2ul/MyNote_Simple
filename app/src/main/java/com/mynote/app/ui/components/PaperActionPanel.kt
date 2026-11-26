@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -119,6 +120,8 @@ fun PaperActionPanel(
                 Column(
                     Modifier
                         .verticalScroll(rememberScrollState())
+                        // 兜底：搜索态键盘仍在时，面板整体抬到 IME 之上（外层已先尽力收起键盘）
+                        .imePadding()
                         .navigationBarsPadding()
                         .padding(bottom = 10.dp)
                 ) {
@@ -155,12 +158,18 @@ fun PaperPanelGroup(
     }
 }
 
-/** 面板条目（导航类）：48dp 行高，行尾细箭头表示「去某一页」，不是就地切换。 */
+/**
+ * 面板条目：48dp 行高。
+ *
+ * [showChevron] 为 true 时行尾画细箭头，表示「去某一页」；就地动作 / 危险操作应传 false，
+ * 否则箭头会暗示一次页面跳转，与真实行为不符。
+ */
 @Composable
 fun PaperPanelItem(
     text: String,
     enabled: Boolean = true,
     destructive: Boolean = false,
+    showChevron: Boolean = true,
     onClick: () -> Unit
 ) {
     val contentColor = when {
@@ -184,12 +193,14 @@ fun PaperPanelItem(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else contentColor,
-            modifier = Modifier.size(16.dp)
-        )
+        if (showChevron) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else contentColor,
+                modifier = Modifier.size(16.dp)
+            )
+        }
     }
 }
 
