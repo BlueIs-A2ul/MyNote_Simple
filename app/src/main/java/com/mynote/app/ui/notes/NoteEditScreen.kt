@@ -7,21 +7,26 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -148,7 +153,9 @@ fun NoteEditScreen(
     onNoteDeleted: (Long) -> Unit = {},
     onOpenAi: (selStart: Int, selEnd: Int, noteTitle: String, noteContent: String) -> Unit,
     onOpenHistory: (Boolean) -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    // 保存已退出本页后的非阻塞提示（如历史条数警告）交回上一页展示，避免 snackbar 挂起挡住退出
+    onNoteMessage: (String) -> Unit = {}
 ) {
     val vm: NoteEditViewModel = viewModel(
         key = "note_edit_$noteId",
@@ -190,7 +197,8 @@ fun NoteEditScreen(
     var showUnsavedDialog by rememberSaveable { mutableStateOf(false) }
     // 全屏图片预览：记录被点开的图片文件，非空即渲染 NoteImagePreviewDialog
     var previewFile by remember { mutableStateOf<File?>(null) }
-    var isSaving by remember { mutableStateOf(false) }
+    // 旋转/重建后保持「保存中」状态，否则会误以为可以再次点击保存
+    var isSaving by rememberSaveable { mutableStateOf(false) }
     // 条目 95：用户明确选「不保存」后，ON_STOP 的草稿兜底必须被抑制，否则仍会静默入库
     var discarded by remember { mutableStateOf(false) }
     // 条目 88：AI 结果落地时的提示（在 snackbar 宿主声明之前就要能写入）
@@ -389,14 +397,10 @@ fun NoteEditScreen(
                 title, content.text, selectedCategoryId, pinned, note?.color, noteDate,
                 onDone = { warning ->
                     isSaving = false
-                    if (warning != null) {
-                        scope.launch {
-                            snackbarHostState.showSnackbar(warning)
-                            onBack()
-                        }
-                    } else {
-                        onBack()
-                    }
+                    // 满条数警告不再用 snackbar 挂起等待（Short 约 4 秒），否则用户被滞留在只读编辑页；
+                    // 立即退出，提示由上一页（列表页）展示。
+                    if (warning != null) onNoteMessage(warning)
+                    onBack()
                 },
                 onError = { message ->
                     // 条目 94：保存失败要留在编辑页并说明原因，不能静默退出
@@ -469,7 +473,12 @@ fun NoteEditScreen(
                                         type = "text/plain"
                                         putExtra(Intent.EXTRA_TEXT, shareText)
                                     }
-                                    context.startActivity(Intent.createChooser(send, "分享笔记"))
+                                    // 设备上没有可接收 text/plain 的应用时 createChooser 仍可能抛 ActivityNotFoundException
+                                    try {
+                                        context.startActivity(Intent.createChooser(send, "分享笔记"))
+                                    } catch (e: Exception) {
+                                        scope.launch { snackbarHostState.showSnackbar("没有可分享的应用") }
+                                    }
                                 }
                             )
                         }
@@ -620,80 +629,94 @@ fun NoteEditScreen(
             }
 
             HairlineDivider()
+            // 单行工具栏改为可横向滚动：360dp / 320dp 屏与放大字体下按钮不再被裁切（可滚动查看）。
+            // 注意：可滚动容器里 weight/SpaceBetween 不生效，按钮之间改用显式 Spacer 留白。
             Row(
-                modifier = Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(
-                        onClick = {
-                            undoController.undo(content)?.let {
-                                content = it
-                                // 条目 97：撤销掉插图后，刚落盘的文件不该留在磁盘上
-                                vm.cleanupUnusedInsertedImages(it.text)
-                            }
-                        },
-                        enabled = undoController.canUndo
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.Undo,
-                            contentDescription = "撤销",
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    IconButton(
-                        onClick = {
-                            undoController.redo(content)?.let {
-                                content = it
-                                vm.cleanupUnusedInsertedImages(it.text)
-                            }
-                        },
-                        enabled = undoController.canRedo
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.Redo,
-                            contentDescription = "重做",
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    TextButton(
-                        onClick = {
-                            pickImage.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        },
-                        colors = ButtonDefaults.textButtonColors(
-                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    ) { Text("图片") }
-                    TextButton(
-                        onClick = { showDatePicker = true },
-                        colors = ButtonDefaults.textButtonColors(
-                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    ) {
-                        Text(noteDate?.let { TimeFormat.dateLabel(it) } ?: "日期")
-                    }
+                IconButton(
+                    onClick = {
+                        undoController.undo(content)?.let {
+                            content = it
+                            // 条目 97：撤销掉插图后，刚落盘的文件不该留在磁盘上
+                            vm.cleanupUnusedInsertedImages(it.text)
+                        }
+                    },
+                    enabled = undoController.canUndo
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.Undo,
+                        contentDescription = "撤销",
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(
-                        onClick = { showCategorySheet = true },
-                        colors = ButtonDefaults.textButtonColors(
-                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                Spacer(Modifier.width(2.dp))
+                IconButton(
+                    onClick = {
+                        undoController.redo(content)?.let {
+                            content = it
+                            vm.cleanupUnusedInsertedImages(it.text)
+                        }
+                    },
+                    enabled = undoController.canRedo
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.Redo,
+                        contentDescription = "重做",
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Spacer(Modifier.width(2.dp))
+                TextButton(
+                    onClick = {
+                        pickImage.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                         )
-                    ) {
-                        Text(
-                            (categories.firstOrNull { it.id == selectedCategoryId }?.name ?: "分类") + " ▾"
-                        )
-                    }
-                    TextButton(onClick = { previewMode = !previewMode }) {
-                        Text(
-                            "预览",
-                            color = if (previewMode) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) { Text("图片") }
+                Spacer(Modifier.width(2.dp))
+                TextButton(
+                    onClick = { showDatePicker = true },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    Text(noteDate?.let { TimeFormat.dateLabel(it) } ?: "日期")
+                }
+                // 竖分隔线：区分「编辑动作」与「属性/预览动作」
+                Spacer(Modifier.width(6.dp))
+                Box(
+                    Modifier
+                        .width(1.dp)
+                        .height(20.dp)
+                        .background(MaterialTheme.colorScheme.outlineVariant)
+                )
+                Spacer(Modifier.width(6.dp))
+                TextButton(
+                    onClick = { showCategorySheet = true },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    Text(
+                        (categories.firstOrNull { it.id == selectedCategoryId }?.name ?: "分类") + " ▾"
+                    )
+                }
+                Spacer(Modifier.width(2.dp))
+                TextButton(onClick = { previewMode = !previewMode }) {
+                    Text(
+                        "预览",
+                        color = if (previewMode) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }

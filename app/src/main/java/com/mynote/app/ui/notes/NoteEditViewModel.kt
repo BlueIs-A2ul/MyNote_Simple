@@ -135,7 +135,11 @@ class NoteEditViewModel(
     ) {
         // 只有「正式保存」在途时才拦截连点；退后台草稿写入在途不拦截——否则 onDone 永不回调，
         // 界面 isSaving 会永久卡在 true（保存键变灰、退后台兜底也一并失效）。
-        if (saveJob?.isActive == true) return
+        // 静默早退会让调用方永远等不到回调，必须显式回一个「正在保存」错误让界面复位。
+        if (saveJob?.isActive == true) {
+            onError(SAVE_IN_PROGRESS)
+            return
+        }
         val pendingDraft = draftJob
         saveJob = viewModelScope.launch {
             try {
@@ -258,6 +262,9 @@ class NoteEditViewModel(
 
         /** 条目 94：写库失败文案。 */
         const val SAVE_FAILED = "保存失败，请重试"
+
+        /** 连点保存时上一次保存仍在途：显式回错，避免调用方 isSaving 永久卡在 true。 */
+        const val SAVE_IN_PROGRESS = "正在保存，请稍候"
 
         const val HISTORY_WARNING =
             "该笔记历史已 ${NoteRevisionDao.WARN_AT} 条，满 ${NoteRevisionDao.MAX_PER_NOTE} 条后最旧记录会自动清理"
