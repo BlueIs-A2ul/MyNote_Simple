@@ -150,6 +150,30 @@ class NotesViewModelTest {
         assertTrue(vm.selectedIds.value.isEmpty())
     }
 
+    /** 批次 K（条目 117）：批量删除后的「撤销」把这一批笔记恢复回可见列表。 */
+    @Test
+    fun restoreDeletedListBringsBackBatchDeletedNotes() = runTest(dispatcher) {
+        val a = repo.saveNote(null, "a", "c", null, false, null)
+        val b = repo.saveNote(null, "b", "c", null, false, null)
+        vm.enterSelection(a)
+        vm.toggleSelect(b)
+
+        val deleted = CompletableDeferred<List<Long>>()
+        vm.batchDelete(onDone = { deleted.complete(it) }, onFailed = { deleted.complete(emptyList()) })
+        val ids = deleted.await()
+        assertEquals(setOf(a, b), ids.toSet())
+        assertNotNull(db.noteDao().getById(a)?.deletedAt)
+
+        vm.restoreDeleted(ids)
+
+        // 恢复在 viewModelScope 里异步执行：等列表流重新出现这两条（Room 失效通知驱动）
+        val visible = vm.notes.first { list ->
+            list?.map { it.id }?.containsAll(listOf(a, b)) == true
+        }.orEmpty()
+        assertTrue(visible.map { it.id }.containsAll(listOf(a, b)))
+        assertNull(db.noteDao().getById(a)?.deletedAt)
+    }
+
     @Test
     fun batchSetCategoryMovesSelectedNotes() = runTest(dispatcher) {
         val a = repo.saveNote(null, "a", "c", null, false, null)

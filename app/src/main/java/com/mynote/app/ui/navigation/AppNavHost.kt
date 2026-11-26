@@ -50,6 +50,12 @@ object NavResults {
 
     /** 条目 48：编辑页删除笔记后回传给列表的目标 id（列表据此弹「撤销」）。 */
     const val DELETED_NOTE_ID = "deleted_note_id"
+
+    /**
+     * 批次 K（条目 105）：编辑页保存后需要用户知晓、但不该阻塞退出的提示
+     * （目前是历史条数警告）。写进 notes 入口，由列表页先消费再展示。
+     */
+    const val EDITOR_MESSAGE = "editor_message"
 }
 
 @Composable
@@ -90,6 +96,9 @@ fun AppNavHost(
             val retentionDays by container.trashRetentionStore.retentionDays.collectAsStateWithLifecycle()
             val deletedNoteId by backStack.savedStateHandle
                 .getStateFlow<Long?>(NavResults.DELETED_NOTE_ID, null).collectAsStateWithLifecycle()
+            // 批次 K（条目 105）：编辑页保存后的非阻塞提示（历史条数警告）经此回传
+            val editorMessage by backStack.savedStateHandle
+                .getStateFlow<String?>(NavResults.EDITOR_MESSAGE, null).collectAsStateWithLifecycle()
             NotesScreen(
                 viewModel = vm,
                 backupManager = container.backupManager,
@@ -97,6 +106,10 @@ fun AppNavHost(
                 deletedNoteId = deletedNoteId,
                 onDeletedNoteConsumed = {
                     backStack.savedStateHandle.remove<Long>(NavResults.DELETED_NOTE_ID)
+                },
+                editorMessage = editorMessage,
+                onEditorMessageConsumed = {
+                    backStack.savedStateHandle.remove<String>(NavResults.EDITOR_MESSAGE)
                 },
                 onOpenNote = { id -> navController.navigate(EditNoteRoute(noteId = id)) { launchSingleTop = true } },
                 onNewNote = { catId ->
@@ -155,6 +168,11 @@ fun AppNavHost(
                         .savedStateHandle[NavResults.DELETED_NOTE_ID] = deletedId
                 },
                 onOpenHistory = { dirty -> id?.let { navController.navigate(NoteHistoryRoute(it, dirty)) } },
+                // 批次 K（条目 105）：保存已退出后再提示，避免 snackbar 挂起把用户滞留在只读编辑页
+                onNoteMessage = { message ->
+                    navController.getBackStackEntry<NotesRoute>()
+                        .savedStateHandle[NavResults.EDITOR_MESSAGE] = message
+                },
                 onBack = { navController.popBackStack() }
             )
         }

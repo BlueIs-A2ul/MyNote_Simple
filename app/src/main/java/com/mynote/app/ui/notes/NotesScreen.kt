@@ -108,7 +108,7 @@ fun NotesScreen(
     onOpenTrash: () -> Unit,
     onOpenCalendar: () -> Unit,
     onOpenSettings: () -> Unit,
-    // 条目 102：编辑页返回后的提示入口（默认实现保证现有调用点零改动）
+    // 批次 K（条目 105）：编辑页返回后的非阻塞提示入口（默认实现保证现有调用点零改动）
     editorMessage: String? = null,
     onEditorMessageConsumed: () -> Unit = {}
 ) {
@@ -647,7 +647,7 @@ fun NotesScreen(
 }
 
 /** 备份文件名：带本地日期（如 mynote-backup-2026-11-26.zip），多次备份不会互相覆盖。 */
-private fun backupFileName(now: Long): String =
+internal fun backupFileName(now: Long): String =
     "mynote-backup-" + SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(now)) + ".zip"
 
 /** 列表分组标题（置顶 / 其他）。 */
