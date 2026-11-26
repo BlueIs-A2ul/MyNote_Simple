@@ -139,9 +139,10 @@ class NotesViewModelTest {
         vm.enterSelection(a)
         vm.toggleSelect(b)
 
-        val done = CompletableDeferred<Int>()
-        vm.batchDelete(onDone = { done.complete(it) }, onFailed = { done.complete(-1) })
-        assertEquals(2, done.await())
+        // 批次 K（v1.15.0）：batchDelete 改为回传被删的 id 列表，供列表页「撤销」恢复
+        val done = CompletableDeferred<List<Long>>()
+        vm.batchDelete(onDone = { done.complete(it) }, onFailed = { done.complete(emptyList()) })
+        assertEquals(setOf(a, b), done.await().toSet())
 
         assertNotNull(db.noteDao().getById(a)?.deletedAt)
         assertNotNull(db.noteDao().getById(b)?.deletedAt)
