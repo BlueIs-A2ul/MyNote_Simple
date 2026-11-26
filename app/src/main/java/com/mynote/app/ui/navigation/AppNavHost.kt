@@ -83,6 +83,7 @@ fun AppNavHost(
                 factory = NotesViewModel.factory(
                     container.noteRepository,
                     container.noteSortStore,
+                    container.noteFilterStore,
                     container.backupManager
                 )
             )

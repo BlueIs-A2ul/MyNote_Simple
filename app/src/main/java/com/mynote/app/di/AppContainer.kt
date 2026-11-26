@@ -16,6 +16,7 @@ import com.mynote.app.data.repository.NoteRepository
 import com.mynote.app.data.repository.WelcomeNoteSeeder
 import com.mynote.app.data.settings.AiDraftStore
 import com.mynote.app.data.settings.AiSettingsStore
+import com.mynote.app.data.settings.NoteFilterStore
 import com.mynote.app.data.settings.NoteSortStore
 import com.mynote.app.data.settings.OnboardingStore
 import com.mynote.app.data.settings.PrefsAiDraftStore
@@ -44,6 +45,9 @@ class AppContainer(context: Context) {
     val themeSettingsStore: ThemeSettingsStore by lazy { ThemeSettingsStore(context) }
 
     val noteSortStore: NoteSortStore by lazy { NoteSortStore(context) }
+
+    /** 主页分类筛选记忆：上次退出时的筛选，冷启动恢复。 */
+    val noteFilterStore: NoteFilterStore by lazy { NoteFilterStore(context) }
 
     val trashRetentionStore: TrashRetentionStore by lazy { TrashRetentionStore(context) }
 

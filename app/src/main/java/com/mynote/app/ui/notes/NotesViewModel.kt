@@ -13,6 +13,7 @@ import com.mynote.app.data.db.NoteEntity
 import com.mynote.app.data.db.NoteListItem
 import com.mynote.app.data.db.NoteSortMode
 import com.mynote.app.data.repository.NoteRepository
+import com.mynote.app.data.settings.NoteFilterStore
 import com.mynote.app.data.settings.NoteSortStore
 import com.mynote.app.ui.common.launchSafely
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
@@ -35,6 +37,7 @@ import kotlinx.coroutines.launch
 class NotesViewModel(
     private val repository: NoteRepository,
     private val sortStore: NoteSortStore,
+    private val filterStore: NoteFilterStore,
     private val backupManager: BackupManager
 ) : ViewModel() {
 
@@ -51,7 +54,8 @@ class NotesViewModel(
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
 
-    private val _selectedFilter = MutableStateFlow<CategoryFilter>(CategoryFilter.All)
+    // 恢复上次退出时的筛选（冷启动不再一律回「全部」）；脏值由解码兜底为「全部」
+    private val _selectedFilter = MutableStateFlow(decodeCategoryFilter(filterStore.read()))
     val selectedFilter: StateFlow<CategoryFilter> = _selectedFilter.asStateFlow()
 
     val sortMode: StateFlow<NoteSortMode> = sortStore.mode
@@ -85,6 +89,22 @@ class NotesViewModel(
     /** 新建笔记的预选分类：仅「某个分类」筛选下有值，其余为 null（未分类）。 */
     val newNoteCategoryId: Long?
         get() = (_selectedFilter.value as? CategoryFilter.Single)?.categoryId
+
+    /**
+     * 记住的分类可能已在别处删除，启动时用一次性查询校验。
+     *
+     * 不能只靠 NotesScreen 里那段 LaunchedEffect：它以「分类列表非空」作为已加载信号，
+     * 若分类被删到一个不剩，列表恒为空、校验永远不成立，界面会卡在空的分类页。
+     * 查询失败时保持原值——校验失败不该改掉用户的选择。
+     */
+    init {
+        viewModelScope.launch {
+            if (_selectedFilter.value !is CategoryFilter.Single) return@launch
+            val categories = runCatching { repository.observeCategories().first() }
+                .getOrNull() ?: return@launch
+            if (_selectedFilter.value.isMissingFrom(categories)) onFilterSelect(CategoryFilter.All)
+        }
+    }
 
     fun exportBackup(uri: Uri) {
         if (_backupUi.value.exporting) return
@@ -141,6 +161,8 @@ class NotesViewModel(
         // 切换筛选时清空多选，避免选中集跨 tab 残留（含分类被删除后的自动回落）
         exitSelection()
         _selectedFilter.value = filter
+        // 记忆：每次切换都落盘（含回落「全部」），下次冷启动据此恢复
+        filterStore.write(filter.encodeToken())
     }
 
     fun onSortSelect(mode: NoteSortMode) {
@@ -236,9 +258,10 @@ class NotesViewModel(
         fun factory(
             repository: NoteRepository,
             sortStore: NoteSortStore,
+            filterStore: NoteFilterStore,
             backupManager: BackupManager
         ): ViewModelProvider.Factory = viewModelFactory {
-            initializer { NotesViewModel(repository, sortStore, backupManager) }
+            initializer { NotesViewModel(repository, sortStore, filterStore, backupManager) }
         }
     }
 }

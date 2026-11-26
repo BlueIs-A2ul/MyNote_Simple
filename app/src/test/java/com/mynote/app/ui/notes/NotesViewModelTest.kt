@@ -9,6 +9,7 @@ import com.mynote.app.data.db.AppDatabase
 import com.mynote.app.data.db.NoteSortMode
 import com.mynote.app.data.image.ImageStore
 import com.mynote.app.data.repository.NoteRepository
+import com.mynote.app.data.settings.NoteFilterStore
 import com.mynote.app.data.settings.NoteSortStore
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -50,9 +52,10 @@ class NotesViewModelTest {
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries().build()
         repo = NoteRepository(db.noteDao(), db.categoryDao(), db.noteRevisionDao(), ImageStore(context), db)
-        // 排序偏好跨测试共享同一 SharedPreferences，显式复位避免顺序依赖
+        // 排序与筛选偏好跨测试共享同一 SharedPreferences，显式复位避免顺序依赖
         NoteSortStore(context).setMode(NoteSortMode.UPDATED_DESC)
-        vm = NotesViewModel(repo, NoteSortStore(context), BackupManager(context, ImageStore(context), db))
+        NoteFilterStore(context).write(CategoryFilter.All.encodeToken())
+        vm = newVm()
     }
 
     @After
@@ -289,7 +292,7 @@ class NotesViewModelTest {
             openOutput = { out },
             openInput = { null }
         )
-        val backupVm = NotesViewModel(repo, NoteSortStore(context), backup)
+        val backupVm = newVm(backup)
 
         backupVm.exportBackup(android.net.Uri.parse("content://test/backup.zip"))
 
@@ -378,4 +381,72 @@ class NotesViewModelTest {
         assertEquals(setOf(a), vm.selectedIds.value)
         assertTrue(vm.selectionMode.value)
     }
+
+    // ---------- 分类筛选记忆（1.14.1：退出重进不再回「全部」） ----------
+
+    /** 预置存储后构造 ViewModel：冷启动直接是上次的筛选。 */
+    @Test
+    fun restoresPersistedFilterOnColdStart() {
+        NoteFilterStore(context).write(CategoryFilter.Single(9L).encodeToken())
+        val restored = newVm()
+        try {
+            assertEquals(CategoryFilter.Single(9L), restored.selectedFilter.value)
+        } finally {
+            restored.viewModelScope.cancel()
+        }
+    }
+
+    /** 三种筛选都要落盘；回到「全部」也要落盘，否则旧分类会一直粘着。 */
+    @Test
+    fun onFilterSelectPersistsEveryKind() {
+        vm.onFilterSelect(CategoryFilter.Uncategorized)
+        assertEquals("uncategorized", NoteFilterStore(context).read())
+
+        vm.onFilterSelect(CategoryFilter.Single(3L))
+        assertEquals("category:3", NoteFilterStore(context).read())
+
+        vm.onFilterSelect(CategoryFilter.All)
+        assertEquals("all", NoteFilterStore(context).read())
+    }
+
+    /** 记住的分类已被删除：启动校验静默回落「全部」，并把存储覆写掉。 */
+    @Test
+    fun dropsRememberedCategoryThatNoLongerExists() = runTest(dispatcher) {
+        NoteFilterStore(context).write(CategoryFilter.Single(999L).encodeToken())
+        val restored = newVm()
+        try {
+            assertEquals(
+                CategoryFilter.All,
+                restored.selectedFilter.first { it == CategoryFilter.All }
+            )
+            assertEquals("all", NoteFilterStore(context).read())
+        } finally {
+            restored.viewModelScope.cancel()
+        }
+    }
+
+    /** 记住的分类还在：启动校验不得改动用户的选择（空列表才算「删到一个不剩」）。 */
+    @Test
+    fun keepsRememberedCategoryThatStillExists() = runTest(dispatcher) {
+        val catId = repo.addCategory("工作", 0)
+        NoteFilterStore(context).write(CategoryFilter.Single(catId).encodeToken())
+        val restored = newVm()
+        try {
+            // 等分类真正可读，并把 init 校验排空后再断言「没有被改回全部」
+            repo.observeCategories().first { list -> list.any { it.id == catId } }
+            advanceUntilIdle()
+            assertEquals(CategoryFilter.Single(catId), restored.selectedFilter.value)
+        } finally {
+            restored.viewModelScope.cancel()
+        }
+    }
+
+    private fun newVm(
+        backup: BackupManager = BackupManager(context, ImageStore(context), db)
+    ): NotesViewModel = NotesViewModel(
+        repo,
+        NoteSortStore(context),
+        NoteFilterStore(context),
+        backup
+    )
 }
