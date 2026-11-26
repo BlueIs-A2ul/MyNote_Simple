@@ -101,6 +101,7 @@
 | 100 | 撤销栈封顶 + 字数统计缓存 + 平台加固合集 | P2 | S/M | 已完成（2026-11-10） | 批次J |
 | 101 | 启动图标改自适应图标（「记」字标 + Indigo→Teal 渐变 + 单色层） | P1 | S | 已完成（2026-10-29，v1.11.0） | — |
 | 102 | AI 助手自定义 system 提示词（内置默认 + 可完全覆盖） | P1 | S/M | 已完成（2026-10-30，v1.12.0） | — |
+| 103–119 | UI 体验修复批（17 项：FAB 遮挡 / 工具栏裁切 / 提示阻塞退出 / 面板 IME / 多选语义 / 纸感一致性 / 触控区 / 批量撤销 等） | P1–P2 | M | 已完成（2026-11-27，v1.15.0） | 批次K（4 分支并行） |
 
 ---
 
@@ -605,6 +606,76 @@
 - **落地（2026-11-10，部分）**：① 撤销栈增加 200k 字符预算（超预算从最旧开始丢）；② 字数统计改 `derivedStateOf`，只在正文变化时重算；③ 全部 `collectAsState()` → `collectAsStateWithLifecycle()`（11 个文件 57 处）；⑤ `enableEdgeToEdge` 提前到 `onCreate`，首帧不再缺 inset；⑥ 图片解码补 `OutOfMemoryError` 与 `CancellationException` 处理。**④ KeyStore 读写移出主线程、⑦ 长正文 Bundle 体积** 需真机验证与较大的状态重构，留待后续。
 - 现状：① `NoteUndoController` 只按**条数**限流（`maxEntries = 100`，存整份 `TextFieldValue`），长笔记常驻约 100 份全文副本（`NoteUndoController.kt:14,36-38`）；② 字数统计每次重组都对全文跑正则（`NoteEditScreen.kt:545` → `NoteContentParser.kt:34`）；③ `collectAsState`（约 30 处，如 `NotesScreen.kt:89-95`、`MainActivity.kt:23`）而非 `collectAsStateWithLifecycle`（依赖已在）；④ Keystore 往返在主线程（`AiChatViewModel.kt:61-70` 构造期读 Key、`SettingsViewModel.kt:60,106-118` 按钮回调直调）；⑤ `enableEdgeToEdge` 放在 `LaunchedEffect(darkTheme)` 里（`MainActivity.kt:40-50`）→ 首帧无 edge-to-edge，可能跳一下；⑥ 图片解码 `catch (e: Exception)` 兜不住 `OutOfMemoryError`，且顺带吞掉 `CancellationException`（`ImageStore.kt:50`）；⑦ 超长正文经 `rememberSaveable` 进 Bundle（`NoteEditScreen.kt:293-295`），AI 入口又把正文与选区写进导航 `SavedStateHandle`（`AppNavHost.kt:94-99,111-113`）→ 超长笔记有 `TransactionTooLargeException`/状态被丢弃的风险（**需真机确认**）。
 - 建议：撤销栈加「保留字符数」上限（或改存 delta）；字数统计用 `derivedStateOf` 缓存；`collectAsStateWithLifecycle`；Key 读写移入 `withContext(Dispatchers.IO)` + 用 `StateFlow` 暴露「已配置」；`enableEdgeToEdge` 移出 `LaunchedEffect`；`catch` 补 `OutOfMemoryError`/重抛 `CancellationException`；长正文只把 `noteId/draftId` 放进 Bundle、正文靠 DB 草稿回读。价值：中 × S/M
+
+## 批次 K · UI 体验修复（2026-11-27，条目 103–119，v1.15.0）
+
+> 来源：v1.14.1 全量 UI/UX 只读复查（交互逻辑 / 视觉一致性 / 触控与无障碍），全部落到 file:line。
+> 设计见 `docs/superpowers/specs/2026-11-27-ui-polish-1150-design.md`，计划见 `docs/superpowers/plans/2026-11-27-ui-polish-1150.md`。
+> 执行：4 个 worktree 分支（`ui-polish-home` / `ui-polish-editor` / `ui-polish-chrome` / `ui-polish-core`）并行，主树 rebase + `merge --ff-only` 合入，保持 master 线性。
+> 硬约束不变：零新增第三方依赖、零新增权限、无 Room schema 变更。
+
+### 103. 主页列表末尾被 FAB 遮挡（P1）
+- 现状：`NotesScreen` 列表 `LazyColumn(Modifier.fillMaxSize())` 无底部留白，Scaffold padding 不含 FAB，最后一行右侧的「相对时间 / 分类名」落在 FAB 底下。
+- 修复：`contentPadding = PaddingValues(bottom = 72.dp)`。
+
+### 104. 编辑页底部工具栏在 360dp 屏裁切（P1）
+- 现状：固定 48dp + `SpaceBetween` 的一行塞 6 个按钮，默认字号合计约 369dp（含内边距）已超 360dp 屏；选过日期后「预览」被挤掉。
+- 修复：改可横向滚动单行（`horizontalScroll` + `heightIn(min = 48.dp)`），组间加 1dp 竖分隔；永不裁切，320dp 屏与 1.3 倍字体同样可用。
+
+### 105. 保存触达历史 40 条警告时被 Snackbar 卡住 4 秒（P2）
+- 现状：`saveAndExit` 的 `onDone` 里 `showSnackbar(warning)` 挂起到消失再 `onBack()`，期间输入框仍只读，用户以为卡死。
+- 修复：新增 `onNoteMessage` 通道 → 写入 notes 入口的 `SavedStateHandle`（`NavResults.EDITOR_MESSAGE`）→ 列表页先消费再展示；编辑页立即退出。
+
+### 106. 搜索键盘展开时「更多」面板被 IME 盖住（P2）
+- 现状：`enableEdgeToEdge` 后窗口不再被 IME 顶起，纸片面板只有 `navigationBarsPadding()`；抽屉入口已隐藏键盘，面板入口没有。
+- 修复：点 ⋮ 先 `keyboard?.hide()`，面板内部再补 `imePadding()` 兜底。
+
+### 107. `isSaving` 旋转丢失 + VM 静默早退导致编辑器永久只读（P2）
+- 现状：`isSaving` 是 `remember`；`NoteEditViewModel.save` 在 `saveJob` 在途时静默 `return`，调用方的 `isSaving` 永远等不到回调。
+- 修复：`isSaving` 改 `rememberSaveable`；早退改为 `onError("正在保存，请稍候")`。
+
+### 108. 列表行无条件带「复选框」语义（P2）
+- 现状：`NoteRow` 恒设 `role = Role.Checkbox` + `selected`，普通浏览态读屏把每行念成"未选中，复选框"（日历页复用同样受影响）。
+- 修复：新增 `selectionMode` 参数，仅多选态施加语义。
+
+### 109. 纸片面板里非导航项也带「›」箭头（P3）
+- 修复：`PaperPanelItem(showChevron = false)` 用于导出 / 导入 / 全选 / 置顶 / 取消置顶 / 移动到分类 / 删除；日历、回收站、设置保留箭头。
+
+### 110. 顶栏固定 56dp 在大字号下裁掉副标题（P2）
+- 修复：`.height(56.dp)` → `.heightIn(min = 56.dp)`。
+
+### 111. AI 聊天页是全 App 唯一原生 Material 页面（P2）
+- 现状：M3 `TopAppBar`（64dp / 非衬线 / elevation）+ 原生 `AlertDialog`，与其余 8 页的 `PaperTopBar` + `PaperAlertDialog` 不一致。
+- 修复：两处 `TopAppBar` 换 `PaperTopBar`（会话标题 + 「服务商 · 模型」副标题 + 两个图标动作），两个对话框换 `PaperAlertDialog`（隐私弹窗仍不可取消）。
+
+### 112. 助手气泡下 4 个操作按钮大字体溢出（P3）
+- 修复：改 `FlowRow` 自动换行，按钮顺序与 enabled 条件不变。
+
+### 113. 触控区不足 48dp 一组（P2）
+- 设置页 8 个主题色圈（28dp）→ `weight(1f)` + `heightIn(min = 48.dp)` 容器，视觉圆点仍 28dp；
+- 新建分类选色（28dp、无描述）→ 48dp 容器 + 「颜色 N」描述 + `Role.RadioButton`；
+- 文字 tab（约 36dp）→ `heightIn(min = 48.dp)`；
+- 日历日期格（36dp 可点）→ 外层 48dp 承接点击，内圆保持 36dp 视觉。
+
+### 114. 长按进多选无触感反馈（P3）
+- 修复：`LocalHapticFeedback` + `HapticFeedbackType.LongPress`。
+
+### 115. 分类「点色点换色」无任何提示（P3）
+- 修复：分类管理页列表顶部补一行说明「点按色点可循环换色，点按名称可重命名」。
+
+### 116. 搜索缺结果数 / 缺出口 / IME 不是「搜索」（P3）
+- 修复：副标题搜索态显示「全库搜索 · N 条」；空态补「清空搜索」；`ImeAction.Search` 收键盘。
+
+### 117. 批量删除没有「撤销」（P2）
+- 修复：`batchDelete` 回调被删 id 列表，snackbar（Long）带「撤销」，新增 `NotesViewModel.restoreDeleted(List<Long>)` 批量恢复。
+
+### 118. 备份文件名恒为 `mynote-backup.zip`（P3）
+- 修复：`backupFileName(now)` 输出 `mynote-backup-YYYY-MM-DD.zip`（本地时区）。
+
+### 119. 次要交互修复（P3）
+- 从笔记返回时搜索键盘被自动顶起 → 仅「主动点搜索图标」时请求焦点；
+- 分享 `startActivity` 无异常兜底 → try/catch +「没有可分享的应用」；
+- 未开启预测性返回 → manifest `enableOnBackInvokedCallback="true"`（真机待验）。
 
 ---
 
